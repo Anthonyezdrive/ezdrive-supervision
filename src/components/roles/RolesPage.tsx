@@ -27,6 +27,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { KPICard } from "@/components/ui/KPICard";
+import { PageHelp } from "@/components/ui/PageHelp";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -613,6 +614,16 @@ export function RolesPage() {
           </button>
         )}
       </div>
+
+      <PageHelp
+        summary="Configuration des rôles et permissions pour les utilisateurs du back-office"
+        items={[
+          { label: "Rôle", description: "Ensemble de permissions définissant ce qu'un utilisateur peut voir et faire dans l'application." },
+          { label: "Permissions", description: "Actions autorisées : lecture, création, modification, suppression, export, etc." },
+          { label: "Assignation", description: "Chaque utilisateur a un seul rôle qui détermine ses droits d'accès." },
+          { label: "Hiérarchie", description: "Admin > Opérateur > Lecteur. Chaque niveau inclut les permissions du niveau inférieur." },
+        ]}
+      />
 
       {/* KPIs */}
       {isLoading ? (

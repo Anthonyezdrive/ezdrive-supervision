@@ -39,13 +39,29 @@ function B2BLayoutInner() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-heading font-bold text-foreground">
-            {activeClient?.name ?? "Portail B2B"}
-          </h1>
-          <p className="text-sm text-foreground-muted mt-0.5">
-            Rapport d'activité des bornes de recharge
-          </p>
+        <div className="flex items-center gap-4">
+          {/* Client logo */}
+          {activeClient?.logo_url ? (
+            <img
+              src={activeClient.logo_url}
+              alt={activeClient.name}
+              className="w-12 h-12 rounded-xl object-contain bg-white border border-border p-1.5 shrink-0"
+            />
+          ) : (
+            <div className="w-12 h-12 rounded-xl border flex items-center justify-center shrink-0" style={{ backgroundColor: "#9ACC0E10", borderColor: "#9ACC0E30" }}>
+              <span className="text-lg font-bold" style={{ color: "#9ACC0E" }}>
+                {activeClient?.name?.charAt(0)?.toUpperCase() ?? "B"}
+              </span>
+            </div>
+          )}
+          <div>
+            <h1 className="text-2xl font-heading font-bold text-foreground">
+              {activeClient?.name ?? "Portail B2B"}
+            </h1>
+            <p className="text-sm text-foreground-muted mt-0.5">
+              Rapport d'activité des bornes de recharge
+            </p>
+          </div>
         </div>
 
         {/* Admin: client selector */}
@@ -87,10 +103,11 @@ function B2BLayoutInner() {
               cn(
                 "flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-[1px]",
                 isActive
-                  ? "text-primary border-primary"
+                  ? "border-b-2"
                   : "text-foreground-muted border-transparent hover:text-foreground hover:border-foreground-muted/30"
               )
             }
+            style={({ isActive }) => isActive ? { color: "#9ACC0E", borderBottomColor: "#9ACC0E" } : {}}
           >
             <tab.icon className="w-4 h-4" />
             {tab.label}

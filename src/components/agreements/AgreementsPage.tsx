@@ -26,6 +26,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { KPICard } from "@/components/ui/KPICard";
+import { PageHelp } from "@/components/ui/PageHelp";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -488,6 +489,16 @@ export function AgreementsPage() {
           Nouvel accord
         </button>
       </div>
+
+      <PageHelp
+        summary="Accords et conventions cadres avec les plateformes de roaming"
+        items={[
+          { label: "Accord", description: "Convention signée avec une plateforme de roaming (Gireve, Hubject, etc.) ou un opérateur." },
+          { label: "Type", description: "Bilatéral (direct entre 2 opérateurs) ou Hub (via une plateforme centralisée)." },
+          { label: "Couverture", description: "Zones géographiques et types de bornes couverts par l'accord." },
+          { label: "Conditions", description: "Tarifs négociés, SLA, pénalités et durée de l'accord." },
+        ]}
+      />
 
       {/* KPIs */}
       {isLoading ? (

@@ -447,6 +447,9 @@ async function updateCustomer(ctx: RouteContext, customerId: string): Promise<Re
     const fields = [
       "full_name", "phone", "user_type", "company_name",
       "is_company", "is_active", "admin_notes",
+      "address", "postal_code", "city", "country",
+      "account_manager", "validity_date", "cost_center",
+      "siret", "vat_number", "billing_mode", "status",
     ];
 
     for (const f of fields) {

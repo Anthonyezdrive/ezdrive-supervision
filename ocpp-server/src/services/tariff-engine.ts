@@ -2,11 +2,50 @@
 // Tariff Engine — OCPI 2.2.1 Tariff Calculator
 // Node.js version for OCPP server
 // Calculates session costs from OCPI tariff elements
-// DOM-TOM VAT rate: 8.5% (configurable)
+// VAT rates: 8.5% DOM-TOM (971-976), 20% métropole
 // ============================================
 
 import { query, queryOne } from '../db';
 import { logger } from '../index';
+
+// --- VAT Resolution by Territory ---
+
+// DOM-TOM department codes → reduced VAT rate
+const DOM_TOM_CODES = new Set(['971', '972', '973', '974', '975', '976']);
+const VAT_RATE_DOM_TOM = 8.5;
+const VAT_RATE_METRO = 20.0;
+
+/**
+ * Resolve VAT rate for a station based on its territory.
+ * DOM-TOM (971-976): 8.5%, Métropole: 20%
+ */
+export async function resolveVatRate(chargepointId: string): Promise<number> {
+  try {
+    const result = await queryOne<{ territory_code: string | null; postal_code: string | null }>(
+      `SELECT t.code as territory_code, s.postal_code
+       FROM ocpp_chargepoints cp
+       LEFT JOIN stations s ON s.id = cp.station_id
+       LEFT JOIN territories t ON t.id = s.territory_id
+       WHERE cp.id = $1`,
+      [chargepointId]
+    );
+
+    if (result?.territory_code) {
+      return DOM_TOM_CODES.has(result.territory_code) ? VAT_RATE_DOM_TOM : VAT_RATE_METRO;
+    }
+
+    // Fallback: detect from postal code (97xxx = DOM-TOM)
+    if (result?.postal_code && result.postal_code.startsWith('97')) {
+      return VAT_RATE_DOM_TOM;
+    }
+
+    // Default: DOM-TOM (EZDrive's primary market is Réunion/Antilles)
+    return VAT_RATE_DOM_TOM;
+  } catch (err) {
+    logger.warn({ err, chargepointId }, 'Failed to resolve VAT rate, defaulting to DOM-TOM 8.5%');
+    return VAT_RATE_DOM_TOM;
+  }
+}
 
 // --- Interfaces ---
 
@@ -214,7 +253,7 @@ export async function resolveTariff(
     const tariffId = isdc ? 'STANDARD-DC' : 'STANDARD-AC';
 
     const tariff = await queryOne<{ elements: TariffElement[] }>(
-      `SELECT elements FROM ocpi_tariffs WHERE tariff_id = $1 LIMIT 1`,
+      `SELECT elements FROM ocpi_tariffs WHERE tariff_id = $1 ORDER BY last_updated DESC LIMIT 1`,
       [tariffId]
     );
 

@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   Radio,
   Wrench,
-  Zap,
   Map,
   Tag,
   Settings,
@@ -12,6 +11,8 @@ import {
   Globe,
   X,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Users,
   CreditCard,
   FileText,
@@ -36,6 +37,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import { CpoSelector } from "./CpoSelector";
 
 // ── Section + Item types ──────────────────────────────────
 
@@ -150,9 +152,11 @@ const NAV_SECTIONS: NavSection[] = [
 interface SidebarProps {
   isOpen?: boolean;
   onClose?: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
-export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
+export function Sidebar({ isOpen = false, onClose, collapsed = false, onToggleCollapse }: SidebarProps) {
   const { profile } = useAuth();
 
   // Role-based section filtering
@@ -181,26 +185,34 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "w-[250px] h-screen bg-surface border-r border-border flex flex-col shrink-0",
-        "fixed inset-y-0 left-0 z-50 transition-transform duration-300",
+        "h-screen bg-surface border-r border-border flex flex-col shrink-0 transition-all duration-300",
+        collapsed ? "w-[68px]" : "w-[250px]",
+        "fixed inset-y-0 left-0 z-50",
         isOpen ? "translate-x-0" : "-translate-x-full",
         "md:relative md:translate-x-0 md:z-auto"
       )}
     >
       {/* Logo */}
-      <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+      <div className={cn(
+        "flex items-center border-b border-border",
+        collapsed ? "justify-center px-2 py-4" : "justify-between px-5 py-4"
+      )}>
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-primary/15 border border-primary flex items-center justify-center shrink-0">
-            <Zap className="w-4 h-4 text-primary" />
-          </div>
-          <div>
-            <span className="font-heading font-bold text-foreground text-sm tracking-tight">
-              EZDrive
-            </span>
-            <span className="block text-[10px] text-foreground-muted leading-tight">
-              Supervision
-            </span>
-          </div>
+          <img
+            src="/favicon.png"
+            alt="EZDrive"
+            className="w-8 h-8 rounded-lg shrink-0"
+          />
+          {!collapsed && (
+            <div>
+              <span className="font-heading font-bold text-foreground text-sm tracking-tight">
+                EZDrive
+              </span>
+              <span className="block text-[10px] text-foreground-muted leading-tight">
+                Supervision
+              </span>
+            </div>
+          )}
         </div>
         <button
           onClick={onClose}
@@ -211,42 +223,60 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
         </button>
       </div>
 
+      {/* CPO Selector */}
+      {profile?.role !== "b2b_client" && (
+        <CpoSelector collapsed={collapsed} />
+      )}
+
       {/* Navigation sections */}
       <nav className="flex-1 overflow-y-auto py-2 custom-scrollbar">
         {visibleSections.map((section) => (
           <div key={section.id} className="mb-0.5">
             {/* Section header */}
-            <button
-              onClick={() => toggleSection(section.id)}
-              className="w-full flex items-center justify-between px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-foreground-muted/70 hover:text-foreground-muted transition-colors"
-            >
-              <span>{section.label}</span>
-              <ChevronDown
-                className={cn(
-                  "w-3 h-3 transition-transform duration-200",
-                  expanded[section.id] ? "rotate-0" : "-rotate-90"
-                )}
-              />
-            </button>
+            {collapsed ? (
+              <div className="px-2 pt-3 pb-1">
+                <div className="h-px bg-border" />
+              </div>
+            ) : (
+              <button
+                onClick={() => toggleSection(section.id)}
+                className="w-full flex items-center justify-between px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-foreground-muted/70 hover:text-foreground-muted transition-colors"
+              >
+                <span>{section.label}</span>
+                <ChevronDown
+                  className={cn(
+                    "w-3 h-3 transition-transform duration-200",
+                    expanded[section.id] ? "rotate-0" : "-rotate-90"
+                  )}
+                />
+              </button>
+            )}
 
             {/* Section items */}
             <div
               className={cn(
                 "overflow-hidden transition-all duration-200",
-                expanded[section.id]
+                collapsed || expanded[section.id]
                   ? "max-h-[500px] opacity-100"
                   : "max-h-0 opacity-0"
               )}
             >
-              <div className="px-2 pb-1 space-y-0.5">
+              <div className={cn(
+                "space-y-0.5",
+                collapsed ? "px-1.5 pb-0.5" : "px-2 pb-1"
+              )}>
                 {section.items.map((item) => (
                   <NavLink
                     key={item.to}
                     to={item.to}
                     onClick={() => onClose?.()}
+                    title={collapsed ? item.label : undefined}
                     className={({ isActive }) =>
                       cn(
-                        "flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-all",
+                        "flex items-center rounded-lg font-medium transition-all",
+                        collapsed
+                          ? "justify-center p-2.5"
+                          : "gap-2.5 px-3 py-2 text-[13px]",
                         isActive
                           ? "bg-primary/10 text-primary"
                           : "text-foreground-muted hover:text-foreground hover:bg-surface-elevated"
@@ -254,7 +284,7 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
                     }
                   >
                     <item.icon className="w-4 h-4 shrink-0" />
-                    <span className="truncate">{item.label}</span>
+                    {!collapsed && <span className="truncate">{item.label}</span>}
                   </NavLink>
                 ))}
               </div>
@@ -263,12 +293,35 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
         ))}
       </nav>
 
-      {/* Footer */}
-      <div className="px-4 py-3 border-t border-border">
-        <p className="text-[10px] text-foreground-muted/50">
-          EZDrive Supervision v1.0
-        </p>
+      {/* Collapse toggle (desktop only) */}
+      <div className="hidden md:block px-2 py-2 border-t border-border">
+        <button
+          onClick={onToggleCollapse}
+          className={cn(
+            "flex items-center gap-2 w-full rounded-lg py-2 text-xs font-medium text-foreground-muted hover:text-foreground hover:bg-surface-elevated transition-colors",
+            collapsed ? "justify-center px-2" : "px-3"
+          )}
+          title={collapsed ? "Déplier le menu" : "Réduire le menu"}
+        >
+          {collapsed ? (
+            <ChevronRight className="w-4 h-4" />
+          ) : (
+            <>
+              <ChevronLeft className="w-4 h-4 shrink-0" />
+              <span>Réduire</span>
+            </>
+          )}
+        </button>
       </div>
+
+      {/* Footer */}
+      {!collapsed && (
+        <div className="px-4 py-3 border-t border-border">
+          <p className="text-[10px] text-foreground-muted/50">
+            EZDrive Supervision v1.0
+          </p>
+        </div>
+      )}
     </aside>
   );
 }

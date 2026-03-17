@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
+import { PageHelp } from "@/components/ui/PageHelp";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -160,6 +161,17 @@ export function ValidateTokenPage() {
           Rechercher un token RFID ou OCPI et vérifier son association utilisateur
         </p>
       </div>
+
+      <PageHelp
+        summary="Validation et test de tokens RFID/OCPI pour vérifier les autorisations"
+        items={[
+          { label: "Validation", description: "Vérifiez si un token (badge RFID) est autorisé à charger sur une borne donnée." },
+          { label: "Token UID", description: "Identifiant unique inscrit sur le badge RFID du conducteur." },
+          { label: "Résultat", description: "Accepted (autorisé), Blocked (bloqué), Expired (expiré), Invalid (inconnu), NoCredit (solde insuffisant)." },
+          { label: "Usage", description: "Utile pour diagnostiquer les problèmes d'authentification sur les bornes." },
+        ]}
+        tips={["Testez ici avant de créer un ticket de support — le problème est souvent un badge expiré ou bloqué."]}
+      />
 
       {/* Search Card */}
       <div className="bg-surface border border-border rounded-2xl p-6 max-w-xl">

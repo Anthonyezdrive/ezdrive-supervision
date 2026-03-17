@@ -3,9 +3,11 @@ import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from "react-leaf
 import type { LatLngBoundsExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useStations } from "@/hooks/useStations";
+import { useCpo } from "@/contexts/CpoContext";
 import { OCPP_STATUS_CONFIG } from "@/lib/constants";
 import { StationDetailDrawer } from "@/components/stations/StationDetailDrawer";
 import type { Station, OCPPStatus } from "@/types/station";
+import { PageHelp } from "@/components/ui/PageHelp";
 
 // Auto-fit map to show all stations
 function AutoFitBounds({ bounds }: { bounds: LatLngBoundsExpression | null }) {
@@ -23,7 +25,8 @@ function AutoFitBounds({ bounds }: { bounds: LatLngBoundsExpression | null }) {
 const STATUS_FILTERS: OCPPStatus[] = ["Available", "Charging", "Faulted", "Unknown"];
 
 export function MapPage() {
-  const { data: stations = [], isLoading } = useStations();
+  const { selectedCpoId } = useCpo();
+  const { data: stations = [], isLoading } = useStations(selectedCpoId);
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [statusFilter, setStatusFilter] = useState<OCPPStatus | null>(null);
 
@@ -43,6 +46,17 @@ export function MapPage() {
   return (
     <div className="h-full flex flex-col overflow-hidden">
       {/* Header */}
+      <div className="px-6 pt-4 shrink-0">
+        <PageHelp
+          summary="Carte interactive de votre réseau de bornes avec position et statut en temps réel"
+          items={[
+            { label: "Marqueurs colorés", description: "Vert = disponible, bleu = en charge, rouge = en panne, gris = hors service." },
+            { label: "Clusters", description: "Les bornes proches sont regroupées en clusters. Zoomez pour les détailler." },
+            { label: "Popup détail", description: "Cliquez sur un marqueur pour voir le nom, l'adresse et le statut de la borne." },
+            { label: "Zoom & navigation", description: "Utilisez la molette pour zoomer, ou les boutons +/- en haut à gauche." },
+          ]}
+        />
+      </div>
       <div className="px-6 py-4 border-b border-border flex items-center justify-between shrink-0 flex-wrap gap-3">
         <div>
           <h1 className="font-heading font-bold text-xl">Carte</h1>

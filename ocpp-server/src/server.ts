@@ -8,6 +8,7 @@ import http from 'http';
 import { RPCServer, createRPCError } from 'ocpp-rpc';
 import { config } from './config';
 import { logger } from './index';
+import { queryOne } from './db';
 import { handleBootNotification } from './handlers/boot-notification';
 import { handleHeartbeat } from './handlers/heartbeat';
 import { handleStatusNotification } from './handlers/status-notification';
@@ -32,15 +33,66 @@ export function createOcppServer(httpServer: http.Server) {
   });
 
   // Attach WebSocket upgrade to HTTP server
-  httpServer.on('upgrade', (request: http.IncomingMessage, socket: any, head: Buffer) => {
+  httpServer.on('upgrade', async (request: http.IncomingMessage, socket: any, head: Buffer) => {
     const url = new URL(request.url || '', `http://${request.headers.host}`);
     const pathParts = url.pathname.split('/').filter(Boolean);
 
     // Expected URL: /ocpp/{ChargeBoxIdentity}
     if (pathParts.length >= 2 && pathParts[0] === 'ocpp') {
       const identity = decodeURIComponent(pathParts.slice(1).join('/'));
-      logger.info({ identity, ip: request.socket.remoteAddress }, 'Chargepoint connection attempt');
 
+      // ── WebSocket Basic Auth (OCPP Security Profile 1) ──
+      // When enabled, chargepoints must send Basic Auth in the Authorization header.
+      // Username = ChargeBox Identity, Password = shared secret or per-chargepoint password.
+      if (config.wsAuthEnabled) {
+        const authHeader = request.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Basic ')) {
+          logger.warn({ identity, ip: request.socket.remoteAddress }, 'WS auth: missing Authorization header');
+          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+
+        const decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf-8');
+        const [authUser, authPass] = decoded.split(':');
+
+        // Verify credentials: identity must match username
+        if (authUser !== identity) {
+          logger.warn({ identity, authUser }, 'WS auth: identity mismatch');
+          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+
+        // Check per-chargepoint password from DB, fallback to global shared password
+        let valid = false;
+        try {
+          const cp = await queryOne<{ ws_password: string | null }>(
+            `SELECT ws_password FROM ocpp_chargepoints WHERE identity = $1`,
+            [identity]
+          );
+          if (cp?.ws_password) {
+            valid = (authPass === cp.ws_password);
+          } else {
+            // Fallback to global shared password
+            valid = config.wsPassword ? (authPass === config.wsPassword) : false;
+          }
+        } catch {
+          // DB error → fallback to global password
+          valid = config.wsPassword ? (authPass === config.wsPassword) : false;
+        }
+
+        if (!valid) {
+          logger.warn({ identity, ip: request.socket.remoteAddress }, 'WS auth: invalid password');
+          socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+
+        logger.info({ identity, ip: request.socket.remoteAddress }, 'WS auth: authenticated');
+      }
+
+      logger.info({ identity, ip: request.socket.remoteAddress }, 'Chargepoint connection attempt');
       rpcServer.handleUpgrade(request, socket, head);
     } else {
       logger.warn({ url: request.url }, 'Rejected WebSocket connection: invalid path');
@@ -52,6 +104,13 @@ export function createOcppServer(httpServer: http.Server) {
   rpcServer.on('client', async (client: any) => {
     const identity = client.identity;
     const clientLogger = logger.child({ identity });
+
+    // If a previous connection exists for this identity, close it cleanly
+    const previousClient = activeConnections.get(identity);
+    if (previousClient && previousClient !== client) {
+      clientLogger.warn('Closing stale connection for reconnecting chargepoint');
+      try { previousClient.close(); } catch (_) { /* ignore */ }
+    }
 
     clientLogger.info('Chargepoint connected');
     activeConnections.set(identity, client);

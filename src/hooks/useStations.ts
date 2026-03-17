@@ -3,14 +3,17 @@ import { supabase } from "@/lib/supabase";
 import { POLLING_INTERVAL, STALE_TIME } from "@/lib/constants";
 import type { Station } from "@/types/station";
 
-export function useStations() {
+export function useStations(cpoId?: string | null) {
   return useQuery<Station[]>({
-    queryKey: ["stations"],
+    queryKey: ["stations", cpoId ?? "all"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("stations_enriched")
-        .select("*")
-        .order("name");
+        .select("*");
+      if (cpoId) {
+        query = query.eq("cpo_id", cpoId);
+      }
+      const { data, error } = await query.order("name");
       if (error) throw error;
       return (data ?? []) as Station[];
     },

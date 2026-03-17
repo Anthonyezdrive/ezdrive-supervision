@@ -123,8 +123,8 @@ async function sendCommand(ctx: RouteContext): Promise<Response> {
 
     if (error) throw error;
 
-    // Poll for result (max 15 seconds)
-    const result = await pollCommandResult(db, cmd.id, 15000);
+    // Poll for result (max 5 seconds to reduce Edge Function cost/blocking)
+    const result = await pollCommandResult(db, cmd.id, 5000);
 
     return apiSuccess({
       command_id: cmd.id,
@@ -141,13 +141,14 @@ async function sendCommand(ctx: RouteContext): Promise<Response> {
 }
 
 // Poll command queue for result
+// Reduced to 5s max / 750ms interval → ~7 queries max instead of ~30
 async function pollCommandResult(
   db: ReturnType<typeof getServiceClient>,
   commandId: string,
   maxWaitMs: number
 ): Promise<{ status: string; result: unknown; processed_at: string | null }> {
   const startTime = Date.now();
-  const pollInterval = 500; // ms
+  const pollInterval = 750; // ms
 
   while (Date.now() - startTime < maxWaitMs) {
     const { data } = await db
@@ -418,11 +419,19 @@ async function setChargingProfile(ctx: RouteContext): Promise<Response> {
     if (!cp) return apiNotFound("Chargepoint not found");
     if (!cp.is_connected) return apiBadRequest(`Chargepoint ${cp.identity} is not connected`);
 
+    // Generate a unique chargingProfileId from DB sequence
+    // Uses counting from existing profiles to avoid collisions
+    const { count: profileCount } = await db
+      .from("charging_profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("chargepoint_id", chargepoint_id);
+    const chargingProfileId = (profileCount ?? 0) + 1;
+
     // Build OCPP 1.6 SetChargingProfile payload
     const ocppPayload = {
       connectorId: connector_id,
       csChargingProfiles: {
-        chargingProfileId: Math.floor(Math.random() * 100000),
+        chargingProfileId,
         stackLevel: profile.stackLevel ?? 0,
         chargingProfilePurpose: profile.chargingProfilePurpose ?? "TxDefaultProfile",
         chargingProfileKind: profile.chargingProfileKind ?? "Absolute",
@@ -455,7 +464,7 @@ async function setChargingProfile(ctx: RouteContext): Promise<Response> {
     if (cmdError) throw cmdError;
 
     // Poll for result
-    const result = await pollCommandResult(db, cmd.id, 15000);
+    const result = await pollCommandResult(db, cmd.id, 5000);
 
     // If accepted, store the profile
     if (result.status === "accepted") {
@@ -550,7 +559,7 @@ async function clearChargingProfile(ctx: RouteContext): Promise<Response> {
     if (cmdError) throw cmdError;
 
     // Poll for result
-    const result = await pollCommandResult(db, cmd.id, 15000);
+    const result = await pollCommandResult(db, cmd.id, 5000);
 
     // If accepted, deactivate matching profiles in our DB
     if (result.status === "accepted") {
@@ -633,7 +642,7 @@ async function getCompositeSchedule(ctx: RouteContext): Promise<Response> {
     if (cmdError) throw cmdError;
 
     // Poll for result
-    const result = await pollCommandResult(db, cmd.id, 15000);
+    const result = await pollCommandResult(db, cmd.id, 5000);
 
     return apiSuccess({
       command_id: cmd.id,

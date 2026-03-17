@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { PageHelp } from "@/components/ui/PageHelp";
 import {
   Activity,
   Zap,
@@ -9,12 +10,14 @@ import {
   Download,
   Search,
   FileText,
+  X,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { downloadCSV, todayISO } from "@/lib/export";
+import { cn } from "@/lib/utils";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -36,14 +39,38 @@ interface Transaction {
   stations: { name: string; city: string; address: string };
 }
 
-type StatusFilter = "all" | "Active" | "Completed" | "Faulted" | "Timeout";
+interface OcpiCdr {
+  id: string;
+  cdr_id: string;
+  start_date_time: string;
+  end_date_time: string;
+  total_energy: number;
+  total_time: number; // hours
+  total_cost: number;
+  total_cost_incl_vat: number | null;
+  total_vat: number | null;
+  vat_rate: number | null;
+  total_retail_cost: number | null;
+  total_retail_cost_incl_vat: number | null;
+  currency: string;
+  source: string | null;
+  gfx_cdr_id: string | null;
+  customer_external_id: string | null;
+  cdr_location: { name?: string; address?: string; city?: string } | null;
+  cdr_token: { uid?: string; type?: string } | null;
+  station_id: string | null;
+  country_code: string;
+  party_id: string;
+}
+
+type StatusFilter = "all" | "Active" | "Completed" | "Faulted" | "Timeout" | "Suspect" | "Deposé";
 
 const PAGE_SIZE = 20;
 
 // ── Status config ────────────────────────────────────────────
 
 const STATUS_CONFIG: Record<
-  Transaction["status"],
+  Transaction["status"] | "Suspect" | "Deposé",
   {
     label: string;
     color: string;
@@ -82,6 +109,20 @@ const STATUS_CONFIG: Record<
     textClass: "text-[#FFA726]",
     borderClass: "border-[#FFA726]/30",
   },
+  Suspect: {
+    label: "Suspecte",
+    color: "#F39C12",
+    bgClass: "bg-[#F39C12]/10",
+    textClass: "text-[#F39C12]",
+    borderClass: "border-[#F39C12]/30",
+  },
+  Deposé: {
+    label: "Déposée",
+    color: "#8892B0",
+    bgClass: "bg-[#8892B0]/10",
+    textClass: "text-[#8892B0]",
+    borderClass: "border-[#8892B0]/30",
+  },
 };
 
 const FILTER_TABS: { key: StatusFilter; label: string }[] = [
@@ -89,6 +130,9 @@ const FILTER_TABS: { key: StatusFilter; label: string }[] = [
   { key: "Active", label: "Actives" },
   { key: "Completed", label: "Terminées" },
   { key: "Faulted", label: "En erreur" },
+  { key: "Suspect", label: "Suspectes" },
+  { key: "Deposé", label: "Déposées" },
+  { key: "Timeout", label: "Timeout" },
 ];
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -133,12 +177,171 @@ function formatEnergy(kwh: number | null): string {
   return `${kwh.toFixed(1)} kWh`;
 }
 
+// ── SessionDetailDrawer ───────────────────────────────────────
+
+function SessionDetailDrawer({
+  session,
+  onClose,
+}: {
+  session: Transaction;
+  onClose: () => void;
+}) {
+  const config =
+    STATUS_CONFIG[session.status as keyof typeof STATUS_CONFIG] ??
+    STATUS_CONFIG["Completed"];
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+
+      {/* Drawer */}
+      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-surface border-l border-border z-50 overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b border-border">
+          <h2 className="font-heading font-bold text-lg">
+            Transaction #{session.transaction_id}
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-1.5 hover:bg-surface-elevated rounded-lg transition-colors"
+          >
+            <X className="w-5 h-5 text-foreground-muted" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-5">
+          {/* Status */}
+          <div className="flex items-center gap-2">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold ${config.bgClass} ${config.textClass} ${config.borderClass}`}
+            >
+              {config.pulse ? (
+                <span className="relative flex h-1.5 w-1.5">
+                  <span
+                    className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75"
+                    style={{ backgroundColor: config.color }}
+                  />
+                  <span
+                    className="relative inline-flex rounded-full h-1.5 w-1.5"
+                    style={{ backgroundColor: config.color }}
+                  />
+                </span>
+              ) : (
+                <span
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ backgroundColor: config.color }}
+                />
+              )}
+              {config.label}
+            </span>
+          </div>
+
+          {/* Station */}
+          <div className="bg-surface-elevated border border-border rounded-xl p-4 space-y-1">
+            <p className="text-xs text-foreground-muted">Station</p>
+            <p className="text-sm font-semibold text-foreground">
+              {session.stations.name}
+            </p>
+            <p className="text-xs text-foreground-muted">
+              {session.stations.address
+                ? `${session.stations.address}, `
+                : ""}
+              {session.stations.city}
+            </p>
+          </div>
+
+          {/* Details grid */}
+          <div className="grid grid-cols-2 gap-3">
+            <DetailField label="ID Transaction" value={`#${session.transaction_id}`} mono />
+            <DetailField label="Connecteur" value={String(session.connector_id)} />
+            <DetailField label="ChargePoint ID" value={session.chargepoint_id} mono />
+            <DetailField label="Tag RFID" value={session.id_tag ?? "—"} mono />
+            <DetailField label="Début" value={formatDateTime(session.started_at)} />
+            <DetailField
+              label="Fin"
+              value={session.stopped_at ? formatDateTime(session.stopped_at) : "En cours..."}
+            />
+            <DetailField
+              label="Durée"
+              value={formatSessionDuration(session.started_at, session.stopped_at)}
+            />
+            <DetailField
+              label="Énergie"
+              value={formatEnergy(session.energy_kwh)}
+            />
+            <DetailField
+              label="Compteur départ"
+              value={`${session.meter_start} Wh`}
+            />
+            <DetailField
+              label="Compteur fin"
+              value={session.meter_stop !== null ? `${session.meter_stop} Wh` : "—"}
+            />
+          </div>
+
+          {/* Stop reason */}
+          {session.stop_reason && (
+            <div className="bg-surface-elevated border border-border rounded-xl p-4">
+              <p className="text-xs text-foreground-muted mb-1">Raison d'arrêt</p>
+              <p className="text-sm text-foreground font-mono">
+                {session.stop_reason}
+              </p>
+            </div>
+          )}
+
+          {/* Consumer ID */}
+          {session.consumer_id && (
+            <div className="bg-surface-elevated border border-border rounded-xl p-4">
+              <p className="text-xs text-foreground-muted mb-1">Consumer ID</p>
+              <p className="text-sm text-foreground font-mono">
+                {session.consumer_id}
+              </p>
+            </div>
+          )}
+
+          {/* Technical ID */}
+          <div className="pt-4 border-t border-border">
+            <p className="text-xs text-foreground-muted">
+              UUID:{" "}
+              <span className="font-mono text-foreground/60">{session.id}</span>
+            </p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function DetailField({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="bg-surface-elevated border border-border rounded-xl px-3 py-2.5">
+      <p className="text-[10px] text-foreground-muted mb-0.5">{label}</p>
+      <p className={`text-sm text-foreground ${mono ? "font-mono" : "font-medium"}`}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
 // ── Component ────────────────────────────────────────────────
 
 export function SessionsPage() {
   const [page, setPage] = useState(0);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [selectedSession, setSelectedSession] = useState<Transaction | null>(null);
+  const [activeView, setActiveView] = useState<"ocpp" | "cdr">("ocpp");
 
   // ── Main sessions query (server-side paginated) ──
   const {
@@ -147,7 +350,7 @@ export function SessionsPage() {
     isError,
     refetch,
   } = useQuery({
-    queryKey: ["sessions", page, statusFilter],
+    queryKey: ["sessions", page, statusFilter, dateFrom, dateTo],
     retry: false,
     queryFn: async () => {
       try {
@@ -156,7 +359,18 @@ export function SessionsPage() {
           .select("*, stations(name, city, address)", { count: "exact" })
           .order("started_at", { ascending: false })
           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-        if (statusFilter !== "all") query = query.eq("status", statusFilter);
+
+        if (statusFilter === "Suspect") {
+          query = query.eq("status", "Completed").or("energy_kwh.is.null,energy_kwh.eq.0");
+        } else if (statusFilter === "Deposé") {
+          query = query.not("stop_reason", "is", null).eq("status", "Completed");
+        } else if (statusFilter !== "all") {
+          query = query.eq("status", statusFilter);
+        }
+
+        if (dateFrom) query = query.gte("started_at", dateFrom);
+        if (dateTo) query = query.lte("started_at", dateTo + "T23:59:59");
+
         const { data, error, count } = await query;
         if (error) { console.warn("[Sessions] main query:", error.message); return { data: [] as Transaction[], total: 0 }; }
         return { data: (data ?? []) as Transaction[], total: count ?? 0 };
@@ -233,6 +447,31 @@ export function SessionsPage() {
     },
   });
 
+  // ── CDR OCPI query ──
+  const {
+    data: cdrData,
+    isLoading: cdrLoading,
+    refetch: cdrRefetch,
+  } = useQuery({
+    queryKey: ["ocpi-cdrs", page, dateFrom, dateTo],
+    enabled: activeView === "cdr",
+    retry: false,
+    queryFn: async () => {
+      try {
+        let query = supabase
+          .from("ocpi_cdrs")
+          .select("*", { count: "exact" })
+          .order("start_date_time", { ascending: false })
+          .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+        if (dateFrom) query = query.gte("start_date_time", dateFrom);
+        if (dateTo) query = query.lte("start_date_time", dateTo + "T23:59:59");
+        const { data, error, count } = await query;
+        if (error) { console.warn("[CDR] query:", error.message); return { data: [] as OcpiCdr[], total: 0 }; }
+        return { data: (data ?? []) as OcpiCdr[], total: count ?? 0 };
+      } catch { return { data: [] as OcpiCdr[], total: 0 }; }
+    },
+  });
+
   // ── Client-side search filter on displayed page ──
   const filteredSessions = useMemo(() => {
     if (!sessionsData?.data) return [];
@@ -273,6 +512,30 @@ export function SessionsPage() {
       "Raison arrêt": t.stop_reason ?? "",
     }));
     downloadCSV(rows, `ezdrive-sessions-cdr-${todayISO()}.csv`);
+  }
+
+  function handleCdrExport() {
+    const rows = (cdrData?.data ?? []).map((c) => ({
+      "CDR ID": c.cdr_id,
+      "GFX CDR ID": c.gfx_cdr_id ?? "",
+      Source: c.source ?? "",
+      Station: (c.cdr_location as any)?.name ?? "",
+      Ville: (c.cdr_location as any)?.city ?? "",
+      "Token UID": (c.cdr_token as any)?.uid ?? "",
+      Début: c.start_date_time,
+      Fin: c.end_date_time,
+      "Énergie (kWh)": c.total_energy,
+      "Durée (h)": c.total_time,
+      "Coût HT (€)": c.total_cost,
+      "TVA (€)": c.total_vat ?? "",
+      "Taux TVA (%)": c.vat_rate ?? "",
+      "Coût TTC (€)": c.total_cost_incl_vat ?? "",
+      "Retail HT (€)": c.total_retail_cost ?? "",
+      "Retail TTC (€)": c.total_retail_cost_incl_vat ?? "",
+      Devise: c.currency,
+      "Client ext. ID": c.customer_external_id ?? "",
+    }));
+    downloadCSV(rows, `ezdrive-cdrs-${todayISO()}.csv`);
   }
 
   function formatAvgDuration(minutes: number): string {
@@ -316,6 +579,9 @@ export function SessionsPage() {
   const thClass =
     "px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase tracking-wider whitespace-nowrap";
 
+  // suppress unused warning
+  void cdrRefetch;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -329,8 +595,8 @@ export function SessionsPage() {
           </p>
         </div>
         <button
-          onClick={handleExport}
-          disabled={!filteredSessions.length}
+          onClick={activeView === "cdr" ? handleCdrExport : handleExport}
+          disabled={activeView === "cdr" ? !cdrData?.data?.length : !filteredSessions.length}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-border rounded-xl text-xs text-foreground-muted hover:text-foreground hover:border-foreground-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Download className="w-3.5 h-3.5" />
@@ -338,361 +604,598 @@ export function SessionsPage() {
         </button>
       </div>
 
-      {/* KPI Row */}
-      {kpiLoading ? (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div
-              key={i}
-              className="bg-surface border border-border rounded-2xl p-5 space-y-3"
-            >
-              <div className="flex items-center gap-3">
-                <Skeleton className="w-12 h-12 rounded-xl" />
-                <div className="space-y-1.5">
-                  <Skeleton className="h-6 w-16" />
-                  <Skeleton className="h-3 w-24" />
+      <PageHelp
+        summary="Historique complet des sessions de charge avec détails énergétiques et financiers"
+        items={[
+          { label: "Session", description: "Une session = une charge complète, du branchement au débranchement du véhicule." },
+          { label: "Énergie (kWh)", description: "Quantité d'électricité consommée pendant la session, mesurée par le compteur de la borne." },
+          { label: "Statut", description: "Active (en cours), Completed (terminée), Faulted (erreur), Timeout (dépassement)." },
+          { label: "Filtres & export", description: "Filtrez par période, borne ou statut. Exportez en CSV pour la comptabilité." },
+        ]}
+        tips={["Les sessions 'Active' depuis plus de 24h sont généralement des anomalies à investiguer."]}
+      />
+
+      {/* View tabs */}
+      <div className="flex gap-1 bg-surface border border-border rounded-xl p-1 w-fit">
+        <button
+          onClick={() => { setActiveView("ocpp"); setPage(0); }}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            activeView === "ocpp"
+              ? "bg-primary/15 text-primary"
+              : "text-foreground-muted hover:text-foreground"
+          }`}
+        >
+          Sessions OCPP
+        </button>
+        <button
+          onClick={() => { setActiveView("cdr"); setPage(0); }}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            activeView === "cdr"
+              ? "bg-primary/15 text-primary"
+              : "text-foreground-muted hover:text-foreground"
+          }`}
+        >
+          CDR Financiers
+        </button>
+      </div>
+
+      {activeView === "ocpp" && (
+        <>
+          {/* KPI Row */}
+          {kpiLoading ? (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="bg-surface border border-border rounded-2xl p-5 space-y-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <Skeleton className="w-12 h-12 rounded-xl" />
+                    <div className="space-y-1.5">
+                      <Skeleton className="h-6 w-16" />
+                      <Skeleton className="h-3 w-24" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Total sessions */}
+              <div className="bg-surface border border-border rounded-2xl p-5 flex items-center gap-4 transition-all hover:border-opacity-80">
+                <div
+                  className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: "#8892B015" }}
+                >
+                  <FileText className="w-6 h-6" style={{ color: "#8892B0" }} />
+                </div>
+                <div>
+                  <p className="text-2xl font-heading font-bold text-foreground">
+                    {(totalCount ?? 0).toLocaleString("fr-FR")}
+                  </p>
+                  <p className="text-xs text-foreground-muted mt-0.5">
+                    Total sessions
+                  </p>
+                </div>
+              </div>
+
+              {/* Active sessions */}
+              <div className="bg-surface border border-[#00D4AA]/30 rounded-2xl p-5 flex items-center gap-4 transition-all hover:border-opacity-80">
+                <div
+                  className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: "#00D4AA15" }}
+                >
+                  <Activity className="w-6 h-6" style={{ color: "#00D4AA" }} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-2xl font-heading font-bold text-foreground">
+                      {activeCount ?? 0}
+                    </p>
+                    {(activeCount ?? 0) > 0 && (
+                      <span className="relative flex h-2.5 w-2.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00D4AA] opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#00D4AA]" />
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-foreground-muted mt-0.5">
+                    Sessions actives
+                  </p>
+                </div>
+              </div>
+
+              {/* Total energy */}
+              <div className="bg-surface border border-[#4ECDC4]/30 rounded-2xl p-5 flex items-center gap-4 transition-all hover:border-opacity-80">
+                <div
+                  className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: "#4ECDC415" }}
+                >
+                  <Zap className="w-6 h-6" style={{ color: "#4ECDC4" }} />
+                </div>
+                <div>
+                  <p className="text-2xl font-heading font-bold text-foreground">
+                    {totalEnergy !== undefined
+                      ? totalEnergy >= 1000
+                        ? `${(totalEnergy / 1000).toFixed(1)} MWh`
+                        : `${totalEnergy.toFixed(0)} kWh`
+                      : "—"}
+                  </p>
+                  <p className="text-xs text-foreground-muted mt-0.5">
+                    Énergie totale
+                  </p>
+                </div>
+              </div>
+
+              {/* Average duration */}
+              <div className="bg-surface border border-border rounded-2xl p-5 flex items-center gap-4 transition-all hover:border-opacity-80">
+                <div
+                  className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: "#FFA72615" }}
+                >
+                  <Clock className="w-6 h-6" style={{ color: "#FFA726" }} />
+                </div>
+                <div>
+                  <p className="text-2xl font-heading font-bold text-foreground">
+                    {avgDuration !== undefined
+                      ? formatAvgDuration(avgDuration)
+                      : "—"}
+                  </p>
+                  <p className="text-xs text-foreground-muted mt-0.5">
+                    Durée moyenne
+                  </p>
                 </div>
               </div>
             </div>
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Total sessions */}
-          <div className="bg-surface border border-border rounded-2xl p-5 flex items-center gap-4 transition-all hover:border-opacity-80">
-            <div
-              className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
-              style={{ backgroundColor: "#8892B015" }}
-            >
-              <FileText className="w-6 h-6" style={{ color: "#8892B0" }} />
-            </div>
-            <div>
-              <p className="text-2xl font-heading font-bold text-foreground">
-                {(totalCount ?? 0).toLocaleString("fr-FR")}
-              </p>
-              <p className="text-xs text-foreground-muted mt-0.5">
-                Total sessions
-              </p>
-            </div>
-          </div>
+          )}
 
-          {/* Active sessions */}
-          <div className="bg-surface border border-[#00D4AA]/30 rounded-2xl p-5 flex items-center gap-4 transition-all hover:border-opacity-80">
-            <div
-              className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
-              style={{ backgroundColor: "#00D4AA15" }}
-            >
-              <Activity className="w-6 h-6" style={{ color: "#00D4AA" }} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-2xl font-heading font-bold text-foreground">
-                  {activeCount ?? 0}
-                </p>
-                {(activeCount ?? 0) > 0 && (
-                  <span className="relative flex h-2.5 w-2.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00D4AA] opacity-75" />
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#00D4AA]" />
-                  </span>
-                )}
+          {/* Filter tabs + Search + Date range */}
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              {/* Status filter tabs */}
+              <div className="flex flex-wrap items-center gap-1 bg-surface border border-border rounded-xl p-1">
+                {FILTER_TABS.map((tab) => (
+                  <button
+                    key={tab.key}
+                    onClick={() => handleFilterChange(tab.key)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      statusFilter === tab.key
+                        ? "bg-primary/15 text-primary border border-primary/30"
+                        : "text-foreground-muted hover:text-foreground"
+                    }`}
+                  >
+                    {tab.label}
+                    {tab.key === "Active" && (activeCount ?? 0) > 0 && (
+                      <span className="ml-1.5 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full bg-[#00D4AA]/15 text-[#00D4AA] text-[10px] font-bold">
+                        {activeCount}
+                      </span>
+                    )}
+                  </button>
+                ))}
               </div>
-              <p className="text-xs text-foreground-muted mt-0.5">
-                Sessions actives
-              </p>
+
+              {/* Search */}
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-foreground-muted" />
+                <input
+                  type="text"
+                  placeholder="Rechercher ID, borne, tag..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 bg-surface border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-primary/50 transition-colors"
+                />
+              </div>
+            </div>
+
+            {/* Date range filter */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-foreground-muted whitespace-nowrap">Période :</span>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => { setDateFrom(e.target.value); setPage(0); }}
+                className="px-2.5 py-1.5 bg-surface border border-border rounded-xl text-xs text-foreground focus:outline-none focus:border-primary/50 transition-colors"
+              />
+              <span className="text-xs text-foreground-muted">→</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => { setDateTo(e.target.value); setPage(0); }}
+                className="px-2.5 py-1.5 bg-surface border border-border rounded-xl text-xs text-foreground focus:outline-none focus:border-primary/50 transition-colors"
+              />
+              {(dateFrom || dateTo) && (
+                <button
+                  onClick={() => { setDateFrom(""); setDateTo(""); setPage(0); }}
+                  className="p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated transition-colors"
+                  aria-label="Effacer les dates"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           </div>
 
-          {/* Total energy */}
-          <div className="bg-surface border border-[#4ECDC4]/30 rounded-2xl p-5 flex items-center gap-4 transition-all hover:border-opacity-80">
-            <div
-              className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
-              style={{ backgroundColor: "#4ECDC415" }}
-            >
-              <Zap className="w-6 h-6" style={{ color: "#4ECDC4" }} />
-            </div>
-            <div>
-              <p className="text-2xl font-heading font-bold text-foreground">
-                {totalEnergy !== undefined
-                  ? totalEnergy >= 1000
-                    ? `${(totalEnergy / 1000).toFixed(1)} MWh`
-                    : `${totalEnergy.toFixed(0)} kWh`
-                  : "—"}
+          {/* Data Table */}
+          {isLoading ? (
+            <TableSkeleton rows={10} />
+          ) : isError ? (
+            <ErrorState
+              message="Impossible de charger les sessions"
+              onRetry={() => refetch()}
+            />
+          ) : filteredSessions.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-48 bg-surface border border-border rounded-2xl">
+              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-3">
+                <BatteryCharging className="w-6 h-6 text-primary" />
+              </div>
+              <p className="text-foreground font-medium">Aucune session trouvée</p>
+              <p className="text-sm text-foreground-muted mt-1">
+                {statusFilter !== "all"
+                  ? "Aucune session avec ce filtre. Essayez un autre statut."
+                  : "Aucune session de charge enregistrée."}
               </p>
-              <p className="text-xs text-foreground-muted mt-0.5">
-                Énergie totale
-              </p>
             </div>
-          </div>
+          ) : (
+            <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="border-b border-border">
+                    <tr>
+                      <th className={thClass}>ID Transaction</th>
+                      <th className={thClass}>Borne</th>
+                      <th className={thClass}>Connecteur</th>
+                      <th className={thClass}>Tag RFID</th>
+                      <th className={thClass}>Début</th>
+                      <th className={thClass}>Fin</th>
+                      <th className={thClass}>Durée</th>
+                      <th className={thClass}>Énergie</th>
+                      <th className={thClass}>Raison</th>
+                      <th className={thClass}>Statut</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {filteredSessions.map((tx) => {
+                      const config = STATUS_CONFIG[tx.status as keyof typeof STATUS_CONFIG] ?? STATUS_CONFIG["Completed"];
+                      return (
+                        <tr
+                          key={tx.id}
+                          onClick={() => setSelectedSession(tx)}
+                          className="hover:bg-surface-elevated/50 transition-colors cursor-pointer"
+                        >
+                          {/* Transaction ID */}
+                          <td className="px-4 py-3">
+                            <span className="text-sm font-mono font-medium text-foreground">
+                              #{tx.transaction_id}
+                            </span>
+                          </td>
 
-          {/* Average duration */}
-          <div className="bg-surface border border-border rounded-2xl p-5 flex items-center gap-4 transition-all hover:border-opacity-80">
-            <div
-              className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
-              style={{ backgroundColor: "#FFA72615" }}
-            >
-              <Clock className="w-6 h-6" style={{ color: "#FFA726" }} />
+                          {/* Station */}
+                          <td className="px-4 py-3">
+                            <div>
+                              <p className="text-sm font-medium text-foreground">
+                                {tx.stations.name}
+                              </p>
+                              <p className="text-xs text-foreground-muted">
+                                {tx.stations.city}
+                              </p>
+                            </div>
+                          </td>
+
+                          {/* Connector */}
+                          <td className="px-4 py-3">
+                            <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-surface-elevated text-xs font-semibold text-foreground-muted border border-border">
+                              {tx.connector_id}
+                            </span>
+                          </td>
+
+                          {/* RFID Tag */}
+                          <td className="px-4 py-3">
+                            {tx.id_tag ? (
+                              <span className="text-xs font-mono px-2 py-1 rounded-md bg-surface-elevated border border-border text-foreground-muted">
+                                {tx.id_tag}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-foreground-muted/50">
+                                —
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Start */}
+                          <td className="px-4 py-3 text-sm text-foreground-muted whitespace-nowrap">
+                            {formatDateTime(tx.started_at)}
+                          </td>
+
+                          {/* End */}
+                          <td className="px-4 py-3 text-sm text-foreground-muted whitespace-nowrap">
+                            {tx.stopped_at ? (
+                              formatDateTime(tx.stopped_at)
+                            ) : (
+                              <span className="text-[#00D4AA] text-xs font-medium">
+                                En cours...
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Duration */}
+                          <td className="px-4 py-3">
+                            <span
+                              className={`text-sm font-medium ${
+                                tx.status === "Active"
+                                  ? "text-[#00D4AA]"
+                                  : "text-foreground"
+                              }`}
+                            >
+                              {formatSessionDuration(tx.started_at, tx.stopped_at)}
+                            </span>
+                          </td>
+
+                          {/* Energy */}
+                          <td className="px-4 py-3">
+                            <span
+                              className={`text-sm font-semibold ${
+                                tx.energy_kwh !== null
+                                  ? "text-[#00D4AA]"
+                                  : "text-foreground-muted/50"
+                              }`}
+                            >
+                              {formatEnergy(tx.energy_kwh)}
+                            </span>
+                          </td>
+
+                          {/* Stop reason */}
+                          <td className="px-4 py-3 text-xs text-foreground-muted font-mono">
+                            {tx.stop_reason
+                              ? tx.stop_reason.length > 15
+                                ? tx.stop_reason.slice(0, 15) + "…"
+                                : tx.stop_reason
+                              : "—"}
+                          </td>
+
+                          {/* Status badge */}
+                          <td className="px-4 py-3">
+                            <span
+                              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold ${config.bgClass} ${config.textClass} ${config.borderClass}`}
+                            >
+                              {config.pulse ? (
+                                <span className="relative flex h-1.5 w-1.5">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: config.color }} />
+                                  <span
+                                    className="relative inline-flex rounded-full h-1.5 w-1.5"
+                                    style={{ backgroundColor: config.color }}
+                                  />
+                                </span>
+                              ) : (
+                                <span
+                                  className="w-1.5 h-1.5 rounded-full"
+                                  style={{ backgroundColor: config.color }}
+                                />
+                              )}
+                              {config.label}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination footer */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+                  <span className="text-xs text-foreground-muted">
+                    {page * PAGE_SIZE + 1}–
+                    {Math.min((page + 1) * PAGE_SIZE, sessionsData?.total ?? 0)} sur{" "}
+                    {(sessionsData?.total ?? 0).toLocaleString("fr-FR")} sessions
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setPage((p) => Math.max(0, p - 1))}
+                      disabled={page === 0}
+                      className="p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      aria-label="Page précédente"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+
+                    {getPaginationRange().map((p, i) =>
+                      p === "..." ? (
+                        <span
+                          key={`ellipsis-${i}`}
+                          className="px-1.5 text-xs text-foreground-muted"
+                        >
+                          ...
+                        </span>
+                      ) : (
+                        <button
+                          key={p}
+                          onClick={() => setPage(p as number)}
+                          className={`min-w-[2rem] h-8 px-2 rounded-lg text-xs font-medium transition-colors ${
+                            page === p
+                              ? "bg-primary/15 text-primary border border-primary/30"
+                              : "text-foreground-muted hover:text-foreground hover:bg-surface-elevated"
+                          }`}
+                        >
+                          {(p as number) + 1}
+                        </button>
+                      )
+                    )}
+
+                    <button
+                      onClick={() =>
+                        setPage((p) => Math.min(totalPages - 1, p + 1))
+                      }
+                      disabled={page >= totalPages - 1}
+                      className="p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                      aria-label="Page suivante"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-            <div>
-              <p className="text-2xl font-heading font-bold text-foreground">
-                {avgDuration !== undefined
-                  ? formatAvgDuration(avgDuration)
-                  : "—"}
-              </p>
-              <p className="text-xs text-foreground-muted mt-0.5">
-                Durée moyenne
-              </p>
-            </div>
-          </div>
-        </div>
+          )}
+        </>
       )}
 
-      {/* Filter tabs + Search */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        {/* Status filter tabs */}
-        <div className="flex items-center gap-1 bg-surface border border-border rounded-xl p-1">
-          {FILTER_TABS.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => handleFilterChange(tab.key)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                statusFilter === tab.key
-                  ? "bg-primary/15 text-primary border border-primary/30"
-                  : "text-foreground-muted hover:text-foreground"
-              }`}
-            >
-              {tab.label}
-              {tab.key === "Active" && (activeCount ?? 0) > 0 && (
-                <span className="ml-1.5 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full bg-[#00D4AA]/15 text-[#00D4AA] text-[10px] font-bold">
-                  {activeCount}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {/* Search */}
-        <div className="relative w-full sm:w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-foreground-muted" />
-          <input
-            type="text"
-            placeholder="Rechercher ID, borne, tag..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-surface border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-primary/50 transition-colors"
-          />
-        </div>
-      </div>
-
-      {/* Data Table */}
-      {isLoading ? (
-        <TableSkeleton rows={10} />
-      ) : isError ? (
-        <ErrorState
-          message="Impossible de charger les sessions"
-          onRetry={() => refetch()}
-        />
-      ) : filteredSessions.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-48 bg-surface border border-border rounded-2xl">
-          <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-3">
-            <BatteryCharging className="w-6 h-6 text-primary" />
-          </div>
-          <p className="text-foreground font-medium">Aucune session trouvée</p>
-          <p className="text-sm text-foreground-muted mt-1">
-            {statusFilter !== "all"
-              ? "Aucune session avec ce filtre. Essayez un autre statut."
-              : "Aucune session de charge enregistrée."}
-          </p>
-        </div>
-      ) : (
-        <div className="bg-surface border border-border rounded-2xl overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="border-b border-border">
-                <tr>
-                  <th className={thClass}>ID Transaction</th>
-                  <th className={thClass}>Borne</th>
-                  <th className={thClass}>Connecteur</th>
-                  <th className={thClass}>Tag RFID</th>
-                  <th className={thClass}>Début</th>
-                  <th className={thClass}>Fin</th>
-                  <th className={thClass}>Durée</th>
-                  <th className={thClass}>Énergie</th>
-                  <th className={thClass}>Statut</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {filteredSessions.map((tx) => {
-                  const config = STATUS_CONFIG[tx.status];
-                  return (
-                    <tr
-                      key={tx.id}
-                      className="hover:bg-surface-elevated/50 transition-colors"
-                    >
-                      {/* Transaction ID */}
-                      <td className="px-4 py-3">
-                        <span className="text-sm font-mono font-medium text-foreground">
-                          #{tx.transaction_id}
-                        </span>
-                      </td>
-
-                      {/* Station */}
-                      <td className="px-4 py-3">
-                        <div>
-                          <p className="text-sm font-medium text-foreground">
-                            {tx.stations.name}
-                          </p>
-                          <p className="text-xs text-foreground-muted">
-                            {tx.stations.city}
-                          </p>
-                        </div>
-                      </td>
-
-                      {/* Connector */}
-                      <td className="px-4 py-3">
-                        <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-surface-elevated text-xs font-semibold text-foreground-muted border border-border">
-                          {tx.connector_id}
-                        </span>
-                      </td>
-
-                      {/* RFID Tag */}
-                      <td className="px-4 py-3">
-                        {tx.id_tag ? (
-                          <span className="text-xs font-mono px-2 py-1 rounded-md bg-surface-elevated border border-border text-foreground-muted">
-                            {tx.id_tag}
-                          </span>
-                        ) : (
-                          <span className="text-xs text-foreground-muted/50">
-                            —
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Start */}
-                      <td className="px-4 py-3 text-sm text-foreground-muted whitespace-nowrap">
-                        {formatDateTime(tx.started_at)}
-                      </td>
-
-                      {/* End */}
-                      <td className="px-4 py-3 text-sm text-foreground-muted whitespace-nowrap">
-                        {tx.stopped_at ? (
-                          formatDateTime(tx.stopped_at)
-                        ) : (
-                          <span className="text-[#00D4AA] text-xs font-medium">
-                            En cours...
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Duration */}
-                      <td className="px-4 py-3">
-                        <span
-                          className={`text-sm font-medium ${
-                            tx.status === "Active"
-                              ? "text-[#00D4AA]"
-                              : "text-foreground"
-                          }`}
-                        >
-                          {formatSessionDuration(tx.started_at, tx.stopped_at)}
-                        </span>
-                      </td>
-
-                      {/* Energy */}
-                      <td className="px-4 py-3">
-                        <span
-                          className={`text-sm font-semibold ${
-                            tx.energy_kwh !== null
-                              ? "text-[#00D4AA]"
-                              : "text-foreground-muted/50"
-                          }`}
-                        >
-                          {formatEnergy(tx.energy_kwh)}
-                        </span>
-                      </td>
-
-                      {/* Status badge */}
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold ${config.bgClass} ${config.textClass} ${config.borderClass}`}
-                        >
-                          {config.pulse ? (
-                            <span className="relative flex h-1.5 w-1.5">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: config.color }} />
-                              <span
-                                className="relative inline-flex rounded-full h-1.5 w-1.5"
-                                style={{ backgroundColor: config.color }}
-                              />
-                            </span>
-                          ) : (
-                            <span
-                              className="w-1.5 h-1.5 rounded-full"
-                              style={{ backgroundColor: config.color }}
-                            />
-                          )}
-                          {config.label}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+      {/* CDR OCPI View */}
+      {activeView === "cdr" && (
+        <div className="space-y-4">
+          {/* Date filter */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-foreground-muted whitespace-nowrap">Période :</span>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => { setDateFrom(e.target.value); setPage(0); }}
+              className="px-2.5 py-1.5 bg-surface border border-border rounded-xl text-xs text-foreground focus:outline-none focus:border-primary/50"
+            />
+            <span className="text-xs text-foreground-muted">→</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => { setDateTo(e.target.value); setPage(0); }}
+              className="px-2.5 py-1.5 bg-surface border border-border rounded-xl text-xs text-foreground focus:outline-none focus:border-primary/50"
+            />
+            {(dateFrom || dateTo) && (
+              <button
+                onClick={() => { setDateFrom(""); setDateTo(""); setPage(0); }}
+                className="p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
-          {/* Pagination footer */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between px-4 py-3 border-t border-border">
-              <span className="text-xs text-foreground-muted">
-                {page * PAGE_SIZE + 1}–
-                {Math.min((page + 1) * PAGE_SIZE, sessionsData?.total ?? 0)} sur{" "}
-                {(sessionsData?.total ?? 0).toLocaleString("fr-FR")} sessions
-              </span>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setPage((p) => Math.max(0, p - 1))}
-                  disabled={page === 0}
-                  className="p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                  aria-label="Page précédente"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-
-                {getPaginationRange().map((p, i) =>
-                  p === "..." ? (
-                    <span
-                      key={`ellipsis-${i}`}
-                      className="px-1.5 text-xs text-foreground-muted"
-                    >
-                      ...
-                    </span>
-                  ) : (
-                    <button
-                      key={p}
-                      onClick={() => setPage(p as number)}
-                      className={`min-w-[2rem] h-8 px-2 rounded-lg text-xs font-medium transition-colors ${
-                        page === p
-                          ? "bg-primary/15 text-primary border border-primary/30"
-                          : "text-foreground-muted hover:text-foreground hover:bg-surface-elevated"
-                      }`}
-                    >
-                      {(p as number) + 1}
-                    </button>
-                  )
-                )}
-
-                <button
-                  onClick={() =>
-                    setPage((p) => Math.min(totalPages - 1, p + 1))
-                  }
-                  disabled={page >= totalPages - 1}
-                  className="p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                  aria-label="Page suivante"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
+          {/* CDR Table */}
+          {cdrLoading ? (
+            <TableSkeleton rows={10} />
+          ) : !cdrData?.data?.length ? (
+            <div className="flex flex-col items-center justify-center h-48 bg-surface border border-border rounded-2xl">
+              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-3">
+                <FileText className="w-6 h-6 text-primary" />
               </div>
+              <p className="text-foreground font-medium">Aucun CDR trouvé</p>
+              <p className="text-sm text-foreground-muted mt-1">
+                {dateFrom || dateTo ? "Aucun CDR sur cette période." : "Aucune donnée CDR disponible."}
+              </p>
+            </div>
+          ) : (
+            <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="border-b border-border">
+                    <tr>
+                      <th className={thClass}>CDR ID</th>
+                      <th className={thClass}>Source</th>
+                      <th className={thClass}>Station</th>
+                      <th className={thClass}>Token</th>
+                      <th className={thClass}>Début</th>
+                      <th className={thClass}>Fin</th>
+                      <th className={thClass}>Énergie</th>
+                      <th className={thClass}>Durée</th>
+                      <th className={cn(thClass, "text-right")}>Coût HT</th>
+                      <th className={cn(thClass, "text-right")}>TVA</th>
+                      <th className={cn(thClass, "text-right")}>Coût TTC</th>
+                      <th className={cn(thClass, "text-right")}>Retail TTC</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {(cdrData?.data ?? []).map((cdr) => {
+                      const loc = cdr.cdr_location as { name?: string; city?: string } | null;
+                      const token = cdr.cdr_token as { uid?: string } | null;
+                      const sourceColor = cdr.source === "gfx" ? "#4ECDC4" : cdr.source === "road" ? "#F39C12" : "#8892B0";
+                      return (
+                        <tr key={cdr.id} className="hover:bg-surface-elevated/50 transition-colors">
+                          <td className="px-4 py-3">
+                            <span className="text-xs font-mono text-foreground">{cdr.cdr_id.slice(0, 12)}…</span>
+                            {cdr.gfx_cdr_id && <p className="text-[10px] text-foreground-muted font-mono">{cdr.gfx_cdr_id.slice(0, 10)}…</p>}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold"
+                              style={{ backgroundColor: `${sourceColor}15`, color: sourceColor }}
+                            >
+                              {cdr.source?.toUpperCase() ?? "OCPI"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <p className="text-sm font-medium text-foreground truncate max-w-[140px]">{loc?.name ?? "—"}</p>
+                            {loc?.city && <p className="text-xs text-foreground-muted">{loc.city}</p>}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="text-xs font-mono text-foreground-muted">{token?.uid ?? "—"}</span>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-foreground-muted whitespace-nowrap">
+                            {formatDateTime(cdr.start_date_time)}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-foreground-muted whitespace-nowrap">
+                            {formatDateTime(cdr.end_date_time)}
+                          </td>
+                          <td className="px-4 py-3 text-sm font-semibold text-primary tabular-nums">
+                            {cdr.total_energy.toFixed(2)} kWh
+                          </td>
+                          <td className="px-4 py-3 text-sm text-foreground-muted tabular-nums">
+                            {cdr.total_time < 1
+                              ? `${Math.round(cdr.total_time * 60)}m`
+                              : `${cdr.total_time.toFixed(1)}h`}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right tabular-nums font-medium text-foreground">
+                            {cdr.total_cost.toFixed(2)} {cdr.currency}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right tabular-nums text-foreground-muted">
+                            {cdr.total_vat != null ? `${cdr.total_vat.toFixed(2)} ${cdr.currency}` : "—"}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right tabular-nums font-semibold text-foreground">
+                            {cdr.total_cost_incl_vat != null ? `${cdr.total_cost_incl_vat.toFixed(2)} ${cdr.currency}` : "—"}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right tabular-nums text-foreground-muted">
+                            {cdr.total_retail_cost_incl_vat != null ? `${cdr.total_retail_cost_incl_vat.toFixed(2)} ${cdr.currency}` : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* CDR Pagination */}
+              {(cdrData?.total ?? 0) > PAGE_SIZE && (
+                <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+                  <span className="text-xs text-foreground-muted">
+                    {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, cdrData?.total ?? 0)} sur {(cdrData?.total ?? 0).toLocaleString("fr-FR")} CDRs
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setPage((p) => Math.max(0, p - 1))}
+                      disabled={page === 0}
+                      className="p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated disabled:opacity-30 transition-colors"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setPage((p) => Math.min(Math.ceil((cdrData?.total ?? 0) / PAGE_SIZE) - 1, p + 1))}
+                      disabled={page >= Math.ceil((cdrData?.total ?? 0) / PAGE_SIZE) - 1}
+                      className="p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated disabled:opacity-30 transition-colors"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
+      )}
+
+      {/* Session detail drawer */}
+      {selectedSession && (
+        <SessionDetailDrawer
+          session={selectedSession}
+          onClose={() => setSelectedSession(null)}
+        />
       )}
     </div>
   );

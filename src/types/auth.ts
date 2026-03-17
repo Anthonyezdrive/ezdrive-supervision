@@ -6,5 +6,6 @@ export interface UserProfile {
   full_name: string | null;
   role: UserRole;
   territory: string | null;
+  cpo_id: string | null;
   created_at: string;
 }

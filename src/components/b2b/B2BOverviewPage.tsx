@@ -4,6 +4,7 @@ import {
 } from "recharts";
 import { Clock, Zap, Euro, Gauge, AlertTriangle, CheckCircle } from "lucide-react";
 import { KPICard } from "@/components/ui/KPICard";
+import { PageHelp } from "@/components/ui/PageHelp";
 import { useB2BCdrs } from "@/hooks/useB2BCdrs";
 import {
   computeKPIs, groupByMonth, formatDuration, formatDurationShort,
@@ -16,7 +17,7 @@ const MONTH_SHORT = [
   "juil", "août", "sept", "oct", "nov", "déc",
 ];
 
-const BAR_COLOR = "#00D4AA";
+const BAR_COLOR = "#9ACC0E";
 
 const tooltipStyle = {
   backgroundColor: "#111638",
@@ -57,19 +58,30 @@ export function B2BOverviewPage() {
 
   return (
     <div className="space-y-6">
+      <PageHelp
+        summary="Tableau de bord de votre consommation de recharge — KPIs et évolution mensuelle"
+        items={[
+          { label: "Volume total (kWh)", description: "Quantité totale d'énergie consommée par vos collaborateurs sur toutes les bornes." },
+          { label: "Durée totale", description: "Temps cumulé de toutes les sessions de charge de votre entreprise." },
+          { label: "Coût HT", description: "Montant total hors taxe calculé à partir des CDRs (Charge Detail Records)." },
+          { label: "Redevance", description: "Part reversée à EZDrive, calculée selon le taux défini dans votre contrat." },
+        ]}
+        tips={["Les données proviennent des CDRs GreenFlux et sont mises à jour quotidiennement."]}
+      />
+
       {/* KPI Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard
           label="Durée totale"
           value={formatDuration(kpis.totalTime)}
           icon={Clock}
-          color="#3498DB"
+          color="#00C3FF"
         />
         <KPICard
           label="Volume total"
           value={`${formatNumber(kpis.totalEnergy)} kWh`}
           icon={Zap}
-          color="#00D4AA"
+          color="#9ACC0E"
         />
         <KPICard
           label="Redevance"

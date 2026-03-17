@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { FaultDurationBadge } from "./FaultDurationBadge";
 import { StatusTimeline } from "./StatusTimeline";
@@ -9,9 +9,10 @@ import type { OCPPStatus } from "@/types/station";
 
 interface MaintenanceTableProps {
   stations: MaintenanceStation[];
+  onCreateTicket?: (stationId: string, stationName: string) => void;
 }
 
-export function MaintenanceTable({ stations }: MaintenanceTableProps) {
+export function MaintenanceTable({ stations, onCreateTicket }: MaintenanceTableProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const sorted = [...stations].sort(
@@ -94,13 +95,27 @@ export function MaintenanceTable({ stations }: MaintenanceTableProps) {
                       </div>
                     </div>
 
-                    {/* Expanded: Status Timeline */}
+                    {/* Expanded: Status Timeline + actions */}
                     {isExpanded && (
-                      <div className="px-12 pb-4 pt-1 bg-surface-elevated/30 border-t border-border/50">
+                      <div className="px-12 pb-4 pt-1 bg-surface-elevated/30 border-t border-border/50 space-y-3">
                         <p className="text-xs font-semibold text-foreground-muted mb-2 uppercase tracking-wider">
                           Historique des statuts
                         </p>
                         <StatusTimeline stationId={station.id} />
+                        {onCreateTicket && (
+                          <div className="pt-2 border-t border-border/50">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onCreateTicket(station.id, station.name);
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary bg-primary/10 border border-primary/25 rounded-lg hover:bg-primary/15 transition-colors"
+                            >
+                              <Plus className="w-3 h-3" />
+                              Créer un ticket de maintenance
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </td>

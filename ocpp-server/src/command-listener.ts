@@ -47,6 +47,10 @@ export async function startCommandListener(): Promise<void> {
     listenerClient.on('error', async (err) => {
       logger.error({ err }, 'Command listener connection error, reconnecting...');
       isListening = false;
+      // Release the pool client to avoid connection leak
+      try {
+        listenerClient?.release(true); // true = destroy the underlying connection
+      } catch (_) { /* ignore release errors */ }
       listenerClient = null;
       // Reconnect after a short delay
       setTimeout(() => startCommandListener(), 3000);

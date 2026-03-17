@@ -1,0 +1,239 @@
+PAGE1: DONNEES
+
+Volume_Moyen_par_session = 
+VAR LastYear =
+    MAXX(ALLSELECTED('B2B_EZdrive_rapport'), YEAR('B2B_EZdrive_rapport'[Start_datetime]))
+
+VAR LastMonth =
+    MAXX(
+        FILTER(
+            ALLSELECTED('B2B_EZdrive_rapport'),
+            YEAR('B2B_EZdrive_rapport'[Start_datetime]) = LastYear
+        ),
+        MONTH('B2B_EZdrive_rapport'[Start_datetime])
+    )
+
+-- Volume total pour les 3 tarifs
+VAR VolumeTotal =
+    CALCULATE(
+        SUM('B2B_EZdrive_rapport'[Volume]),
+        FILTER(
+            ALLSELECTED('B2B_EZdrive_rapport'),
+            YEAR('B2B_EZdrive_rapport'[Start_datetime]) = LastYear &&
+            MONTH('B2B_EZdrive_rapport'[Start_datetime]) = LastMonth
+        )
+    )
+
+-- Nombre d’actes pour les 3 tarifs
+VAR NbreActes =
+    CALCULATE(
+        COUNTROWS('B2B_EZdrive_rapport'),
+        FILTER(
+            ALLSELECTED('B2B_EZdrive_rapport'),
+            YEAR('B2B_EZdrive_rapport'[Start_datetime]) = LastYear &&
+            MONTH('B2B_EZdrive_rapport'[Start_datetime]) = LastMonth
+        )
+    )
+
+VAR Moyenne = DIVIDE(VolumeTotal, NbreActes)
+
+RETURN
+IF(
+    ISBLANK(Moyenne),
+    BLANK(),
+    FORMAT(Moyenne, "0.00") & " kWh"
+)
+
+Temps_réel_par_session = 
+VAR T = [Debug_Reel]
+VAR H = INT(T)
+VAR M = INT(ROUND((T - H) * 60, 0))
+RETURN FORMAT(H,"00") & ":" & FORMAT(M,"00")
+
+
+Temps_equivalent_par_session = 
+VAR T = [Debug_Equivalent]
+VAR H = INT(T)
+VAR M = INT(ROUND((T - H) * 60, 0))
+RETURN FORMAT(H,"00") & ":" & FORMAT(M,"00")
+
+Debug_Equivalent = 
+VAR NbreActes = COUNTROWS('B2B_EZdrive_rapport')
+VAR VolumeTotal = SUM('B2B_EZdrive_rapport'[Volume])
+VAR VolumeParSession = DIVIDE(VolumeTotal, NbreActes)
+RETURN DIVIDE(VolumeParSession,7.4)
+
+Debug_Reel = 
+VAR NbreActes = COUNTROWS('B2B_EZdrive_rapport')
+VAR Total =
+    SUMX(
+        'B2B_EZdrive_rapport',
+        VALUE(LEFT([Duration],2)) +
+        VALUE(MID([Duration],4,2))/60 +
+        VALUE(RIGHT([Duration],2))/3600
+    )
+RETURN DIVIDE(Total, NbreActes)
+
+
+Saturation = 
+VAR NbreActes =
+    COUNTROWS('B2B_EZdrive_rapport')
+
+VAR VolumeTotal =
+    SUM('B2B_EZdrive_rapport'[Volume])
+
+-- Temps réel total en heures décimales
+VAR TempsReel_Total =
+    SUMX(
+        'B2B_EZdrive_rapport',
+        VAR Dur = 'B2B_EZdrive_rapport'[Duration]
+        VAR p1 = FIND(":", Dur, 1, 0)
+        VAR p2 = FIND(":", Dur, p1 + 1, 0)
+        RETURN
+            IF(
+                ISBLANK(Dur) || p1 = 0,
+                0,
+                IF(
+                    p2 > 0,
+                    VALUE(LEFT(Dur, p1 - 1)) +
+                    VALUE(MID(Dur, p1 + 1, p2 - p1 - 1)) / 60 +
+                    VALUE(RIGHT(Dur, LEN(Dur) - p2)) / 3600,
+                    VALUE(LEFT(Dur, p1 - 1)) / 60 +
+                    VALUE(RIGHT(Dur, LEN(Dur) - p1)) / 3600
+                )
+            )
+    )
+
+VAR TempsReel_Moyen =
+    DIVIDE(TempsReel_Total, NbreActes)
+
+VAR VolumeParSession =
+    DIVIDE(VolumeTotal, NbreActes)
+
+VAR TempsEquivalent_Moyen =
+    DIVIDE(VolumeParSession, 7.4)
+
+RETURN
+DIVIDE(
+    TempsReel_Moyen - TempsEquivalent_Moyen,
+    TempsReel_Moyen
+)
+
+saturation_tempréel_par_équival_HTML = 
+VAR Reel = [Debug_Reel]
+VAR Equiv = [Debug_Equivalent]
+
+-- % temps ventouse
+VAR Ventouse =
+    DIVIDE(Reel - Equiv, Reel)
+
+RETURN
+SWITCH(
+    TRUE(),
+    Ventouse > 0.4,
+        "<span style='color:red'>❌ % temps du session en ventouse</span>",
+    Ventouse <0.4,
+        "<span style='color:blue'>ℹ️ Temps optimal</span>",
+        "<span style='color:green'>✅ TOP</span>"
+)
+
+Redevance (€) = 
+CALCULATE(
+    SUM('B2B_EZdrive_rapport'[Public_Retail_Cost_Without_Vat]),
+    'B2B_EZdrive_rapport'[Public_Retail_Cost_Without_Vat] <> 0
+) * 0.33     
+
+
+Volume_Total = 
+VAR Valeur = 
+    COALESCE(
+        CALCULATE(
+            SUM('B2B_EZdrive_rapport'[Volume]),
+            'B2B_EZdrive_rapport'[Volume] <> 0
+            
+        ),
+        0
+    )
+RETURN
+FORMAT(Valeur, "0.00") & " kWh"
+
+
+Durée_totale = 
+VAR TotalHeures =
+    SUMX(
+        'B2B_EZdrive_rapport',
+        VAR Dur = 'B2B_EZdrive_rapport'[Duration]
+        VAR H =
+            IFERROR(VALUE(LEFT(Dur, FIND(":", Dur) - 1)), 0)
+        VAR M =
+            IFERROR(VALUE(MID(Dur, FIND(":", Dur) + 1, 2)), 0)
+        VAR S =
+            IFERROR(VALUE(RIGHT(Dur, 2)), 0)
+        RETURN
+            IF(
+                ISBLANK(Dur),
+                0,
+                H + M / 60 + S / 3600
+            )
+    )
+
+VAR Heures = INT(TotalHeures)
+VAR Minutes = INT((TotalHeures - Heures) * 60)
+
+RETURN 
+FORMAT(Heures, "00") & "h" & FORMAT(Minutes, "00") & "min"
+
+
+PAGE2: RAPPORT MENSUEL 
+Durée_totale = MEME POUR DONNEES
+VOLUME TOTAL= MEME POUR DONNEES
+Volume (KWh) avec tarif = 
+CALCULATE(
+    SUM('B2B_EZdrive_rapport'[Volume]),
+    'B2B_EZdrive_rapport'[Public_Retail_Cost_Without_Vat] <> 0 &&
+    'B2B_EZdrive_rapport'[Customer_Name] <> "Employés EZdrive"
+)
+Volume (KWh) avec tarif gratuit = 
+CALCULATE(
+    SUM('B2B_EZdrive_rapport'[Volume]),
+    FILTER(
+        'B2B_EZdrive_rapport',
+        'B2B_EZdrive_rapport'[Public_Retail_Cost_Without_Vat] = 0 &&
+        'B2B_EZdrive_rapport'[Volume] > 0.5 &&
+        'B2B_EZdrive_rapport'[Customer_Name] <> "Employés EZdrive" &&
+        'B2B_EZdrive_rapport'[Emsp_Contract_CountryParty] IN { "FR-GFX", "FR-TOT", "GF-APP" }
+    )
+)
+
+
+
+PAGE3: PAR BORNE 
+
+CHARGE POINT ID
+VOLUME TOTAL
+SATURATION 
+DUREE TOTAL 
+CO2_evite = 
+VAR VolumeTotal = SUM('B2B_EZdrive_rapport'[Volume])
+VAR CO2_thermique = (VolumeTotal / 1.98) * 2.34
+VAR CO2_electrique = VolumeTotal * 0.84
+RETURN
+CO2_thermique - CO2_electrique
+
+
+PAGE4 PAR CODUCTEUR 
+
+NOM DU DRIVER 
+PRENOM DU DRIVER 
+TOKEN VISUAL NUMBER   
+
+
+Volume (KWh) avec tarif = 
+CALCULATE(
+    SUM('B2B_EZdrive_rapport'[Volume]),
+    'B2B_EZdrive_rapport'[Public_Retail_Cost_Without_Vat] <> 0 &&
+    'B2B_EZdrive_rapport'[Customer_Name] <> "Employés EZdrive"
+)
+
+
+*** LES DONNEES QUI ONT PAS DE DAX SONT SELECTIONNE DIRECTEMENT D'APRES LES CDRS GFX****

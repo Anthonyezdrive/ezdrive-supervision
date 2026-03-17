@@ -59,11 +59,28 @@ export interface B2BMonthlyRow {
 
 export interface B2BChargePointRow {
   chargePointId: string;
+  siteName: string;
   volume: number;
   duration: number;
   saturation: number;
   co2Evite: number;
   sessionCount: number;
+  // Enriched from stations table
+  vendor: string | null;
+  model: string | null;
+  maxPowerKw: number | null;
+  connectivityStatus: string | null;
+  firmwareVersion: string | null;
+}
+
+export interface B2BStationLookup {
+  evse_uid: string;
+  name: string;
+  charge_point_vendor: string | null;
+  charge_point_model: string | null;
+  max_power_kw: number | null;
+  connectivity_status: string | null;
+  firmware_version: string | null;
 }
 
 export interface B2BDriverRow {

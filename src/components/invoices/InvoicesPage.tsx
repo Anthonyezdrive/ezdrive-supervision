@@ -1,5 +1,6 @@
 import { useMemo, useCallback, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { PageHelp } from "@/components/ui/PageHelp";
 import {
   FileText,
   Download,
@@ -10,10 +11,13 @@ import {
   ChevronRight,
   FileDown,
   Receipt,
+  Loader2,
+  Calendar,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
+import { apiDownload, apiPost } from "@/lib/api";
 // ErrorState not needed — query never throws (returns [] on error)
 
 interface Invoice {
@@ -232,8 +236,11 @@ function InvoiceKPISkeleton() {
 // ---------------------------------------------------------------------------
 
 export function InvoicesPage() {
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<StatusFilter>("all");
   const [page, setPage] = useState(0);
+  const [showGenerateModal, setShowGenerateModal] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   // --- Data fetching (direct Supabase) --------------------------------
   // NOTE: The 'invoices' table has not yet been created (pending migration 022).
@@ -342,9 +349,24 @@ export function InvoicesPage() {
     URL.revokeObjectURL(url);
   }, [invoices]);
 
-  const handleDownloadPDF = useCallback(async (_invoiceId: string) => {
-    // TODO: Implement PDF generation via Edge Function
-    alert("La génération PDF sera disponible prochainement.");
+  const [pdfLoading, setPdfLoading] = useState<string | null>(null);
+
+  const handleDownloadPDF = useCallback(async (invoiceId: string) => {
+    setPdfLoading(invoiceId);
+    try {
+      const { blob, filename } = await apiDownload(`invoices/${invoiceId}/pdf`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("[InvoicesPage] PDF download error:", err);
+      alert("Erreur lors du téléchargement du PDF.");
+    } finally {
+      setPdfLoading(null);
+    }
   }, []);
 
   // --- Render ---------------------------------------------------------
@@ -363,6 +385,20 @@ export function InvoicesPage() {
             Gestion de la facturation
           </p>
         </div>
+      </div>
+
+      <PageHelp
+        summary="Facturation des sessions de charge — suivi des paiements et relances"
+        items={[
+          { label: "Facture", description: "Document généré automatiquement après chaque session ou en fin de mois selon le mode de facturation." },
+          { label: "Statut", description: "Draft (brouillon), Sent (envoyée), Paid (payée), Overdue (en retard), Cancelled (annulée)." },
+          { label: "Montant", description: "Calculé à partir de l'énergie consommée × tarif applicable + TVA." },
+          { label: "Export comptable", description: "Téléchargez les factures au format CSV ou PDF pour votre logiciel comptable." },
+        ]}
+      />
+
+      {/* ── Header Actions ─────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-end gap-2">
         <div className="flex items-center gap-2">
           <button
             onClick={handleExportCSV}
@@ -373,6 +409,7 @@ export function InvoicesPage() {
             Exporter CSV
           </button>
           <button
+            onClick={() => setShowGenerateModal(true)}
             disabled={isLoading}
             className="flex items-center gap-2 px-4 py-2 bg-primary/10 border border-primary/20 text-primary rounded-xl text-sm font-medium hover:bg-primary/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
@@ -582,10 +619,15 @@ export function InvoicesPage() {
                     <td className="px-4 py-3.5">
                       <button
                         onClick={() => handleDownloadPDF(inv.id)}
+                        disabled={pdfLoading === inv.id}
                         title="Télécharger PDF"
-                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated transition-all"
+                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated transition-all disabled:opacity-50"
                       >
-                        <FileDown className="w-4 h-4" />
+                        {pdfLoading === inv.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <FileDown className="w-4 h-4" />
+                        )}
                       </button>
                     </td>
                   </tr>
@@ -638,6 +680,131 @@ export function InvoicesPage() {
           )}
         </div>
       )}
+
+      {/* ── Generate Invoices Modal ────────────────────────────── */}
+      {showGenerateModal && (
+        <GenerateInvoicesModal
+          generating={generating}
+          onClose={() => setShowGenerateModal(false)}
+          onGenerate={async (periodStart, periodEnd) => {
+            setGenerating(true);
+            try {
+              const result = await apiPost<{ generated: number }>("invoices/generate", {
+                period_start: periodStart,
+                period_end: periodEnd,
+              });
+              setShowGenerateModal(false);
+              queryClient.invalidateQueries({ queryKey: ["invoices"] });
+              alert(`${result.generated} facture(s) générée(s) avec succès.`);
+            } catch (err) {
+              console.error("[InvoicesPage] Generate error:", err);
+              alert("Erreur lors de la génération des factures.");
+            } finally {
+              setGenerating(false);
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Generate Invoices Modal
+// ---------------------------------------------------------------------------
+
+function GenerateInvoicesModal({
+  generating,
+  onClose,
+  onGenerate,
+}: {
+  generating: boolean;
+  onClose: () => void;
+  onGenerate: (periodStart: string, periodEnd: string) => void;
+}) {
+  // Default: previous month
+  const now = new Date();
+  const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastMonth = new Date(firstOfMonth);
+  lastMonth.setMonth(lastMonth.getMonth() - 1);
+  const endLastMonth = new Date(firstOfMonth);
+  endLastMonth.setDate(endLastMonth.getDate() - 1);
+
+  const [periodStart, setPeriodStart] = useState(
+    lastMonth.toISOString().slice(0, 10)
+  );
+  const [periodEnd, setPeriodEnd] = useState(
+    endLastMonth.toISOString().slice(0, 10)
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl">
+        <h2 className="text-lg font-heading font-bold text-foreground mb-1">
+          Générer les factures
+        </h2>
+        <p className="text-sm text-foreground-muted mb-5">
+          Génère automatiquement les factures pour toutes les sessions complétées sur la période sélectionnée.
+        </p>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-foreground-muted mb-1">
+              Début de période
+            </label>
+            <div className="relative">
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted pointer-events-none" />
+              <input
+                type="date"
+                value={periodStart}
+                onChange={(e) => setPeriodStart(e.target.value)}
+                className="w-full pl-10 pr-3 py-2.5 bg-background border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-primary"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-foreground-muted mb-1">
+              Fin de période
+            </label>
+            <div className="relative">
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted pointer-events-none" />
+              <input
+                type="date"
+                value={periodEnd}
+                onChange={(e) => setPeriodEnd(e.target.value)}
+                className="w-full pl-10 pr-3 py-2.5 bg-background border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-primary"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 mt-6">
+          <button
+            onClick={onClose}
+            disabled={generating}
+            className="px-4 py-2 text-sm text-foreground-muted hover:text-foreground transition-colors"
+          >
+            Annuler
+          </button>
+          <button
+            onClick={() => onGenerate(periodStart, periodEnd)}
+            disabled={generating || !periodStart || !periodEnd}
+            className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+          >
+            {generating ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Génération...
+              </>
+            ) : (
+              <>
+                <Receipt className="w-4 h-4" />
+                Générer
+              </>
+            )}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

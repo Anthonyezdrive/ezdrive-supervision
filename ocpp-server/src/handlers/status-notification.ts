@@ -6,6 +6,7 @@
 
 import { query, queryOne } from '../db';
 import { logger } from '../index';
+import { computeStationStatus } from '../services/station-sync';
 
 interface StatusNotificationParams {
   connectorId: number;
@@ -47,8 +48,13 @@ export async function handleStatusNotification(
 
     // Update station status (if linked)
     if (cp.station_id) {
-      // For connectorId 0 (chargepoint-level), or if it's the only connector,
-      // update the main station status
+      // ── Capture old status BEFORE any update (for status log) ──
+      const oldStation = await queryOne<{ ocpp_status: string }>(
+        `SELECT ocpp_status FROM stations WHERE id = $1`,
+        [cp.station_id]
+      );
+      const oldStatus = oldStation?.ocpp_status || 'Unknown';
+
       if (connectorId === 0) {
         // Chargepoint-level status: only update if it's a critical status
         if (['Unavailable', 'Faulted'].includes(normalizedStatus)) {
@@ -69,19 +75,7 @@ export async function handleStatusNotification(
           );
         }
       } else {
-        // Connector-level status: update the station's main status
-        // The station status reflects the "best" status across all connectors
-        await query(
-          `UPDATE stations
-           SET ocpp_status = $1::text,
-               status_since = COALESCE($2::timestamptz, now()),
-               is_online = true,
-               last_synced_at = now()
-           WHERE id = $3::uuid`,
-          [normalizedStatus, timestamp || null, cp.station_id]
-        );
-
-        // Update connectors JSONB to track per-connector status
+        // ── Update connectors JSONB FIRST to track per-connector status ──
         await query(
           `UPDATE stations
            SET connectors = (
@@ -96,21 +90,33 @@ export async function handleStatusNotification(
            WHERE id = $1::uuid AND connectors IS NOT NULL AND jsonb_array_length(connectors) > 0`,
           [cp.station_id, connectorId, normalizedStatus, errorCode]
         );
-      }
-    }
 
-    // Log status change to station_status_log
-    if (cp.station_id) {
-      await query(
-        `INSERT INTO station_status_log (station_id, old_status, new_status, source)
-         VALUES ($1,
-           (SELECT ocpp_status FROM stations WHERE id = $1),
-           $2, 'ocpp')
-         ON CONFLICT DO NOTHING`,
-        [cp.station_id, normalizedStatus]
-      ).catch(() => {
-        // station_status_log might not exist, that's OK
-      });
+        // ── Compute aggregate station status from ALL connectors ──
+        const bestStatus = await computeStationStatus(cp.station_id);
+        const isOnline = !['Faulted', 'Unavailable'].includes(bestStatus);
+
+        await query(
+          `UPDATE stations
+           SET ocpp_status = $1::text,
+               status_since = COALESCE($2::timestamptz, now()),
+               is_online = $3::boolean,
+               last_synced_at = now()
+           WHERE id = $4::uuid`,
+          [bestStatus, timestamp || null, isOnline, cp.station_id]
+        );
+      }
+
+      // ── Log status change (using old_status captured BEFORE the update) ──
+      if (oldStatus !== normalizedStatus) {
+        await query(
+          `INSERT INTO station_status_log (station_id, old_status, new_status, source)
+           VALUES ($1, $2, $3, 'ocpp')
+           ON CONFLICT DO NOTHING`,
+          [cp.station_id, oldStatus, normalizedStatus]
+        ).catch(() => {
+          // station_status_log might not exist, that's OK
+        });
+      }
     }
 
     // Log error codes

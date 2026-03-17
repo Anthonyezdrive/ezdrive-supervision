@@ -2,10 +2,12 @@ import { useMemo } from "react";
 import { BarChart2, Download, TrendingUp, AlertTriangle, CheckCircle } from "lucide-react";
 import { useSLAByTerritory, useSLAByCPO } from "@/hooks/useSLAData";
 import { useStations } from "@/hooks/useStations";
+import { useCpo } from "@/contexts/CpoContext";
 import { downloadCSV, todayISO } from "@/lib/export";
 import { cn } from "@/lib/utils";
 import { SLARowSkeleton, CardSkeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { PageHelp } from "@/components/ui/PageHelp";
 
 function AvailBar({ pct }: { pct: number }) {
   const color =
@@ -32,9 +34,10 @@ function AvailBar({ pct }: { pct: number }) {
 }
 
 export function AnalyticsPage() {
-  const { data: territories = [], isLoading: loadTerr, isError: errTerr, refetch: refetchTerr } = useSLAByTerritory();
-  const { data: cpos = [], isLoading: loadCPO, isError: errCPO, refetch: refetchCPO } = useSLAByCPO();
-  const { data: stations = [] } = useStations();
+  const { selectedCpoId } = useCpo();
+  const { data: territories = [], isLoading: loadTerr, isError: errTerr, refetch: refetchTerr } = useSLAByTerritory(selectedCpoId);
+  const { data: cpos = [], isLoading: loadCPO, isError: errCPO, refetch: refetchCPO } = useSLAByCPO(selectedCpoId);
+  const { data: stations = [] } = useStations(selectedCpoId);
 
   // Global SLA
   const globalPct = useMemo(() => {
@@ -119,6 +122,17 @@ export function AnalyticsPage() {
           </button>
         </div>
       </div>
+
+      <PageHelp
+        summary="Analyse de performance et suivi des SLA de votre réseau de bornes"
+        items={[
+          { label: "Taux de disponibilité", description: "Pourcentage de temps où les bornes sont opérationnelles (Available + Charging) vs total." },
+          { label: "SLA", description: "Service Level Agreement — objectif contractuel de disponibilité (généralement 95-99%)." },
+          { label: "Temps moyen de résolution", description: "Durée moyenne entre la détection d'une panne et sa résolution." },
+          { label: "Graphiques temporels", description: "Évolution des métriques sur la période sélectionnée (jour, semaine, mois)." },
+        ]}
+        tips={["Les données sont calculées à partir des changements de statut OCPP enregistrés par le serveur."]}
+      />
 
       {isLoading ? (
         <>

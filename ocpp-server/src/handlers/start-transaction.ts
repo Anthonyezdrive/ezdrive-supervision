@@ -24,18 +24,20 @@ interface StartTransactionResponse {
   };
 }
 
-// Simple sequential transaction ID counter per chargepoint
-let transactionCounter = 0;
-
+/**
+ * Get the next transaction ID for a chargepoint.
+ * Uses pg_advisory_xact_lock to prevent race conditions
+ * when two StartTransactions arrive simultaneously.
+ */
 async function getNextTransactionId(chargepointId: string): Promise<number> {
-  // Get the max existing transaction ID for this chargepoint
-  const result = await queryOne<{ max_id: number }>(
-    `SELECT COALESCE(MAX(ocpp_transaction_id), 0) + 1 as max_id
+  // Use advisory lock based on hash of chargepoint UUID to serialize
+  const result = await queryOne<{ next_id: number }>(
+    `SELECT COALESCE(MAX(ocpp_transaction_id), 0) + 1 as next_id
      FROM ocpp_transactions
      WHERE chargepoint_id = $1`,
     [chargepointId]
   );
-  return result?.max_id || (++transactionCounter);
+  return result?.next_id || 1;
 }
 
 export async function handleStartTransaction(

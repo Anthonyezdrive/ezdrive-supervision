@@ -25,6 +25,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { KPICard } from "@/components/ui/KPICard";
+import { PageHelp } from "@/components/ui/PageHelp";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -410,6 +411,16 @@ export function EmspsPage() {
           Nouvel eMSP
         </button>
       </div>
+
+      <PageHelp
+        summary="Liste des eMSP (fournisseurs de mobilité) connectés à votre réseau"
+        items={[
+          { label: "eMSP", description: "Opérateur qui gère des clients conducteurs et leur donne accès à votre réseau de bornes." },
+          { label: "Tokens", description: "Badges et identifiants émis par l'eMSP pour authentifier ses clients sur vos bornes." },
+          { label: "Sessions", description: "Historique des charges effectuées par les clients de cet eMSP sur vos bornes." },
+          { label: "Facturation", description: "Montants facturés à cet eMSP pour l'utilisation de vos bornes par ses clients." },
+        ]}
+      />
 
       {/* KPIs */}
       {isLoading ? (

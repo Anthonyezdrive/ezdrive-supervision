@@ -1,23 +1,38 @@
-import { useState, useMemo } from "react";
-import { Download } from "lucide-react";
+import { useState, useMemo, useCallback } from "react";
+import { Download, Plus } from "lucide-react";
 import { useStations } from "@/hooks/useStations";
 import { useCPOs } from "@/hooks/useCPOs";
 import { useTerritories } from "@/hooks/useTerritories";
+import { useCpo } from "@/contexts/CpoContext";
+import { useQueryClient } from "@tanstack/react-query";
 import { FilterBar } from "@/components/ui/FilterBar";
 import { StationTable } from "./StationTable";
 import { StationDetailDrawer } from "./StationDetailDrawer";
+import { StationFormModal } from "./StationFormModal";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { DEFAULT_FILTERS, type StationFilters } from "@/types/filters";
 import type { Station } from "@/types/station";
 import { downloadCSV, todayISO } from "@/lib/export";
+import { PageHelp } from "@/components/ui/PageHelp";
 
 export function StationsPage() {
-  const { data: stations, isLoading, isError, refetch } = useStations();
+  const { selectedCpoId } = useCpo();
+  const { data: stations, isLoading, isError, refetch } = useStations(selectedCpoId);
   const { data: cpos } = useCPOs();
   const { data: territories } = useTerritories();
+  const queryClient = useQueryClient();
   const [filters, setFilters] = useState<StationFilters>(DEFAULT_FILTERS);
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editStation, setEditStation] = useState<Station | null>(null);
+
+  const handleStationUpdated = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["stations"] });
+    setSelectedStation(null);
+    setEditStation(null);
+    setShowCreateModal(false);
+  }, [queryClient]);
 
   function handleExport() {
     const rows = (filtered ?? []).map((s) => ({
@@ -28,8 +43,16 @@ export function StationsPage() {
       Territoire: s.territory_name ?? "",
       CPO: s.cpo_name ?? "",
       Statut: s.ocpp_status,
+      Connexion: s.connectivity_status ?? "",
       "En ligne": s.is_online ? "Oui" : "Non",
       "Puissance (kW)": s.max_power_kw ?? "",
+      Fabricant: s.charge_point_vendor ?? "",
+      Modèle: s.charge_point_model ?? "",
+      Firmware: s.firmware_version ?? "",
+      Protocole: s.protocol_version ?? "",
+      "Type borne": s.charger_type ?? "",
+      Vitesse: s.charging_speed ?? "",
+      "Remote Start/Stop": s.remote_manageable ? "Oui" : "Non",
       "Heures dans statut": s.hours_in_status != null ? Math.round(s.hours_in_status) : "",
       "Dernière sync": s.last_synced_at ?? "",
     }));
@@ -71,8 +94,26 @@ export function StationsPage() {
             <Download className="w-3.5 h-3.5" />
             Export CSV
           </button>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Nouvelle borne
+          </button>
         </div>
       </div>
+
+      <PageHelp
+        summary="Vue temps réel de toutes vos bornes de recharge avec filtres et export"
+        items={[
+          { label: "Filtres", description: "Filtrez par CPO, territoire, statut OCPP ou recherchez par nom/adresse." },
+          { label: "Statuts OCPP", description: "Available (libre), Charging (en charge), Faulted (en panne), Unavailable (hors service), Preparing/Finishing (en transition)." },
+          { label: "Fiche détaillée", description: "Cliquez sur une borne pour ouvrir sa fiche avec tous ses détails techniques (firmware, connecteurs, historique)." },
+          { label: "Export CSV", description: "Le bouton Export télécharge la liste filtrée au format CSV pour Excel." },
+        ]}
+        tips={["Les bornes se synchronisent toutes les 5 minutes via GreenFlux. Le statut 'Faulted' nécessite une intervention terrain."]}
+      />
 
       <FilterBar
         filters={filters}
@@ -101,6 +142,19 @@ export function StationsPage() {
         <StationDetailDrawer
           station={selectedStation}
           onClose={() => setSelectedStation(null)}
+          onEdit={(s) => { setSelectedStation(null); setEditStation(s); }}
+          onDeleted={handleStationUpdated}
+        />
+      )}
+
+      {/* Create / Edit Modal */}
+      {(showCreateModal || editStation) && (
+        <StationFormModal
+          station={editStation ?? undefined}
+          cpos={cpos ?? []}
+          territories={territories ?? []}
+          onClose={() => { setShowCreateModal(false); setEditStation(null); }}
+          onSaved={handleStationUpdated}
         />
       )}
     </div>

@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
+import { PageHelp } from "@/components/ui/PageHelp";
 import {
   CreditCard,
   Users,
@@ -247,6 +248,16 @@ export function SubscriptionsPage() {
           Gestion des abonnements clients
         </p>
       </div>
+
+      <PageHelp
+        summary="Gestion des abonnements et forfaits proposés à vos clients"
+        items={[
+          { label: "Plans", description: "Les différentes formules d'abonnement (mensuel, annuel) avec leurs avantages." },
+          { label: "Statut", description: "Active (en cours), Expired (expiré), Cancelled (annulé), Pending (en attente de paiement)." },
+          { label: "Renouvellement", description: "Les abonnements se renouvellent automatiquement sauf annulation par le client." },
+          { label: "Revenus récurrents", description: "MRR (Monthly Recurring Revenue) calculé à partir des abonnements actifs." },
+        ]}
+      />
 
       {/* KPI Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

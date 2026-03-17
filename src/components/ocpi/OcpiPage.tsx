@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { PageHelp } from "@/components/ui/PageHelp";
 import { KPICard } from "@/components/ui/KPICard";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import {
@@ -265,6 +266,17 @@ export function OcpiPage() {
           </button>
         </div>
       </div>
+
+      <PageHelp
+        summary="Gestion du protocole OCPI pour le roaming et l'interopérabilité entre réseaux"
+        items={[
+          { label: "OCPI", description: "Open Charge Point Interface — protocole standard pour l'échange de données entre opérateurs de recharge." },
+          { label: "Credentials", description: "Clés d'authentification échangées entre votre plateforme et les opérateurs partenaires." },
+          { label: "Endpoints", description: "URLs exposées pour que les partenaires puissent consulter vos bornes, tarifs et sessions." },
+          { label: "CDRs", description: "Charge Detail Records — relevés détaillés de chaque session, échangés entre opérateurs pour la facturation." },
+        ]}
+        tips={["Le roaming permet aux conducteurs d'autres réseaux de charger sur vos bornes, et vice versa."]}
+      />
 
       {/* Connection Status */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

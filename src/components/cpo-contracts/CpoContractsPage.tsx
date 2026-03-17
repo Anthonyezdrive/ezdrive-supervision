@@ -26,6 +26,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { KPICard } from "@/components/ui/KPICard";
+import { PageHelp } from "@/components/ui/PageHelp";
 
 // -- Types ----------------------------------------------------
 
@@ -394,6 +395,16 @@ export function CpoContractsPage() {
           Nouveau contrat
         </button>
       </div>
+
+      <PageHelp
+        summary="Contrats commerciaux avec vos partenaires eMSP pour le roaming"
+        items={[
+          { label: "Contrat", description: "Accord commercial définissant les tarifs de roaming entre vous (CPO) et un eMSP partenaire." },
+          { label: "Tarif roaming", description: "Prix facturé à l'eMSP pour chaque kWh consommé par ses clients sur vos bornes." },
+          { label: "Commission", description: "Pourcentage ou montant fixe retenu par la plateforme de roaming (hub)." },
+          { label: "Période", description: "Dates de validité du contrat et conditions de renouvellement." },
+        ]}
+      />
 
       {/* KPIs */}
       {isLoading ? (

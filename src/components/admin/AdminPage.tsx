@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { Tag, Search, CheckCircle, Loader2, ChevronDown } from "lucide-react";
+import { PageHelp } from "@/components/ui/PageHelp";
 import { useStations } from "@/hooks/useStations";
 import { useCPOs } from "@/hooks/useCPOs";
 import { useTerritories } from "@/hooks/useTerritories";
@@ -81,6 +82,17 @@ export function AdminPage() {
           </span>
         )}
       </div>
+
+      <PageHelp
+        summary="Panneau d'administration pour la gestion des CPO, territoires et configurations"
+        items={[
+          { label: "CPO", description: "Charge Point Operator — entité qui gère un ensemble de bornes. Ajoutez ou modifiez les CPO ici." },
+          { label: "Territoires", description: "Zones géographiques (Martinique, Guadeloupe, Guyane, Réunion) regroupant les bornes." },
+          { label: "Synchronisation GFX", description: "Déclenchez une synchronisation manuelle avec GreenFlux pour mettre à jour les bornes." },
+          { label: "Configuration", description: "Paramètres globaux du système de supervision." },
+        ]}
+        tips={["Seuls les utilisateurs avec le rôle Admin ou Opérateur ont accès à cette page."]}
+      />
 
       {/* Résumé CPO */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

@@ -11,6 +11,7 @@ import {
   Send,
   Key,
 } from "lucide-react";
+import { PageHelp } from "@/components/ui/PageHelp";
 import {
   useAlertConfig,
   useUpdateAlertConfig,
@@ -111,6 +112,16 @@ export function SettingsPage() {
           Configuration des alertes automatiques de maintenance
         </p>
       </div>
+
+      <PageHelp
+        summary="Paramètres généraux de la plateforme EZDrive Supervision"
+        items={[
+          { label: "Profil", description: "Nom, email et mot de passe de votre compte administrateur." },
+          { label: "Notifications", description: "Configurer les alertes email pour les pannes, sessions anormales, etc." },
+          { label: "API", description: "Clés d'API pour l'intégration avec des systèmes tiers." },
+          { label: "Apparence", description: "Personnalisation de l'interface (thème, langue, fuseau horaire)." },
+        ]}
+      />
 
       {/* Card alertes */}
       <div className="bg-surface border border-border rounded-2xl divide-y divide-border">

@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ToastProvider } from "@/contexts/ToastContext";
+import { CpoProvider } from "@/contexts/CpoContext";
 import { AppShell } from "@/components/layout/AppShell";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 import { LoginPage } from "@/components/auth/LoginPage";
@@ -53,6 +54,14 @@ import { B2BOverviewPage } from "@/components/b2b/B2BOverviewPage";
 import { B2BMonthlyPage } from "@/components/b2b/B2BMonthlyPage";
 import { B2BChargepointsPage } from "@/components/b2b/B2BChargepointsPage";
 import { B2BDriversPage } from "@/components/b2b/B2BDriversPage";
+// ── Login B2B dédié ──────────────────────────────────────
+import { B2BLoginPage } from "@/components/auth/B2BLoginPage";
+import { ResetPasswordPage } from "@/components/auth/ResetPasswordPage";
+// ── Stripe Connect (public) ──────────────────────────────
+import { StripeOnboardingCompletePage } from "@/components/stripe/StripeOnboardingCompletePage";
+import { StripeOnboardingRefreshPage } from "@/components/stripe/StripeOnboardingRefreshPage";
+// ── Landing commerciale B2B ─────────────────────────────
+import { B2BLandingPage } from "@/components/commercial/B2BLandingPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -68,9 +77,16 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <ToastProvider>
+        <CpoProvider>
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/portail" element={<B2BLoginPage />} />
+            <Route path="/offre-b2b" element={<B2BLandingPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
+            {/* Stripe Connect onboarding (public — CPO redirect) */}
+            <Route path="/stripe/onboarding/complete" element={<StripeOnboardingCompletePage />} />
+            <Route path="/stripe/onboarding/refresh" element={<StripeOnboardingRefreshPage />} />
             <Route element={<ProtectedRoute />}>
               <Route element={<AppShell />}>
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -127,6 +143,7 @@ export default function App() {
             </Route>
           </Routes>
         </BrowserRouter>
+        </CpoProvider>
         </ToastProvider>
       </AuthProvider>
     </QueryClientProvider>

@@ -16,23 +16,28 @@ import {
 import { supabase } from "@/lib/supabase";
 import { useStationKPIs } from "@/hooks/useStationKPIs";
 import { useStations } from "@/hooks/useStations";
+import { useCpo } from "@/contexts/CpoContext";
 import { TerritoryChart } from "./TerritoryChart";
 import { CPOChart } from "./CPOChart";
 import { KPISkeleton, Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { cn } from "@/lib/utils";
+import { PageHelp } from "@/components/ui/PageHelp";
 
 // ============================================================
 // Business Overview Dashboard — GreenFlux-style
 // ============================================================
 
 export function DashboardPage() {
-  const { data: kpis, isLoading, isError, refetch } = useStationKPIs();
-  const { data: stations } = useStations();
+  const { selectedCpoId } = useCpo();
+  const { data: kpis, isLoading, isError, refetch } = useStationKPIs(selectedCpoId);
+  const { data: stations } = useStations(selectedCpoId);
 
   // Extra metrics for business overview
+  // TODO: ocpp_transactions, consumer_profiles, invoices, user_subscriptions queries
+  // need future CPO scoping (join through stations.cpo_id or a cpo_id column)
   const { data: businessMetrics } = useQuery({
-    queryKey: ["dashboard-business-metrics"],
+    queryKey: ["dashboard-business-metrics", selectedCpoId ?? "all"],
     retry: false,
     queryFn: async () => {
       // Each query may fail independently (table may not exist) — handle gracefully
@@ -70,13 +75,17 @@ export function DashboardPage() {
 
   // Recent sessions
   const { data: recentSessions } = useQuery({
-    queryKey: ["dashboard-recent-sessions"],
+    queryKey: ["dashboard-recent-sessions", selectedCpoId ?? "all"],
     retry: false,
     queryFn: async () => {
       try {
-        const { data, error } = await supabase
+        let query = supabase
           .from("ocpp_transactions")
-          .select("id, chargepoint_id, connector_id, status, started_at, stopped_at, energy_kwh, stations(name, city)")
+          .select("id, chargepoint_id, connector_id, status, started_at, stopped_at, energy_kwh, stations(name, city, cpo_id)");
+        if (selectedCpoId) {
+          query = query.eq("stations.cpo_id", selectedCpoId);
+        }
+        const { data, error } = await query
           .order("started_at", { ascending: false })
           .limit(5);
         if (error) { console.warn("[Dashboard] recent sessions:", error.message); return []; }
@@ -147,6 +156,17 @@ export function DashboardPage() {
           <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse-dot" />
         </div>
       </div>
+
+      <PageHelp
+        summary="Votre tableau de bord centralise les KPIs clés de votre réseau de bornes"
+        items={[
+          { label: "KPIs en temps réel", description: "Les indicateurs se rafraîchissent automatiquement. Vert = opérationnel, rouge = défaut, orange = avertissement." },
+          { label: "Carte des statuts", description: "Vue rapide du nombre de bornes par statut OCPP (Available, Charging, Faulted, etc.)." },
+          { label: "Métriques business", description: "Sessions totales, énergie distribuée, revenus et abonnements actifs." },
+          { label: "Répartition géographique", description: "Les graphiques montrent la distribution par territoire et par CPO." },
+        ]}
+        tips={["Cliquez sur une section du menu latéral pour accéder aux détails de chaque rubrique."]}
+      />
 
       {/* Station Status KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">

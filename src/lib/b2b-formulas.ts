@@ -4,6 +4,8 @@
  */
 
 import type { B2BCdr, B2BMonthlyRow, B2BChargePointRow, B2BDriverRow } from "@/types/b2b";
+import type { StationLookupMaps } from "@/hooks/useB2BStationLookup";
+import { resolveStation } from "@/hooks/useB2BStationLookup";
 
 const MONTH_LABELS = [
   "janvier", "février", "mars", "avril", "mai", "juin",
@@ -167,19 +169,23 @@ export function groupByMonth(cdrs: B2BCdr[], redevanceRate: number): B2BMonthlyR
   return rows;
 }
 
-/** Group CDRs by charge point → B2BChargePointRow[] */
-export function groupByChargePoint(cdrs: B2BCdr[]): B2BChargePointRow[] {
-  const map = new Map<string, B2BCdr[]>();
+/** Group CDRs by charge point → B2BChargePointRow[] (enriched with station hardware data) */
+export function groupByChargePoint(
+  cdrs: B2BCdr[],
+  stationLookup?: StationLookupMaps | null
+): B2BChargePointRow[] {
+  const map = new Map<string, { cdrs: B2BCdr[]; locationName: string }>();
 
   for (const cdr of cdrs) {
     // Use first EVSE ID, or location name as fallback
     const evses = cdr.cdr_location?.evses;
     const cpId = evses?.[0]?.evse_id ?? evses?.[0]?.uid ?? cdr.cdr_location?.name ?? "Inconnu";
-    if (!map.has(cpId)) map.set(cpId, []);
-    map.get(cpId)!.push(cdr);
+    const locName = cdr.cdr_location?.name ?? "";
+    if (!map.has(cpId)) map.set(cpId, { cdrs: [], locationName: locName });
+    map.get(cpId)!.cdrs.push(cdr);
   }
 
-  return Array.from(map.entries()).map(([chargePointId, cpCdrs]) => {
+  return Array.from(map.entries()).map(([chargePointId, { cdrs: cpCdrs, locationName }]) => {
     const volume = cpCdrs.reduce((s, c) => s + c.total_energy, 0);
     const duration = cpCdrs.reduce((s, c) => s + c.total_time, 0);
     const count = cpCdrs.length;
@@ -187,13 +193,23 @@ export function groupByChargePoint(cdrs: B2BCdr[]): B2BChargePointRow[] {
     const avgRealTime = count > 0 ? duration / count : 0;
     const avgEquivTime = computeTempsEquivalent(avgEnergy);
 
+    // Enrich with station hardware data
+    const station = resolveStation(chargePointId, locationName, stationLookup);
+
     return {
       chargePointId,
+      siteName: locationName || station?.name || "—",
       volume,
       duration,
       saturation: computeSaturation(avgRealTime, avgEquivTime),
       co2Evite: computeCO2Evite(volume),
       sessionCount: count,
+      // Station hardware enrichment
+      vendor: station?.charge_point_vendor ?? null,
+      model: station?.charge_point_model ?? null,
+      maxPowerKw: station?.max_power_kw ?? null,
+      connectivityStatus: station?.connectivity_status ?? null,
+      firmwareVersion: station?.firmware_version ?? null,
     };
   }).sort((a, b) => b.volume - a.volume);
 }

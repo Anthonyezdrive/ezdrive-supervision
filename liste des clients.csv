@@ -1,0 +1,95 @@
+﻿,email,entreprise,role,actif,doit_definir_mot_de_passe,liste_bornes,liste_clients,type_portail
+0,ugoamedav,AMEDAV,admin,true,true,AMEDAV,,Public
+1,ugoarawak,ARAWAK,admin,true,true,,,Public
+2,ugob&b,B&B,admin,true,true,,Mobilité Hotel B&B,B2B
+3,florencebarbotteau,BARBOTTEAU,admin,true,true,"Jardi Village Baie Mahaut,Norauto,Norauto les abymes",,Public
+4,pierrette.danican@barbotteau.fr,BARBOTTEAU,admin,true,true,"Jardi Village Baie Mahaut,Norauto,Norauto les abymes",,Public
+5,ugobarbotteau,BARBOTTEAU,admin,true,true,"Jardi Village Baie Mahaut,Norauto,Norauto les abymes",,Public
+6,ugobel auto,BEL AUTO,admin,true,true,,,Public
+7,adilbut,BUT acajou,admin,true,true,BUT acajou,,Public
+8,michel.bajal@ca-mg.fr,CAMG B2B,admin,true,true,Crédit Agricole,Clients P&C,B2B
+9,siqe@ca-mg.fr,CAMG PUBLIC,admin,true,true,Crédit agricole - parking public,,Public
+10,lhamann@fincar.mq,CAP CHOCO,admin,true,true,Station Service Cap Choco,,Public
+11,mbaudouin@fincar.mq,CAP CHOCO,admin,true,true,Station Service Cap Choco,,Public
+12,ugocapchoco,CAP CHOCO,admin,true,true,Station Service Cap Choco,,Public
+13,ugochoco,CAP CHOCO,admin,true,true,,,Public
+14,casual.ducos@gmail.com,CASUAL,admin,true,true,Z.i plaza cocote,,Public
+15,adilcma,CMA CGM,admin,true,true,"GMG,Agence CMA CGM","Mobilité CMA CGM,Mobilité GMG",B2B
+16,ptp.cdahomay@cma-cgm.com,CMA CGM,admin,true,true,"GMG,Agence CMA CGM","Mobilité CMA CGM,Mobilité GMG",B2B
+17,ptp.qhsse@cma-cgm.com,CMA CGM,admin,true,true,"GMG,Agence CMA CGM","Mobilité CMA CGM,Mobilité GMG",B2B
+18,ptp.rbeaumont@cma-cgm.com,CMA CGM,admin,true,true,"GMG,Agence CMA CGM","Mobilité CMA CGM,Mobilité GMG",B2B
+19,adilbeach,CRYSTAL BEACH,admin,true,true,Crystal Beach,Mobilité Crystal Beach,B2B
+20,ugodigicel b2b,DIGICEL B2B,admin,true,true,DIGICEL Ducos - Privée - 972,DIGICEL,B2B
+21,ugodigicel public,DIGICEL PUBLIC,admin,true,true,DIGICEL Ducos - Parking Client - 972,,Public
+22,yourri.monduc@sunoco.com,ESSO,admin,true,false,Station-service ESSO Petit Pérou,,Public
+23,adilezd,EZDRIVE,admin,true,false,,,Public
+24,cyndraezd,EZDRIVE,admin,true,true,,,Public
+25,florenceezd,EZDRIVE,admin,true,false,,,B2B
+26,frantzezd,EZDRIVE,admin,true,true,,,Public
+27,fredezd,EZDRIVE,admin,true,true,,,Public
+28,fredezd,EZDRIVE,admin,true,true,,,Public
+29,hugoezd,EZDRIVE,admin,true,true,,,B2B
+30,hugoezd,EZDRIVE,admin,true,true,,,Public
+31,jlucezd,EZDRIVE,admin,true,false,,,Public
+32,ugoezd,EZDRIVE,admin,true,false,,,Public
+33,ugofavry,FAVRY,admin,true,true,"Bébé 9,BB9 jarry",,Public
+34,ugofimar,FIMAR,admin,true,true,,Mobilité FIMAR,B2B
+35,adilfp,FITNESS PARK,admin,true,true,"Fitness Park Colin,Fitness Park Jarry",,B2B
+36,adilfp,FITNESS PARK,admin,true,true,"Fitness Park Colin,Fitness Park Jarry",,Public
+37,ugofitness park,FITNESS PARK,admin,true,true,,,Public
+38,ugogalets rouges,GALETS ROUGES,admin,true,true,Galets Rouges,,Public
+39,audrey.marie-angelique@gbh.fr,GBH,admin,true,true,"Mr Bricolage Petit Manoir,Océanis - Le Robert",,Public
+40,bruce.dejaham@gbh.fr,GBH,admin,true,true,Mr Bricolage Petit Manoir,,Public
+41,matthieu.laupies@gbh.fr,GBH,admin,true,true,Mr Bricolage Petit Manoir,,Public
+42,philippe.magnon@gbh.fr,GBH,admin,true,true,Mr Bricolage Petit Manoir,,Public
+43,adilgmg,GMG,admin,true,true,GMG,Mobilité GMG,B2B
+44,hugocafom,GROUPE CAFOM,admin,true,true,BUT Acajou  - Le Lamentin,,Public
+45,ugocafom,GROUPE CAFOM,admin,true,true,BUT Acajou  - Le Lamentin,,Public
+46,astrid.nivor@groupecogit.com,GROUPE COGIT,admin,true,true,Casino Batelière,,Public
+47,ugokaracoli,KARACOLI,admin,true,true,Karacoli,,Public
+48,ugomairie de remire-montjoly,MAIRIE DE REMIRE MONTJOLY,admin,true,true,Mairie de Remire-Montjoly,,Public
+49,ugomairie de saint-claude,MAIRIE DE SAINT CLAUDE,admin,true,true,Mairie de Saint-Claude,,Public
+50,ugomairie de saint-joseph,MAIRIE DE SAINT JOSEPH,admin,true,true,,,Public
+51,ugomairie de saint-leu,MAIRIE DE SAINT LEU,admin,true,true,,,Public
+52,ugomairie de vieux-habitants,MAIRIE DE VIEUX HABITANTS,admin,true,true,Plage de Simaho,,Public
+53,ugomairie de vieux-habitants,MAIRIE DE VIEUX HABITANTS,admin,true,true,Mairie de Vieux-Habitants,,Public
+54,ugomairie du moule,MAIRIE DU MOULE,admin,true,true,,,Public
+55,ugomairie du moule,MAIRIE DU MOULE,admin,true,true,,,Public
+56,ugomairie du précheur,MAIRIE DU PRÉCHEUR,admin,true,true,,,Public
+57,patrick.farraudiere@mairie-saint-esprit.fr,MAIRIE DU SAINT ESPRIT,admin,true,true,Mairie du Saint-Esprit,,Public
+58,ugomairie du vauclin,MAIRIE DU VAUCLIN,admin,true,true,,,Public
+59,m.lefi@marinaguadeloupe.com,MARINA DU GOSIER,admin,true,true,,,Public
+60,jeanyves.constantin@gp.mcd.com,MCDO,admin,true,true,,,Public
+61,karell.mariejoseph@mq.mcd.com,MCDO,admin,true,true,,,Public
+62,olivier.carlos@mq.mcd.com,MCDO,admin,true,true,,,Public
+63,ugomcdo,MCDO,admin,true,true,,,Public
+64,thierry.joachim@cinecaraibes.com,MEDIAGESTION,admin,true,true,"Les toiles du sud,Madiana - Ombrière,Madiana - Parking sous terrain",,Public
+65,ugomediagestion,MEDIAGESTION,admin,true,true,"Les toiles du sud,Madiana - Ombrière,Madiana - Parking sous terrain",,Public
+66,ugomedialarm,MEDIALARM,admin,true,true,,,Public
+67,ugomichel brizard,MICHEL BRIZARD,admin,true,true,Ecole de danse Association SHERER,,Public
+68,gestionnaire@midas-guyane.com,Midas,admin,true,true,Midas Cayenne,,Public
+69,jeremy.boudhau@orange.com,ORANGE,admin,true,true,,"Employés Orange,ORANGE",B2B
+70,manuella.marieantoinette@orange.com,ORANGE,admin,true,true,,"Employés Orange,ORANGE",B2B
+71,ugoorange,ORANGE,admin,true,true,Orange - Pointe des Grives - 972 - 22 kW,"Employés Orange,ORANGE",B2B
+72,ugopng,PNG,admin,true,true,PARC NATIONAL GUADELOUPE,Mobilité Parc national,B2B
+73,ugopoint s,POINT S,admin,true,true,,,Public
+74,ugopommez,POMMEZ,admin,true,true,,,Public
+75,asaada@groupedistrimo.com,SAADA,admin,true,true,"But Dothemare,But Gourbeyre",,Public
+76,ugosarl le tournesol,SARL LE TOURNESOL,admin,true,true,"Hôtel La Chaumière,Hotel la Marmotte",,Public
+77,sodica.sodevica@gmail.com,SCI FAMILLE HILLION,admin,true,true,Le professionnel,Mobilité - Le Professionnel,Public
+78,c.dore@outremer-telecom.fr,SFR,admin,true,false,,Mobilité SFR,B2B
+79,e.alerte@outremer-telecom.fr,SFR,admin,true,true,,Mobilité SFR,B2B
+80,f.vacher@outremer-telecom.fr,SFR,admin,true,true,,Mobilité SFR,B2B
+81,adilsimar,SIMAR,admin,true,true,"Résidence SIMAR Fort de France,SIMAR Bwa Sental,SIMAR - Le Marin,SIMAR - Le Marin,SIMAR - Le Vauclin",,Public
+82,fsako@simar.mq,SIMAR,admin,true,true,SIMAR Bwa Sental,,Public
+83,bellemare.l@smem.fr,SMEM,admin,true,true,"Anse Figuier Rivière-Pilote,Front de mer - Robert,Grand Rivière,Mairie des Anses d'Arlet,Parking du bourg - Diamant",,Public
+84,boinet.e@smem.fr,SMEM,admin,true,true,"Anse Figuier Rivière-Pilote,Front de mer - Robert,Grand Rivière,Mairie des Anses d'Arlet,Parking du bourg - Diamant",,Public
+85,idrick.patel@gireve.com,SMEM,admin,true,true,"Anse Figuier Rivière-Pilote,Front de mer - Robert,Grand Rivière,Mairie des Anses d'Arlet,Parking du bourg - Diamant",,Public
+86,karine.guerin@groupesoame.com,SOAME,admin,true,true,Lafcadio Hearn,,Public
+87,maurice.vallee@groupesoame.com,SOAME,admin,true,true,Lafcadio Hearn,,Public
+88,ugosuper u la rocade,SUPER U LA ROCADE,admin,true,true,,,Public
+89,ugosuper u petit bourg,SUPER U PETIT BOURG,admin,true,true,,,Public
+90,ugoswitch,SWITCH,admin,true,true,Switch - Ecomax,,Public
+91,ugotad,TAD,admin,true,true,Pôle emploi - Gondeau,Pôle Emploi,B2B
+92,ugovivies,VIVIES,admin,true,true,GEDIMAT Viviés ZAC Beausoleil,,Public
+93,adilhilion,sci hillion,admin,true,true,Le professionnel,,Public

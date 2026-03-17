@@ -292,6 +292,23 @@ serve(async (req: Request) => {
           cpoId = ezdriveCpoId;
         }
 
+        // ── Extract hardware & connectivity fields from GFX ──
+        const connectivityStatus = (cs.connectivity_status as string) ?? null;
+        const remoteManageable = (cs.remote_manageable as boolean) ?? null;
+        const protocolVersion = (cs.protocol_version as string) ?? null;
+        const firmwareVersion = (cs.firmware_version as string) ?? null;
+        const chargePointVendor = (cs.charge_point_vendor as string) ?? null;
+        const chargePointModel = (cs.charge_point_model as string) ?? null;
+        const chargerType = (cs.charger_type as string) ?? null;
+        const chargingSpeed = (cs.charging_speed as string) ?? null;
+        const heartbeatInterval = (cs.heartbeat_interval as number) ?? null;
+        const iso15118 = (cs.iso_15118_enabled as boolean) ?? false;
+
+        // Derive is_online from connectivity_status when available
+        const isOnline = connectivityStatus
+          ? connectivityStatus === "Online"
+          : true;
+
         const existing = stationMap.get(gfxId);
 
         if (!existing) {
@@ -311,11 +328,23 @@ serve(async (req: Request) => {
               territory_id: territoryId,
               ocpp_status: ocppStatus,
               status_since: new Date().toISOString(),
-              is_online: true,
+              is_online: isOnline,
               connectors: JSON.stringify(connectors),
               max_power_kw: maxPower,
               gfx_raw: cs,
               last_synced_at: new Date().toISOString(),
+              // Hardware & connectivity
+              connectivity_status: connectivityStatus,
+              remote_manageable: remoteManageable,
+              protocol_version: protocolVersion,
+              firmware_version: firmwareVersion,
+              charge_point_vendor: chargePointVendor,
+              charge_point_model: chargePointModel,
+              charger_type: chargerType,
+              charging_speed: chargingSpeed,
+              deploy_state: deployState,
+              heartbeat_interval: heartbeatInterval,
+              iso_15118_enabled: iso15118,
             });
 
           if (insertErr) {
@@ -343,7 +372,7 @@ serve(async (req: Request) => {
 
           const updateData: Record<string, unknown> = {
             last_synced_at: new Date().toISOString(),
-            is_online: true,
+            is_online: isOnline,
             gfx_raw: cs,
             connectors: JSON.stringify(connectors),
             name,
@@ -352,6 +381,18 @@ serve(async (req: Request) => {
             postal_code: postalCode,
             latitude: lat,
             longitude: lng,
+            // Hardware & connectivity
+            connectivity_status: connectivityStatus,
+            remote_manageable: remoteManageable,
+            protocol_version: protocolVersion,
+            firmware_version: firmwareVersion,
+            charge_point_vendor: chargePointVendor,
+            charge_point_model: chargePointModel,
+            charger_type: chargerType,
+            charging_speed: chargingSpeed,
+            deploy_state: deployState,
+            heartbeat_interval: heartbeatInterval,
+            iso_15118_enabled: iso15118,
           };
 
           if (statusChanged) {

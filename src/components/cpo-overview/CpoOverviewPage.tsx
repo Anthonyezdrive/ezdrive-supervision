@@ -26,6 +26,7 @@ import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { KPICard } from "@/components/ui/KPICard";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { PageHelp } from "@/components/ui/PageHelp";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -205,6 +206,16 @@ export function CpoOverviewPage() {
           État global du réseau de bornes de recharge
         </p>
       </div>
+
+      <PageHelp
+        summary="Vue d'ensemble de votre activité CPO (Charge Point Operator) en roaming"
+        items={[
+          { label: "CPO", description: "Charge Point Operator — vous, en tant qu'opérateur qui gère les bornes physiques." },
+          { label: "Sessions roaming", description: "Charges effectuées sur vos bornes par des clients d'autres opérateurs." },
+          { label: "Revenus roaming", description: "Facturation aux eMSP partenaires pour l'utilisation de vos bornes par leurs clients." },
+          { label: "Taux d'occupation", description: "Pourcentage de vos sessions provenant de clients en roaming vs clients directs." },
+        ]}
+      />
 
       {/* KPIs */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

@@ -27,6 +27,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { KPICard } from "@/components/ui/KPICard";
+import { PageHelp } from "@/components/ui/PageHelp";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -423,6 +424,17 @@ export function ExceptionsPage() {
           </button>
         </div>
       </div>
+
+      <PageHelp
+        summary="Journal des erreurs et exceptions remontées par le système"
+        items={[
+          { label: "Exception", description: "Erreur ou comportement anormal détecté par le système (échec OCPP, timeout, erreur API)." },
+          { label: "Sévérité", description: "Critical (bloquant), Warning (dégradé), Info (informatif)." },
+          { label: "Source", description: "Composant à l'origine de l'erreur : borne, serveur OCPP, API, synchronisation." },
+          { label: "Résolution", description: "Actions correctives recommandées ou effectuées pour résoudre l'exception." },
+        ]}
+        tips={["Les exceptions critiques répétées sur une même borne indiquent souvent un problème matériel."]}
+      />
 
       {/* KPIs */}
       {isLoading ? (

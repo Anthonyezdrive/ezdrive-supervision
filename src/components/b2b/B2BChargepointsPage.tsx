@@ -1,15 +1,17 @@
 import { useOutletContext } from "react-router-dom";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
-import { Download } from "lucide-react";
+import { Download, Wifi, WifiOff } from "lucide-react";
 import { useB2BCdrs } from "@/hooks/useB2BCdrs";
+import { useB2BStationLookup } from "@/hooks/useB2BStationLookup";
 import { groupByChargePoint, formatDuration, formatNumber } from "@/lib/b2b-formulas";
 import { downloadCSV, todayISO } from "@/lib/export";
+import { PageHelp } from "@/components/ui/PageHelp";
 import type { B2BClient } from "@/types/b2b";
 
 const CHART_COLORS = [
-  "#00D4AA", "#3498DB", "#FF6B6B", "#F39C12", "#9B59B6",
-  "#E74C3C", "#1ABC9C", "#2ECC71", "#E67E22", "#34495E",
-  "#16A085", "#8E44AD", "#D35400", "#27AE60",
+  "#9ACC0E", "#00C3FF", "#F39C12", "#FF6B6B", "#9B59B6",
+  "#85B50C", "#00A8D6", "#2ECC71", "#E67E22", "#34495E",
+  "#B8E04E", "#4DD4FF", "#D35400", "#27AE60",
 ];
 
 const tooltipStyle = {
@@ -28,6 +30,7 @@ export function B2BChargepointsPage() {
   const { activeClient, customerExternalIds } =
     useOutletContext<{ activeClient: B2BClient | null; customerExternalIds: string[] }>();
   const { data: cdrs, isLoading } = useB2BCdrs(customerExternalIds);
+  const { data: stationLookup } = useB2BStationLookup();
 
   if (isLoading) {
     return (
@@ -39,7 +42,7 @@ export function B2BChargepointsPage() {
   }
 
   const data = cdrs ?? [];
-  const rows = groupByChargePoint(data);
+  const rows = groupByChargePoint(data, stationLookup);
 
   // Chart data
   const totalVolume = rows.reduce((s, r) => s + r.volume, 0);
@@ -60,6 +63,12 @@ export function B2BChargepointsPage() {
   function handleExport() {
     const exportRows = rows.map((r) => ({
       Charge_Point_ID: r.chargePointId,
+      Site: r.siteName,
+      Fabricant: r.vendor ?? "",
+      Modèle: r.model ?? "",
+      "Puissance (kW)": r.maxPowerKw != null ? formatNumber(r.maxPowerKw, 0) : "",
+      Connexion: r.connectivityStatus ?? "",
+      Sessions: r.sessionCount,
       "Volume (kWh)": formatNumber(r.volume),
       Durée_totale: formatDuration(r.duration),
       "Saturation (%)": formatNumber(r.saturation * 100),
@@ -70,6 +79,17 @@ export function B2BChargepointsPage() {
 
   return (
     <div className="space-y-6">
+      <PageHelp
+        summary="Analyse par borne de recharge — volume, sessions et informations techniques"
+        items={[
+          { label: "Borne", description: "Point de charge identifié par son nom et sa localisation." },
+          { label: "Volume (kWh)", description: "Énergie totale consommée sur cette borne par vos collaborateurs." },
+          { label: "Fabricant/Modèle", description: "Informations techniques sur le matériel de la borne (si disponible)." },
+          { label: "Connexion", description: "Statut de connectivité de la borne : online (connectée) ou offline (déconnectée)." },
+        ]}
+        tips={["Les données techniques (fabricant, modèle, puissance) proviennent de la synchronisation avec le serveur OCPP."]}
+      />
+
       {/* Donut chart + Legend */}
       <div className="bg-surface border border-border rounded-2xl p-6">
         <h3 className="text-base font-semibold text-foreground mb-4">
@@ -139,7 +159,12 @@ export function B2BChargepointsPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
-                <th className={thClass}>Charge Point ID</th>
+                <th className={thClass}>Borne</th>
+                <th className={thClass}>Site</th>
+                <th className={thClass}>Fabricant / Modèle</th>
+                <th className={`${thClass} text-center`}>Puissance</th>
+                <th className={`${thClass} text-center`}>Connexion</th>
+                <th className={`${thClass} text-right`}>Sessions</th>
                 <th className={`${thClass} text-right`}>Volume (kWh)</th>
                 <th className={`${thClass} text-right`}>Durée totale</th>
                 <th className={`${thClass} text-right`}>Saturation</th>
@@ -149,20 +174,60 @@ export function B2BChargepointsPage() {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.chargePointId} className="border-b border-border/50 hover:bg-surface-elevated/50 transition-colors">
-                  <td className={`${tdClass} font-medium`}>{r.chargePointId}</td>
-                  <td className={`${tdClass} text-right`}>{formatNumber(r.volume)}</td>
+                  <td className={`${tdClass} font-medium`}>
+                    <span className="text-sm">{r.chargePointId}</span>
+                  </td>
+                  <td className={`${tdClass} text-foreground-muted`}>{r.siteName}</td>
+                  <td className={tdClass}>
+                    {r.vendor ? (
+                      <div>
+                        <span className="text-sm">{r.vendor}</span>
+                        {r.model && (
+                          <span className="text-xs text-foreground-muted ml-1">{r.model}</span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-foreground-muted">—</span>
+                    )}
+                  </td>
+                  <td className={`${tdClass} text-center`}>
+                    {r.maxPowerKw != null ? `${r.maxPowerKw} kW` : "—"}
+                  </td>
+                  <td className={`${tdClass} text-center`}>
+                    {r.connectivityStatus ? (
+                      <span className={`inline-flex items-center gap-1 text-xs font-medium ${
+                        r.connectivityStatus === "Online" ? "text-success" : "text-danger"
+                      }`}>
+                        {r.connectivityStatus === "Online" ? (
+                          <Wifi className="w-3.5 h-3.5" />
+                        ) : (
+                          <WifiOff className="w-3.5 h-3.5" />
+                        )}
+                        {r.connectivityStatus}
+                      </span>
+                    ) : (
+                      <span className="text-foreground-muted">—</span>
+                    )}
+                  </td>
+                  <td className={`${tdClass} text-right tabular-nums`}>{r.sessionCount}</td>
+                  <td className={`${tdClass} text-right tabular-nums`}>{formatNumber(r.volume)}</td>
                   <td className={`${tdClass} text-right`}>{formatDuration(r.duration)}</td>
                   <td className={`${tdClass} text-right`}>{formatNumber(r.saturation * 100)} %</td>
-                  <td className={`${tdClass} text-right`}>{formatNumber(r.co2Evite)} kg CO₂</td>
+                  <td className={`${tdClass} text-right`}>{formatNumber(r.co2Evite)} kg</td>
                 </tr>
               ))}
               {rows.length > 0 && (
-                <tr className="bg-surface-elevated/30 font-bold border-t-2 border-primary/30">
+                <tr className="bg-surface-elevated/30 font-bold border-t-2" style={{ borderTopColor: "#9ACC0E40" }}>
                   <td className={tdClass}>Total</td>
-                  <td className={`${tdClass} text-right`}>{formatNumber(totals.volume)}</td>
+                  <td className={tdClass} />
+                  <td className={tdClass} />
+                  <td className={tdClass} />
+                  <td className={tdClass} />
+                  <td className={`${tdClass} text-right tabular-nums`}>{rows.reduce((s, r) => s + r.sessionCount, 0)}</td>
+                  <td className={`${tdClass} text-right tabular-nums`}>{formatNumber(totals.volume)}</td>
                   <td className={`${tdClass} text-right`}>{formatDuration(totals.duration)}</td>
                   <td className={`${tdClass} text-right`}>{formatNumber(totals.saturation * 100)} %</td>
-                  <td className={`${tdClass} text-right`}>{formatNumber(totals.co2)} kg CO₂</td>
+                  <td className={`${tdClass} text-right`}>{formatNumber(totals.co2)} kg</td>
                 </tr>
               )}
             </tbody>

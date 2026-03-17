@@ -13,10 +13,12 @@ import {
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { formatDuration, formatRelativeTime } from "@/lib/utils";
+import { useCpo } from "@/contexts/CpoContext";
 import { KPICard } from "@/components/ui/KPICard";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { KPISkeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { PageHelp } from "@/components/ui/PageHelp";
 import type { Station } from "@/types/station";
 
 // ── Types ──────────────────────────────────────────────────
@@ -46,16 +48,19 @@ interface OcppChargepoint {
 
 const REFETCH_INTERVAL = 15_000;
 
-function useMonitoringStations() {
+function useMonitoringStations(cpoId?: string | null) {
   return useQuery<Station[]>({
-    queryKey: ["monitoring-stations"],
+    queryKey: ["monitoring-stations", cpoId ?? "all"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("stations_enriched")
         .select(
           "id, name, city, ocpp_status, is_online, max_power_kw, last_synced_at, status_since, hours_in_status, cpo_name"
-        )
-        .order("is_online", { ascending: true });
+        );
+      if (cpoId) {
+        query = query.eq("cpo_id", cpoId);
+      }
+      const { data, error } = await query.order("is_online", { ascending: true });
       if (error) throw error;
       return (data ?? []) as Station[];
     },
@@ -128,12 +133,13 @@ function computeEnergy(tx: OcppTransaction): string {
 // ── Page component ─────────────────────────────────────────
 
 export function MonitoringPage() {
+  const { selectedCpoId } = useCpo();
   const {
     data: stations,
     isLoading: stationsLoading,
     isError: stationsError,
     refetch: refetchStations,
-  } = useMonitoringStations();
+  } = useMonitoringStations(selectedCpoId);
 
   const {
     data: activeSessions,
@@ -224,6 +230,17 @@ export function MonitoringPage() {
           Surveillance en temps r&eacute;el du r&eacute;seau
         </p>
       </div>
+
+      <PageHelp
+        summary="Surveillance en temps réel des connexions et heartbeats OCPP de vos bornes"
+        items={[
+          { label: "Heartbeat", description: "Signal envoyé régulièrement par la borne pour confirmer qu'elle est connectée. Absence = borne déconnectée." },
+          { label: "Connectivité", description: "Online (connecté au serveur OCPP), Offline (pas de signal depuis plus de 15 min)." },
+          { label: "Dernière communication", description: "Date/heure du dernier message OCPP reçu de la borne." },
+          { label: "Alertes", description: "Les bornes sans heartbeat depuis plus de 30 minutes sont signalées en rouge." },
+        ]}
+        tips={["Une borne offline n'est pas forcément en panne — vérifiez d'abord la connexion internet du site."]}
+      />
 
       {/* ── Health overview KPIs ── */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">

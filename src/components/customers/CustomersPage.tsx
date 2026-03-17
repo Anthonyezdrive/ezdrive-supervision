@@ -4,7 +4,8 @@
 // ============================================================
 
 import { useState, useMemo, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { PageHelp } from "@/components/ui/PageHelp";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Users,
   CreditCard,
@@ -16,11 +17,16 @@ import {
   Building2,
   UserX,
   Zap,
+  Plus,
+  X,
+  Loader2,
+  Pencil,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { apiPost, apiPut } from "@/lib/api";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -32,6 +38,18 @@ interface ConsumerProfile {
   user_type: string | null;
   is_company: boolean;
   company_name: string | null;
+  address: string | null;
+  postal_code: string | null;
+  city: string | null;
+  country: string | null;
+  account_manager: string | null;
+  validity_date: string | null;
+  cost_center: string | null;
+  siret: string | null;
+  vat_number: string | null;
+  billing_mode: string | null;
+  status: string | null;
+  admin_notes: string | null;
   created_at: string;
 }
 
@@ -287,7 +305,7 @@ export function CustomersPage() {
       // 1. Fetch all consumer profiles
       const { data: profiles, error: profErr } = await supabase
         .from("consumer_profiles")
-        .select("id, email, full_name, phone, user_type, is_company, company_name, created_at")
+        .select("id, email, full_name, phone, user_type, is_company, company_name, address, postal_code, city, country, account_manager, validity_date, cost_center, siret, vat_number, billing_mode, status, admin_notes, created_at")
         .order("created_at", { ascending: false });
       if (profErr) throw profErr;
 
@@ -347,6 +365,10 @@ export function CustomersPage() {
   }, [customers]);
 
   // ── Local state ──
+  const queryClient = useQueryClient();
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [editCustomer, setEditCustomer] = useState<Customer | null>(null);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("created_at");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -451,23 +473,41 @@ export function CustomersPage() {
     <div className="space-y-6">
       {/* ── Header ── */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div>
-            <h1 className="font-heading text-xl font-bold text-foreground">
-              Gestion Clients
-            </h1>
-            <p className="text-sm text-foreground-muted mt-0.5">
-              Base de données clients eMSP
-            </p>
-          </div>
+        <div>
+          <h1 className="font-heading text-xl font-bold text-foreground">
+            Gestion Clients
+          </h1>
+          <p className="text-sm text-foreground-muted mt-0.5">
+            Base de données clients eMSP
+          </p>
         </div>
-        {!isLoading && customers && (
-          <span className="inline-flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/25 rounded-lg px-3 py-1.5 text-xs font-semibold">
-            <Users className="w-3.5 h-3.5" />
-            {customers.length} client{customers.length !== 1 ? "s" : ""}
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {!isLoading && customers && (
+            <span className="inline-flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/25 rounded-lg px-3 py-1.5 text-xs font-semibold">
+              <Users className="w-3.5 h-3.5" />
+              {customers.length} client{customers.length !== 1 ? "s" : ""}
+            </span>
+          )}
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Nouveau client
+          </button>
+        </div>
       </div>
+
+      <PageHelp
+        summary="Liste et gestion de vos utilisateurs finaux (conducteurs de véhicules électriques)"
+        items={[
+          { label: "Profil client", description: "Informations personnelles, véhicule enregistré et méthode de paiement." },
+          { label: "Abonnement", description: "Type de forfait actif (gratuit, standard, premium) et date d'expiration." },
+          { label: "Historique de charge", description: "Toutes les sessions de charge effectuées par ce client avec détails énergétiques." },
+          { label: "Carte RFID", description: "Badge physique associé au client pour s'authentifier sur les bornes." },
+        ]}
+        tips={["Les clients s'inscrivent via l'application mobile EZDrive. Vous pouvez aussi créer des comptes manuellement."]}
+      />
 
       {/* ── KPI Row ── */}
       {isLoading ? (
@@ -597,7 +637,8 @@ export function CustomersPage() {
                   return (
                     <tr
                       key={customer.id}
-                      className="hover:bg-surface-elevated/50 transition-colors"
+                      className="hover:bg-surface-elevated/50 transition-colors cursor-pointer"
+                      onClick={() => setSelectedCustomer(customer)}
                     >
                       {/* Client */}
                       <td className="px-4 py-3">
@@ -738,6 +779,596 @@ export function CustomersPage() {
           )}
         </div>
       )}
+
+      {/* Add Customer Modal */}
+      {showAddModal && (
+        <AddCustomerModal
+          onClose={() => setShowAddModal(false)}
+          onCreated={() => {
+            setShowAddModal(false);
+            queryClient.invalidateQueries({ queryKey: ["customers"] });
+          }}
+        />
+      )}
+
+      {/* Customer Detail Drawer */}
+      {selectedCustomer && (
+        <CustomerDetailDrawer
+          customer={selectedCustomer}
+          onClose={() => setSelectedCustomer(null)}
+          onEdit={(c) => { setSelectedCustomer(null); setEditCustomer(c); }}
+        />
+      )}
+
+      {/* Edit Customer Modal */}
+      {editCustomer && (
+        <EditCustomerModal
+          customer={editCustomer}
+          onClose={() => setEditCustomer(null)}
+          onSaved={() => {
+            setEditCustomer(null);
+            queryClient.invalidateQueries({ queryKey: ["customers"] });
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+// ── Add Customer Modal ────────────────────────────────────────
+
+function AddCustomerModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [form, setForm] = useState({
+    full_name: "",
+    email: "",
+    phone: "",
+    user_type: "INDIVIDUAL" as "INDIVIDUAL" | "BUSINESS" | "FLEET_MANAGER",
+    is_company: false,
+    company_name: "",
+    address: "",
+    postal_code: "",
+    city: "",
+    country: "FR",
+    account_manager: "",
+    siret: "",
+    billing_mode: "POSTPAID" as "PREPAID" | "POSTPAID",
+    admin_notes: "",
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.email.trim()) { setError("L'email est obligatoire"); return; }
+    if (!form.full_name.trim()) { setError("Le nom est obligatoire"); return; }
+    setLoading(true);
+    setError(null);
+    try {
+      await apiPost("admin/consumer", {
+        email: form.email.trim(),
+        full_name: form.full_name.trim(),
+        phone: form.phone.trim() || null,
+        user_type: form.user_type,
+        is_company: form.is_company,
+        company_name: form.company_name.trim() || null,
+        address: form.address.trim() || null,
+        postal_code: form.postal_code.trim() || null,
+        city: form.city.trim() || null,
+        country: form.country || null,
+        account_manager: form.account_manager.trim() || null,
+        siret: form.siret.trim() || null,
+        billing_mode: form.billing_mode,
+        admin_notes: form.admin_notes.trim() || null,
+      });
+      onCreated();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+      <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+        <div className="bg-surface border border-border rounded-2xl w-full max-w-lg shadow-2xl">
+          <div className="flex items-center justify-between p-5 border-b border-border">
+            <h2 className="font-heading font-bold text-lg">Nouveau client eMSP</h2>
+            <button onClick={onClose} className="p-1.5 hover:bg-surface-elevated rounded-lg transition-colors">
+              <X className="w-5 h-5 text-foreground-muted" />
+            </button>
+          </div>
+          <form onSubmit={handleSubmit} className="p-5 space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Nom complet *</label>
+                <input
+                  type="text"
+                  value={form.full_name}
+                  onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                  placeholder="Jean Dupont"
+                  className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm focus:outline-none focus:border-primary/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Email *</label>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  placeholder="jean@exemple.fr"
+                  className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm focus:outline-none focus:border-primary/50"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Téléphone</label>
+                <input
+                  type="tel"
+                  value={form.phone}
+                  onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  placeholder="+33 6 00 00 00 00"
+                  className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm focus:outline-none focus:border-primary/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Type de compte</label>
+                <select
+                  value={form.user_type}
+                  onChange={(e) => setForm({ ...form, user_type: e.target.value as typeof form.user_type })}
+                  className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm focus:outline-none focus:border-primary/50"
+                >
+                  <option value="INDIVIDUAL">Particulier</option>
+                  <option value="BUSINESS">Entreprise</option>
+                  <option value="FLEET_MANAGER">Gestionnaire de flotte</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="is_company"
+                checked={form.is_company}
+                onChange={(e) => setForm({ ...form, is_company: e.target.checked })}
+                className="w-4 h-4 accent-primary"
+              />
+              <label htmlFor="is_company" className="text-sm text-foreground">Compte entreprise (B2B)</label>
+            </div>
+            {form.is_company && (
+              <>
+                <div>
+                  <label className="block text-xs text-foreground-muted mb-1.5">Nom de l'entreprise</label>
+                  <input type="text" value={form.company_name} onChange={(e) => setForm({ ...form, company_name: e.target.value })}
+                    placeholder="Nom de la société" className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm focus:outline-none focus:border-primary/50" />
+                </div>
+                <div>
+                  <label className="block text-xs text-foreground-muted mb-1.5">SIRET</label>
+                  <input type="text" value={form.siret} onChange={(e) => setForm({ ...form, siret: e.target.value })}
+                    placeholder="123 456 789 00012" className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm focus:outline-none focus:border-primary/50" />
+                </div>
+              </>
+            )}
+            {/* Adresse */}
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1.5">Adresse</label>
+              <input type="text" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })}
+                placeholder="12 rue de la Paix" className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm focus:outline-none focus:border-primary/50" />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Code postal</label>
+                <input type="text" value={form.postal_code} onChange={(e) => setForm({ ...form, postal_code: e.target.value })}
+                  placeholder="97110" className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm focus:outline-none focus:border-primary/50" />
+              </div>
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Ville</label>
+                <input type="text" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })}
+                  placeholder="Pointe-à-Pitre" className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm focus:outline-none focus:border-primary/50" />
+              </div>
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Pays</label>
+                <select value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })}
+                  className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm focus:outline-none focus:border-primary/50">
+                  <option value="FR">France</option>
+                  <option value="GP">Guadeloupe</option>
+                  <option value="MQ">Martinique</option>
+                  <option value="RE">La Réunion</option>
+                  <option value="GF">Guyane</option>
+                  <option value="BE">Belgique</option>
+                  <option value="CH">Suisse</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Gestionnaire de compte</label>
+                <input type="text" value={form.account_manager} onChange={(e) => setForm({ ...form, account_manager: e.target.value })}
+                  placeholder="Nom du gestionnaire" className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm focus:outline-none focus:border-primary/50" />
+              </div>
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Mode facturation</label>
+                <select value={form.billing_mode} onChange={(e) => setForm({ ...form, billing_mode: e.target.value as "PREPAID" | "POSTPAID" })}
+                  className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm focus:outline-none focus:border-primary/50">
+                  <option value="POSTPAID">Post-payé</option>
+                  <option value="PREPAID">Prépayé</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1.5">Notes internes</label>
+              <textarea
+                value={form.admin_notes}
+                onChange={(e) => setForm({ ...form, admin_notes: e.target.value })}
+                placeholder="Notes admin..."
+                rows={2}
+                className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm focus:outline-none focus:border-primary/50 resize-none"
+              />
+            </div>
+            {error && (
+              <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>
+            )}
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 py-2.5 border border-border rounded-xl text-sm text-foreground-muted hover:text-foreground transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex-1 py-2.5 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                Créer le client
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Customer Detail Drawer ────────────────────────────────────
+
+function CustomerDetailDrawer({
+  customer,
+  onClose,
+  onEdit,
+}: {
+  customer: Customer;
+  onClose: () => void;
+  onEdit?: (c: Customer) => void;
+}) {
+  const hue = nameToHue(customer.full_name);
+  const displayName = customer.full_name || customer.email || "Client anonyme";
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-surface border-l border-border z-50 overflow-y-auto">
+        <div className="flex items-center justify-between p-5 border-b border-border">
+          <div className="flex items-center gap-3">
+            <div
+              className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
+              style={{
+                backgroundColor: `hsl(${hue}, 45%, 25%)`,
+                color: `hsl(${hue}, 70%, 75%)`,
+              }}
+            >
+              {getInitials(customer.full_name)}
+            </div>
+            <div>
+              <h2 className="font-heading font-bold text-base">{displayName}</h2>
+              <p className="text-xs text-foreground-muted">{customer.email}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {onEdit && (
+              <button onClick={() => onEdit(customer)} className="p-1.5 hover:bg-primary/10 text-foreground-muted hover:text-primary rounded-lg transition-colors" title="Modifier">
+                <Pencil className="w-4 h-4" />
+              </button>
+            )}
+            <button onClick={onClose} className="p-1.5 hover:bg-surface-elevated rounded-lg transition-colors">
+              <X className="w-5 h-5 text-foreground-muted" />
+            </button>
+          </div>
+        </div>
+        <div className="p-5 space-y-5">
+          {/* Abonnement */}
+          <div>
+            <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Abonnement</p>
+            <SubscriptionBadge status={customer.subscription_status} offer={customer.subscription_offer} />
+          </div>
+          {/* Infos personnelles */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Informations</p>
+            <DetailItem label="Type" value={customer.user_type ?? "—"} />
+            <DetailItem label="Téléphone" value={customer.phone ?? "—"} />
+            <DetailItem label="Statut" value={customer.status ?? "active"} />
+            <DetailItem label="Entreprise" value={customer.company_name ?? (customer.is_company ? "Oui" : "—")} />
+            {customer.siret && <DetailItem label="SIRET" value={customer.siret} />}
+            {customer.vat_number && <DetailItem label="N° TVA" value={customer.vat_number} />}
+            <DetailItem label="Inscrit le" value={formatRelativeDate(customer.created_at)} />
+            {customer.validity_date && <DetailItem label="Validité" value={new Date(customer.validity_date).toLocaleDateString("fr-FR")} />}
+          </div>
+          {/* Adresse */}
+          {(customer.address || customer.city) && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Adresse</p>
+              <DetailItem label="Rue" value={customer.address ?? "—"} />
+              <DetailItem label="Ville" value={[customer.postal_code, customer.city].filter(Boolean).join(" ") || "—"} />
+              <DetailItem label="Pays" value={customer.country ?? "—"} />
+            </div>
+          )}
+          {/* Gestion */}
+          {(customer.account_manager || customer.cost_center || customer.billing_mode) && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Gestion</p>
+              {customer.account_manager && <DetailItem label="Gestionnaire" value={customer.account_manager} />}
+              {customer.cost_center && <DetailItem label="Centre de coût" value={customer.cost_center} />}
+              {customer.billing_mode && <DetailItem label="Facturation" value={customer.billing_mode === "PREPAID" ? "Prépayé" : "Post-payé"} />}
+            </div>
+          )}
+          {/* Notes */}
+          {customer.admin_notes && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Notes</p>
+              <p className="text-sm text-foreground-muted">{customer.admin_notes}</p>
+            </div>
+          )}
+          {/* Activité */}
+          <div>
+            <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Activité</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-surface-elevated border border-border rounded-xl p-3 text-center">
+                <p className="text-xl font-bold text-foreground">{customer.session_count}</p>
+                <p className="text-xs text-foreground-muted mt-0.5">Sessions</p>
+              </div>
+              <div className="bg-surface-elevated border border-border rounded-xl p-3 text-center">
+                <p className="text-xl font-bold text-foreground">{formatEnergy(customer.total_energy_kwh)}</p>
+                <p className="text-xs text-foreground-muted mt-0.5">Énergie</p>
+              </div>
+            </div>
+          </div>
+          {/* ID technique */}
+          <div className="pt-3 border-t border-border">
+            <p className="text-xs text-foreground-muted">
+              ID: <span className="font-mono text-foreground">{customer.id}</span>
+            </p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function DetailItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between text-sm py-1.5 border-b border-border/50 last:border-0">
+      <span className="text-foreground-muted">{label}</span>
+      <span className="text-foreground font-medium">{value}</span>
+    </div>
+  );
+}
+
+// ── Edit Customer Modal ────────────────────────────────────────
+
+function EditCustomerModal({
+  customer,
+  onClose,
+  onSaved,
+}: {
+  customer: Customer;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState({
+    full_name: customer.full_name ?? "",
+    phone: customer.phone ?? "",
+    user_type: (customer.user_type ?? "INDIVIDUAL") as "INDIVIDUAL" | "BUSINESS" | "FLEET_MANAGER",
+    is_company: customer.is_company,
+    company_name: customer.company_name ?? "",
+    address: customer.address ?? "",
+    postal_code: customer.postal_code ?? "",
+    city: customer.city ?? "",
+    country: customer.country ?? "FR",
+    account_manager: customer.account_manager ?? "",
+    validity_date: customer.validity_date ? customer.validity_date.slice(0, 10) : "",
+    cost_center: customer.cost_center ?? "",
+    siret: customer.siret ?? "",
+    vat_number: customer.vat_number ?? "",
+    billing_mode: (customer.billing_mode ?? "POSTPAID") as "PREPAID" | "POSTPAID",
+    status: (customer.status ?? "active") as "active" | "inactive" | "suspended",
+    admin_notes: customer.admin_notes ?? "",
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const inputClass = "w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm focus:outline-none focus:border-primary/50";
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      await apiPut(`customers/${customer.id}`, {
+        full_name: form.full_name.trim() || null,
+        phone: form.phone.trim() || null,
+        user_type: form.user_type,
+        is_company: form.is_company,
+        company_name: form.company_name.trim() || null,
+        address: form.address.trim() || null,
+        postal_code: form.postal_code.trim() || null,
+        city: form.city.trim() || null,
+        country: form.country || null,
+        account_manager: form.account_manager.trim() || null,
+        validity_date: form.validity_date || null,
+        cost_center: form.cost_center.trim() || null,
+        siret: form.siret.trim() || null,
+        vat_number: form.vat_number.trim() || null,
+        billing_mode: form.billing_mode,
+        status: form.status,
+        admin_notes: form.admin_notes.trim() || null,
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+      <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+        <div className="bg-surface border border-border rounded-2xl w-full max-w-lg shadow-2xl max-h-[90vh] flex flex-col">
+          <div className="flex items-center justify-between p-5 border-b border-border shrink-0">
+            <h2 className="font-heading font-bold text-lg">Modifier le client</h2>
+            <button onClick={onClose} className="p-1.5 hover:bg-surface-elevated rounded-lg transition-colors">
+              <X className="w-5 h-5 text-foreground-muted" />
+            </button>
+          </div>
+          <form onSubmit={handleSubmit} className="p-5 space-y-4 overflow-y-auto flex-1">
+            {/* Identité */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Nom complet</label>
+                <input type="text" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                  className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Téléphone</label>
+                <input type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  className={inputClass} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Type</label>
+                <select value={form.user_type} onChange={(e) => setForm({ ...form, user_type: e.target.value as typeof form.user_type })} className={inputClass}>
+                  <option value="INDIVIDUAL">Particulier</option>
+                  <option value="BUSINESS">Entreprise</option>
+                  <option value="FLEET_MANAGER">Gestionnaire de flotte</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Statut</label>
+                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as typeof form.status })} className={inputClass}>
+                  <option value="active">Actif</option>
+                  <option value="inactive">Inactif</option>
+                  <option value="suspended">Suspendu</option>
+                </select>
+              </div>
+            </div>
+            {/* Entreprise */}
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="edit_is_company" checked={form.is_company}
+                onChange={(e) => setForm({ ...form, is_company: e.target.checked })} className="w-4 h-4 accent-primary" />
+              <label htmlFor="edit_is_company" className="text-sm text-foreground">Compte entreprise (B2B)</label>
+            </div>
+            {form.is_company && (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-foreground-muted mb-1.5">Nom entreprise</label>
+                  <input type="text" value={form.company_name} onChange={(e) => setForm({ ...form, company_name: e.target.value })} className={inputClass} />
+                </div>
+                <div>
+                  <label className="block text-xs text-foreground-muted mb-1.5">SIRET</label>
+                  <input type="text" value={form.siret} onChange={(e) => setForm({ ...form, siret: e.target.value })} className={inputClass} />
+                </div>
+                <div>
+                  <label className="block text-xs text-foreground-muted mb-1.5">N° TVA</label>
+                  <input type="text" value={form.vat_number} onChange={(e) => setForm({ ...form, vat_number: e.target.value })}
+                    placeholder="FR12345678901" className={inputClass} />
+                </div>
+              </div>
+            )}
+            {/* Adresse */}
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1.5">Adresse</label>
+              <input type="text" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className={inputClass} />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Code postal</label>
+                <input type="text" value={form.postal_code} onChange={(e) => setForm({ ...form, postal_code: e.target.value })} className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Ville</label>
+                <input type="text" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Pays</label>
+                <select value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} className={inputClass}>
+                  <option value="FR">France</option>
+                  <option value="GP">Guadeloupe</option>
+                  <option value="MQ">Martinique</option>
+                  <option value="RE">La Réunion</option>
+                  <option value="GF">Guyane</option>
+                  <option value="BE">Belgique</option>
+                  <option value="CH">Suisse</option>
+                </select>
+              </div>
+            </div>
+            {/* Gestion */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Gestionnaire</label>
+                <input type="text" value={form.account_manager} onChange={(e) => setForm({ ...form, account_manager: e.target.value })} className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Date de validité</label>
+                <input type="date" value={form.validity_date} onChange={(e) => setForm({ ...form, validity_date: e.target.value })} className={inputClass} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Centre de coût</label>
+                <input type="text" value={form.cost_center} onChange={(e) => setForm({ ...form, cost_center: e.target.value })} className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Facturation</label>
+                <select value={form.billing_mode} onChange={(e) => setForm({ ...form, billing_mode: e.target.value as typeof form.billing_mode })} className={inputClass}>
+                  <option value="POSTPAID">Post-payé</option>
+                  <option value="PREPAID">Prépayé</option>
+                </select>
+              </div>
+            </div>
+            {/* Notes */}
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1.5">Notes internes</label>
+              <textarea value={form.admin_notes} onChange={(e) => setForm({ ...form, admin_notes: e.target.value })}
+                rows={2} className={`${inputClass} resize-none`} />
+            </div>
+            {error && (
+              <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>
+            )}
+            <div className="flex gap-3 pt-2">
+              <button type="button" onClick={onClose}
+                className="flex-1 py-2.5 border border-border rounded-xl text-sm text-foreground-muted hover:text-foreground transition-colors">
+                Annuler
+              </button>
+              <button type="submit" disabled={loading}
+                className="flex-1 py-2.5 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                Enregistrer
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </>
   );
 }

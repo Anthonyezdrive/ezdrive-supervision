@@ -6,7 +6,7 @@
 
 import { query, queryOne } from '../db';
 import { logger } from '../index';
-import { calculateTariff, resolveTariff, type TariffCalculationResult } from './tariff-engine';
+import { calculateTariff, resolveTariff, resolveVatRate, type TariffCalculationResult } from './tariff-engine';
 
 /**
  * Create an OCPI session when an OCPP transaction starts.
@@ -28,7 +28,7 @@ export async function createOcpiSession(
       party_id: string;
     }>(
       `SELECT id, ocpi_id, country_code, party_id
-       FROM ocpi_locations WHERE station_id = $1 LIMIT 1`,
+       FROM ocpi_locations WHERE station_id = $1 ORDER BY created_at DESC LIMIT 1`,
       [stationId]
     );
 
@@ -39,7 +39,7 @@ export async function createOcpiSession(
 
     // Find OCPI EVSE
     const evse = await queryOne<{ id: string; evse_id: string; uid: string }>(
-      `SELECT id, evse_id, uid FROM ocpi_evses WHERE location_id = $1 LIMIT 1`,
+      `SELECT id, evse_id, uid FROM ocpi_evses WHERE location_id = $1 ORDER BY evse_id ASC LIMIT 1`,
       [location.id]
     );
 
@@ -50,13 +50,13 @@ export async function createOcpiSession(
 
     // Find OCPI connector
     const connector = await queryOne<{ id: string; connector_id: string }>(
-      `SELECT id, connector_id FROM ocpi_connectors WHERE evse_id = $1 LIMIT 1`,
+      `SELECT id, connector_id FROM ocpi_connectors WHERE evse_id = $1 ORDER BY connector_id ASC LIMIT 1`,
       [evse.id]
     );
 
     // Find the token
     const token = await queryOne<{ id: string; auth_id: string }>(
-      `SELECT id, auth_id FROM ocpi_tokens WHERE uid = $1 LIMIT 1`,
+      `SELECT id, auth_id FROM ocpi_tokens WHERE uid = $1 ORDER BY created_at DESC LIMIT 1`,
       [idTag]
     );
 
@@ -191,7 +191,7 @@ export async function finalizeOcpiSession(
       `SELECT c.standard FROM ocpi_connectors c
        JOIN ocpi_evses e ON c.evse_id = e.id
        JOIN ocpi_locations l ON e.location_id = l.id
-       WHERE l.ocpi_id = $1 LIMIT 1`,
+       WHERE l.ocpi_id = $1 ORDER BY c.connector_id ASC LIMIT 1`,
       [session.location_id]
     );
 
@@ -200,6 +200,9 @@ export async function finalizeOcpiSession(
       connectorInfo?.standard
     );
 
+    // Resolve VAT rate based on station location (8.5% DOM-TOM, 20% métropole)
+    const vatRate = await resolveVatRate(tx.chargepoint_id);
+
     const cost: TariffCalculationResult = calculateTariff(
       {
         energyKwh: finalEnergyKwh,
@@ -207,7 +210,7 @@ export async function finalizeOcpiSession(
         parkingHours: 0,
       },
       tariffElements,
-      8.5 // DOM-TOM VAT rate
+      vatRate
     );
 
     logger.info(

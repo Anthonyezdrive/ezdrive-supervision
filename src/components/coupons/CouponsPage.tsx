@@ -5,6 +5,7 @@
 
 import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { PageHelp } from "@/components/ui/PageHelp";
 import {
   Ticket,
   Search,
@@ -400,6 +401,16 @@ export function CouponsPage() {
           Nouveau coupon
         </button>
       </div>
+
+      <PageHelp
+        summary="Création et gestion de codes promotionnels pour vos clients"
+        items={[
+          { label: "Code promo", description: "Code unique que le client saisit pour bénéficier d'une réduction sur ses charges." },
+          { label: "Type de réduction", description: "Pourcentage (ex: -20%) ou montant fixe (ex: -5€) sur le prix de la session." },
+          { label: "Validité", description: "Dates de début/fin et nombre maximum d'utilisations par code ou par client." },
+          { label: "Suivi", description: "Nombre de fois que chaque code a été utilisé et montant total des réductions accordées." },
+        ]}
+      />
 
       {/* KPIs */}
       {isLoading ? (

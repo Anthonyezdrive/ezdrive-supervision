@@ -26,6 +26,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { KPICard } from "@/components/ui/KPICard";
+import { PageHelp } from "@/components/ui/PageHelp";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -534,6 +535,16 @@ export function ReimbursementPage() {
           Nouvelle règle
         </button>
       </div>
+
+      <PageHelp
+        summary="Suivi des remboursements et compensations liés aux sessions de roaming"
+        items={[
+          { label: "Remboursement", description: "Montant dû par un eMSP pour les charges effectuées par ses clients sur vos bornes." },
+          { label: "Rapprochement", description: "Vérification que les CDRs correspondent aux sessions réelles (énergie, durée, tarif)." },
+          { label: "Statut", description: "Pending (à traiter), Validated (vérifié), Paid (réglé), Disputed (contesté)." },
+          { label: "Export", description: "Téléchargez les relevés pour les transmettre à votre service comptable." },
+        ]}
+      />
 
       {/* KPIs */}
       {isLoading ? (

@@ -1,6 +1,11 @@
 // ============================================
 // Service: Transaction Management
 // Query helpers for OCPP transactions
+//
+// NOTE: These utility functions are available for use
+// by new handlers and API extensions. Currently the core
+// handlers (start-transaction, stop-transaction, meter-values)
+// use inline queries for historical reasons.
 // ============================================
 
 import { query, queryOne } from '../db';

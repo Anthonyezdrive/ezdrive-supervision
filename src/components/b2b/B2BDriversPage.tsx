@@ -4,12 +4,13 @@ import { Download } from "lucide-react";
 import { useB2BCdrs } from "@/hooks/useB2BCdrs";
 import { groupByDriver, formatNumber } from "@/lib/b2b-formulas";
 import { downloadCSV, todayISO } from "@/lib/export";
+import { PageHelp } from "@/components/ui/PageHelp";
 import type { B2BClient } from "@/types/b2b";
 
 const CHART_COLORS = [
-  "#00D4AA", "#3498DB", "#FF6B6B", "#F39C12", "#9B59B6",
-  "#E74C3C", "#1ABC9C", "#2ECC71", "#E67E22", "#34495E",
-  "#16A085", "#8E44AD", "#D35400", "#27AE60", "#2980B9",
+  "#9ACC0E", "#00C3FF", "#F39C12", "#FF6B6B", "#9B59B6",
+  "#85B50C", "#00A8D6", "#2ECC71", "#E67E22", "#34495E",
+  "#B8E04E", "#4DD4FF", "#D35400", "#27AE60", "#2980B9",
   "#C0392B", "#7F8C8D", "#BDC3C7",
 ];
 
@@ -68,6 +69,17 @@ export function B2BDriversPage() {
 
   return (
     <div className="space-y-6">
+      <PageHelp
+        summary="Statistiques de charge par conducteur — identifiez les usages de vos collaborateurs"
+        items={[
+          { label: "Conducteur", description: "Identifié par son tag RFID ou son identifiant dans le système de charge." },
+          { label: "Sessions", description: "Nombre total de sessions de charge effectuées par ce conducteur." },
+          { label: "Volume (kWh)", description: "Énergie totale consommée par ce conducteur sur la période." },
+          { label: "Coût", description: "Montant total des charges effectuées par ce conducteur." },
+        ]}
+        tips={["Les conducteurs sont identifiés par leur token RFID. Un même collaborateur peut avoir plusieurs badges."]}
+      />
+
       {/* Pie chart */}
       <div className="bg-surface border border-border rounded-2xl p-6">
         <h3 className="text-base font-semibold text-foreground mb-4">
@@ -166,7 +178,7 @@ export function B2BDriversPage() {
                     </tr>
                   ))}
                   {/* Total */}
-                  <tr className="bg-surface-elevated/30 font-bold border-t-2 border-primary/30">
+                  <tr className="bg-surface-elevated/30 font-bold border-t-2" style={{ borderTopColor: "#9ACC0E40" }}>
                     <td colSpan={3} className={tdClass}>Total</td>
                     <td className={`${tdClass} text-right`}>{formatNumber(totalVolume)}</td>
                   </tr>

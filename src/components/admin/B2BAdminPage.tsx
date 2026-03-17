@@ -3,6 +3,7 @@ import {
   Building2, Users, Plus, Trash2, Pencil, Search,
   CheckCircle, XCircle, Eye, EyeOff, Copy, Loader2,
 } from "lucide-react";
+import { PageHelp } from "@/components/ui/PageHelp";
 import { KPICard } from "@/components/ui/KPICard";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
@@ -196,6 +197,20 @@ export function B2BAdminPage() {
           Clients, comptes utilisateurs et acc\u00e8s au portail B2B
         </p>
       </div>
+
+      <PageHelp
+        summary="Gestion de vos clients B2B — configuration des accès au portail client"
+        items={[
+          { label: "Client B2B", description: "Une entreprise qui utilise vos bornes et dispose d'un portail de suivi dédié." },
+          { label: "customer_external_id", description: "Identifiant du client dans les CDRs GreenFlux — lie les sessions au bon client B2B." },
+          { label: "Taux de redevance", description: "Pourcentage appliqué sur le chiffre d'affaires des sessions pour calculer la redevance due." },
+          { label: "Accès portail", description: "Créez un compte utilisateur avec le rôle 'b2b_client' et liez-le à un client B2B." },
+        ]}
+        tips={[
+          "Pour donner accès au portail : 1) Créez le client B2B ici, 2) Créez un compte utilisateur, 3) Associez-le via la table b2b_client_access.",
+          "L'URL du portail client est : https://pro.ezdrive.fr/portail"
+        ]}
+      />
 
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">

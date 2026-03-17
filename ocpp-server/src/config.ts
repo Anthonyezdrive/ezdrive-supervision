@@ -20,6 +20,12 @@ export const config = {
   commandTimeout: parseInt(process.env.COMMAND_TIMEOUT || '30000', 10), // ms
   commandExpiry: parseInt(process.env.COMMAND_EXPIRY || '300', 10), // seconds
 
+  // WebSocket Security
+  // OCPP_WS_AUTH_ENABLED: "true" to require Basic Auth on WebSocket upgrade
+  // OCPP_WS_PASSWORD: shared password for chargepoints (identity is the username)
+  wsAuthEnabled: process.env.OCPP_WS_AUTH_ENABLED === 'true',
+  wsPassword: process.env.OCPP_WS_PASSWORD || '',
+
   // Health check
   healthPath: '/health',
 } as const;

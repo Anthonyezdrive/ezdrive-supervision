@@ -12,6 +12,17 @@ export function AppShell() {
   const isFullHeight = FULL_HEIGHT_ROUTES.includes(location.pathname);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem("sidebar-collapsed") === "true"; } catch { return false; }
+  });
+
+  function toggleCollapsed() {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("sidebar-collapsed", String(next)); } catch {}
+      return next;
+    });
+  }
 
   // Cmd+K / Ctrl+K shortcut to open search
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -36,7 +47,12 @@ export function AppShell() {
         />
       )}
 
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      <Sidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={toggleCollapsed}
+      />
 
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <TopBar

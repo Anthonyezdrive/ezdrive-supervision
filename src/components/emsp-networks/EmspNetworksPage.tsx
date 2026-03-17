@@ -25,6 +25,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { KPICard } from "@/components/ui/KPICard";
+import { PageHelp } from "@/components/ui/PageHelp";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -338,6 +339,16 @@ export function EmspNetworksPage() {
           Nouveau reseau
         </button>
       </div>
+
+      <PageHelp
+        summary="Réseaux de bornes accessibles à vos clients en roaming (vous en tant qu'eMSP)"
+        items={[
+          { label: "eMSP", description: "e-Mobility Service Provider — vous, en tant que fournisseur de services de mobilité à vos clients." },
+          { label: "Réseau accessible", description: "Un CPO partenaire dont les bornes sont accessibles à vos clients via le roaming." },
+          { label: "Bornes disponibles", description: "Nombre de points de charge accessibles sur ce réseau partenaire." },
+          { label: "Tarifs appliqués", description: "Prix que vos clients paieront pour charger sur les bornes de ce partenaire." },
+        ]}
+      />
 
       {/* KPIs */}
       {isLoading ? (

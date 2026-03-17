@@ -26,6 +26,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { KPICard } from "@/components/ui/KPICard";
+import { PageHelp } from "@/components/ui/PageHelp";
 
 // -- Types ----------------------------------------------------
 
@@ -394,6 +395,16 @@ export function EmspContractsPage() {
           Nouveau contrat
         </button>
       </div>
+
+      <PageHelp
+        summary="Contrats avec les CPO partenaires pour l'accès roaming de vos clients"
+        items={[
+          { label: "Contrat eMSP", description: "Accord vous permettant d'offrir l'accès aux bornes d'un CPO partenaire à vos clients." },
+          { label: "Coût d'accès", description: "Tarif que vous payez au CPO pour chaque kWh consommé par vos clients sur ses bornes." },
+          { label: "Marge", description: "Différence entre ce que vous facturez à vos clients et ce que vous payez au CPO." },
+          { label: "Volume", description: "Nombre de sessions et énergie totale consommée par vos clients sur ce réseau." },
+        ]}
+      />
 
       {/* KPIs */}
       {isLoading ? (

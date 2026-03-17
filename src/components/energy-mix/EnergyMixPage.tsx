@@ -29,6 +29,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { KPICard } from "@/components/ui/KPICard";
+import { PageHelp } from "@/components/ui/PageHelp";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -500,6 +501,16 @@ export function EnergyMixPage() {
           Nouveau profil
         </button>
       </div>
+
+      <PageHelp
+        summary="Composition du mix énergétique et traçabilité de l'origine de l'électricité"
+        items={[
+          { label: "Mix énergétique", description: "Répartition de l'électricité par source : solaire, éolien, hydraulique, nucléaire, fossile." },
+          { label: "Garantie d'origine", description: "Certificat attestant que l'électricité provient de sources renouvelables." },
+          { label: "Émissions CO2", description: "Estimation des émissions de CO2 évitées par rapport à un véhicule thermique." },
+          { label: "Publication OCPI", description: "Le mix énergétique est transmis aux partenaires via le protocole OCPI." },
+        ]}
+      />
 
       {/* KPIs */}
       {isLoading ? (

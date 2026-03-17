@@ -1,7 +1,8 @@
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
+import { PageHelp } from "@/components/ui/PageHelp";
 import {
   Nfc,
   ShieldCheck,
@@ -11,6 +12,10 @@ import {
   Search,
   ChevronLeft,
   ChevronRight,
+  Plus,
+  X,
+  Loader2,
+  Trash2,
 } from "lucide-react";
 
 // ============================================================
@@ -110,9 +115,22 @@ function formatDateTime(dateStr: string | null): string {
 // ============================================================
 
 export function RfidPage() {
+  const queryClient = useQueryClient();
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<RfidStatus | "ALL">("ALL");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
+
+  async function updateCardStatus(cardId: string, newStatus: RfidStatus) {
+    setActionLoading(cardId);
+    try {
+      await supabase.from("rfid_cards").update({ status: newStatus }).eq("id", cardId);
+      queryClient.invalidateQueries({ queryKey: ["rfid-cards"] });
+    } finally {
+      setActionLoading(null);
+    }
+  }
 
   // --- Query ---
   const {
@@ -177,12 +195,32 @@ export function RfidPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="font-heading text-xl font-bold text-foreground">Tokens RFID</h1>
-        <p className="text-sm text-foreground-muted mt-1">
-          Gestion des cartes et tokens d'identification
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-heading text-xl font-bold text-foreground">Tokens RFID</h1>
+          <p className="text-sm text-foreground-muted mt-1">
+            Gestion des cartes et tokens d'identification
+          </p>
+        </div>
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="flex items-center gap-1.5 px-4 py-2 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          Créer token
+        </button>
       </div>
+
+      <PageHelp
+        summary="Gestion des cartes et badges RFID pour l'authentification sur les bornes"
+        items={[
+          { label: "Token RFID", description: "Identifiant unique du badge (UID) utilisé pour démarrer une charge sans application." },
+          { label: "Statut", description: "Accepted (autorisé), Blocked (bloqué), Expired (expiré), Invalid (non reconnu)." },
+          { label: "Association client", description: "Chaque carte RFID est liée à un client. Un client peut avoir plusieurs cartes." },
+          { label: "Whitelist", description: "Liste des badges autorisés, synchronisée automatiquement avec les bornes via OCPP." },
+        ]}
+        tips={["Les badges bloqués sont immédiatement refusés par les bornes lors de la prochaine synchronisation."]}
+      />
 
       {/* KPI Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -278,6 +316,9 @@ export function RfidPage() {
                   <th className="text-left px-4 py-3 font-medium text-foreground-muted">
                     Dernière utilisation
                   </th>
+                  <th className="text-left px-4 py-3 font-medium text-foreground-muted">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -331,6 +372,40 @@ export function RfidPage() {
                       <td className="px-4 py-3 text-xs text-foreground-muted">
                         {formatDateTime(card.last_used_at)}
                       </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1">
+                          {card.status !== "ACTIVE" && (
+                            <button
+                              onClick={() => updateCardStatus(card.id, "ACTIVE")}
+                              disabled={actionLoading === card.id}
+                              className="p-1.5 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors disabled:opacity-40"
+                              title="Activer"
+                            >
+                              {actionLoading === card.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                            </button>
+                          )}
+                          {card.status === "ACTIVE" && (
+                            <button
+                              onClick={() => updateCardStatus(card.id, "BLOCKED")}
+                              disabled={actionLoading === card.id}
+                              className="p-1.5 rounded-lg bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 transition-colors disabled:opacity-40"
+                              title="Bloquer"
+                            >
+                              {actionLoading === card.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldOff className="w-3.5 h-3.5" />}
+                            </button>
+                          )}
+                          {card.status !== "REVOKED" && (
+                            <button
+                              onClick={() => updateCardStatus(card.id, "REVOKED")}
+                              disabled={actionLoading === card.id}
+                              className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-40"
+                              title="Révoquer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -364,6 +439,16 @@ export function RfidPage() {
             </div>
           )}
         </div>
+      )}
+
+      {showAddModal && (
+        <AddRfidModal
+          onClose={() => setShowAddModal(false)}
+          onCreated={() => {
+            setShowAddModal(false);
+            queryClient.invalidateQueries({ queryKey: ["rfid-cards"] });
+          }}
+        />
       )}
     </div>
   );
@@ -422,5 +507,179 @@ function TableSkeleton() {
         ))}
       </div>
     </div>
+  );
+}
+
+function AddRfidModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const [form, setForm] = useState({
+    uid: "",
+    label: "",
+    visual_number: "",
+    expires_at: "",
+    user_search: "",
+    user_id: "",
+    user_name: "",
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Search consumers for assignment
+  const { data: consumers } = useQuery({
+    queryKey: ["consumers-search", form.user_search],
+    enabled: form.user_search.length >= 2,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("consumer_profiles")
+        .select("id, full_name, email")
+        .or(`full_name.ilike.%${form.user_search}%,email.ilike.%${form.user_search}%`)
+        .limit(5);
+      return data ?? [];
+    },
+  });
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.uid.trim()) { setError("L'UID est obligatoire"); return; }
+    if (!form.user_id) { setError("Veuillez sélectionner un conducteur"); return; }
+    setLoading(true);
+    setError(null);
+    try {
+      const { error: insertError } = await supabase.from("rfid_cards").insert({
+        uid: form.uid.trim().toUpperCase(),
+        label: form.label.trim() || null,
+        visual_number: form.visual_number.trim() || null,
+        user_id: form.user_id,
+        status: "ACTIVE" as RfidStatus,
+        issued_at: new Date().toISOString(),
+        expires_at: form.expires_at ? new Date(form.expires_at).toISOString() : null,
+      });
+      if (insertError) throw new Error(insertError.message);
+      onCreated();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur inconnue");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+      <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+        <div className="bg-surface border border-border rounded-2xl w-full max-w-lg shadow-2xl">
+          <div className="flex items-center justify-between p-5 border-b border-border">
+            <h2 className="font-heading font-bold text-lg">Créer un token RFID</h2>
+            <button onClick={onClose} className="p-1.5 hover:bg-surface-elevated rounded-lg transition-colors">
+              <X className="w-5 h-5 text-foreground-muted" />
+            </button>
+          </div>
+          <form onSubmit={handleSubmit} className="p-5 space-y-4">
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1.5">UID du badge * (ex: 04:AB:CD:12:34)</label>
+              <input
+                type="text"
+                value={form.uid}
+                onChange={(e) => setForm({ ...form, uid: e.target.value })}
+                placeholder="04:AB:CD:12:34:56:78"
+                className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm font-mono focus:outline-none focus:border-primary/50"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Label (nom affiché)</label>
+                <input
+                  type="text"
+                  value={form.label}
+                  onChange={(e) => setForm({ ...form, label: e.target.value })}
+                  placeholder="Badge principal"
+                  className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm focus:outline-none focus:border-primary/50"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">N° Visuel</label>
+                <input
+                  type="text"
+                  value={form.visual_number}
+                  onChange={(e) => setForm({ ...form, visual_number: e.target.value })}
+                  placeholder="EZD-001"
+                  className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm focus:outline-none focus:border-primary/50"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1.5">Date d'expiration (optionnel)</label>
+              <input
+                type="date"
+                value={form.expires_at}
+                onChange={(e) => setForm({ ...form, expires_at: e.target.value })}
+                className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm focus:outline-none focus:border-primary/50"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1.5">Conducteur *</label>
+              {form.user_id ? (
+                <div className="flex items-center justify-between px-3 py-2 bg-primary/10 border border-primary/30 rounded-xl">
+                  <span className="text-sm text-primary font-medium">{form.user_name}</span>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, user_id: "", user_name: "", user_search: "" })}
+                    className="text-foreground-muted hover:text-foreground"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={form.user_search}
+                    onChange={(e) => setForm({ ...form, user_search: e.target.value })}
+                    placeholder="Rechercher un conducteur par nom ou email..."
+                    className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm focus:outline-none focus:border-primary/50"
+                  />
+                  {consumers && consumers.length > 0 && form.user_search.length >= 2 && !form.user_id && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-surface border border-border rounded-xl shadow-lg z-10 overflow-hidden">
+                      {consumers.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => setForm({ ...form, user_id: c.id, user_name: c.full_name ?? c.email ?? c.id, user_search: "" })}
+                          className="w-full text-left px-4 py-2.5 hover:bg-surface-elevated transition-colors text-sm"
+                        >
+                          <span className="font-medium text-foreground">{c.full_name ?? "Sans nom"}</span>
+                          <span className="text-foreground-muted ml-2 text-xs">{c.email}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            {error && (
+              <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>
+            )}
+            <div className="flex gap-3 pt-2">
+              <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-xl text-sm text-foreground-muted hover:text-foreground transition-colors">
+                Annuler
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex-1 py-2.5 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                Créer le token
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </>
   );
 }

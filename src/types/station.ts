@@ -16,6 +16,11 @@ export interface Connector {
   max_power_kw: number;
 }
 
+export type ConnectivityStatus = "Online" | "Offline" | null;
+export type ChargerType = "Public" | "Business" | "Home" | null;
+export type ChargingSpeed = "Slow" | "Fast" | "Mix_AC_DC" | null;
+export type DeployState = "Production" | "Stock" | "Deprecated" | null;
+
 export interface Station {
   id: string;
   gfx_id: string | null;
@@ -42,6 +47,18 @@ export interface Station {
   hours_in_status: number;
   last_synced_at: string;
   created_at: string;
+  // Hardware & connectivity (from GFX expanded API)
+  connectivity_status: ConnectivityStatus;
+  remote_manageable: boolean | null;
+  protocol_version: string | null;
+  firmware_version: string | null;
+  charge_point_vendor: string | null;
+  charge_point_model: string | null;
+  charger_type: ChargerType;
+  charging_speed: ChargingSpeed;
+  deploy_state: DeployState;
+  heartbeat_interval: number | null;
+  iso_15118_enabled: boolean;
 }
 
 export interface StationStatusEntry {

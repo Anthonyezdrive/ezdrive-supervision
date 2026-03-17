@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Wifi, WifiOff } from "lucide-react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { formatDuration } from "@/lib/utils";
 import type { Station, OCPPStatus } from "@/types/station";
@@ -10,7 +10,8 @@ type SortKey =
   | "cpo_name"
   | "territory_name"
   | "max_power_kw"
-  | "hours_in_status";
+  | "hours_in_status"
+  | "connectivity_status";
 type SortDir = "asc" | "desc";
 
 const PAGE_SIZE = 50;
@@ -85,6 +86,9 @@ export function StationTable({ stations, onSelect }: StationTableProps) {
               <th className={thClass} onClick={() => handleSort("max_power_kw")}>
                 Puissance <SortIcon col="max_power_kw" />
               </th>
+              <th className={thClass} onClick={() => handleSort("connectivity_status")}>
+                Connexion <SortIcon col="connectivity_status" />
+              </th>
               <th className={thClass} onClick={() => handleSort("hours_in_status")}>
                 Durée statut <SortIcon col="hours_in_status" />
               </th>
@@ -102,6 +106,12 @@ export function StationTable({ stations, onSelect }: StationTableProps) {
                     <p className="text-sm font-medium text-foreground">{station.name}</p>
                     <p className="text-xs text-foreground-muted">
                       {station.city ?? station.address ?? station.gfx_id}
+                      {station.charge_point_vendor && (
+                        <span className="ml-1 text-foreground-muted/60">
+                          • {station.charge_point_vendor}
+                          {station.charge_point_model ? ` ${station.charge_point_model}` : ""}
+                        </span>
+                      )}
                     </p>
                   </div>
                 </td>
@@ -112,6 +122,24 @@ export function StationTable({ stations, onSelect }: StationTableProps) {
                 <td className="px-4 py-3 text-sm text-foreground-muted">{station.territory_name ?? "—"}</td>
                 <td className="px-4 py-3 text-sm text-foreground-muted">
                   {station.max_power_kw ? `${station.max_power_kw} kW` : "—"}
+                </td>
+                <td className="px-4 py-3">
+                  {station.connectivity_status ? (
+                    <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${
+                      station.connectivity_status === "Online"
+                        ? "text-success"
+                        : "text-danger"
+                    }`}>
+                      {station.connectivity_status === "Online" ? (
+                        <Wifi className="w-3.5 h-3.5" />
+                      ) : (
+                        <WifiOff className="w-3.5 h-3.5" />
+                      )}
+                      {station.connectivity_status}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-foreground-muted">—</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-sm text-foreground-muted">
                   {formatDuration(station.hours_in_status)}

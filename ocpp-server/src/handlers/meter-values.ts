@@ -115,11 +115,13 @@ export async function handleMeterValues(
         );
 
         // Update live energy on transaction
+        // Energy.Active.Import.Register is an ABSOLUTE meter register (Wh since reset).
+        // We compute session energy = (current_register - meter_start).
         if (energyWh != null) {
           await query(
             `UPDATE ocpp_transactions
-             SET energy_kwh = $1 / 1000.0
-             WHERE id = $2 AND status = 'Active'`,
+             SET energy_kwh = GREATEST(($1 - meter_start), 0) / 1000.0
+             WHERE id = $2 AND status = 'Active' AND meter_start IS NOT NULL`,
             [energyWh, txId]
           );
         }

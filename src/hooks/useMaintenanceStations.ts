@@ -13,6 +13,7 @@ export interface MaintenanceStation {
   is_online: boolean;
   connectors: unknown[];
   max_power_kw: number | null;
+  cpo_id: string | null;
   cpo_name: string | null;
   cpo_code: string | null;
   territory_name: string | null;
@@ -21,13 +22,17 @@ export interface MaintenanceStation {
   last_synced_at: string;
 }
 
-export function useMaintenanceStations() {
+export function useMaintenanceStations(cpoId?: string | null) {
   return useQuery<MaintenanceStation[]>({
-    queryKey: ["maintenance-stations"],
+    queryKey: ["maintenance-stations", cpoId ?? "all"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("maintenance_stations")
         .select("*");
+      if (cpoId) {
+        query = query.eq("cpo_id", cpoId);
+      }
+      const { data, error } = await query;
       if (error) throw error;
       return (data ?? []) as MaintenanceStation[];
     },

@@ -26,13 +26,17 @@ export interface SLACPO {
   availability_pct: number;
 }
 
-export function useSLAByTerritory() {
+export function useSLAByTerritory(cpoId?: string | null) {
   return useQuery<SLATerritory[]>({
-    queryKey: ["sla_by_territory"],
+    queryKey: ["sla_by_territory", cpoId ?? "all"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("sla_by_territory")
         .select("*");
+      if (cpoId) {
+        query = query.eq("cpo_id", cpoId);
+      }
+      const { data, error } = await query;
       if (error) throw error;
       return (data ?? []) as SLATerritory[];
     },
@@ -40,11 +44,15 @@ export function useSLAByTerritory() {
   });
 }
 
-export function useSLAByCPO() {
+export function useSLAByCPO(cpoId?: string | null) {
   return useQuery<SLACPO[]>({
-    queryKey: ["sla_by_cpo"],
+    queryKey: ["sla_by_cpo", cpoId ?? "all"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("sla_by_cpo").select("*");
+      let query = supabase.from("sla_by_cpo").select("*");
+      if (cpoId) {
+        query = query.eq("cpo_id", cpoId);
+      }
+      const { data, error } = await query;
       if (error) throw error;
       return (data ?? []) as SLACPO[];
     },

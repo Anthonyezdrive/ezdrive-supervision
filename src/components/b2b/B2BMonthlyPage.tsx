@@ -4,6 +4,7 @@ import { useB2BCdrs } from "@/hooks/useB2BCdrs";
 import { useB2BFilters } from "@/contexts/B2BFilterContext";
 import { groupByMonth, formatDuration, formatNumber, formatEUR } from "@/lib/b2b-formulas";
 import { downloadCSV, todayISO } from "@/lib/export";
+import { PageHelp } from "@/components/ui/PageHelp";
 import type { B2BClient } from "@/types/b2b";
 
 const thClass =
@@ -57,6 +58,16 @@ export function B2BMonthlyPage() {
 
   return (
     <div className="space-y-4">
+      <PageHelp
+        summary="Détail mois par mois de votre consommation avec répartition et export"
+        items={[
+          { label: "Vue mensuelle", description: "Sélectionnez un mois pour voir le détail de chaque session de charge." },
+          { label: "CDR", description: "Charge Detail Record — relevé détaillé d'une session : énergie, durée, coût, borne utilisée." },
+          { label: "Export CSV", description: "Téléchargez les données du mois sélectionné au format CSV pour votre comptabilité." },
+          { label: "Redevance mensuelle", description: "Montant dû pour le mois sélectionné, basé sur le taux contractuel." },
+        ]}
+      />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-xl font-heading font-bold text-foreground">
@@ -106,7 +117,7 @@ export function B2BMonthlyPage() {
                     </tr>
                   ))}
                   {/* Total row */}
-                  <tr className="bg-surface-elevated/30 font-bold border-t-2 border-primary/30">
+                  <tr className="bg-surface-elevated/30 font-bold border-t-2" style={{ borderTopColor: "#9ACC0E40" }}>
                     <td className={tdClass}>Total</td>
                     <td className={`${tdClass} text-right`}>{formatNumber(totals.volume)}</td>
                     <td className={`${tdClass} text-right`}>{formatDuration(totals.duration)}</td>

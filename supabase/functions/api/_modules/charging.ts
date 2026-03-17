@@ -386,8 +386,18 @@ async function startSessionOcpp(
     return apiServerError("Chargepoint is currently offline");
   }
 
-  const connectorId = body.connector_id ?? 1;
-  const tokenUid = body.token_uid ?? body.id_tag ?? "APP-TOKEN";
+  // ── Input validation ──
+  const rawConnectorId = Number(body.connector_id ?? 1);
+  if (!Number.isInteger(rawConnectorId) || rawConnectorId < 1 || rawConnectorId > 99) {
+    return apiBadRequest("Invalid connector_id (must be 1-99)");
+  }
+  const connectorId = rawConnectorId;
+
+  const rawTokenUid = String(body.token_uid ?? body.id_tag ?? "APP-TOKEN").trim();
+  if (rawTokenUid.length === 0 || rawTokenUid.length > 36 || !/^[A-Za-z0-9\-_]+$/.test(rawTokenUid)) {
+    return apiBadRequest("Invalid token_uid format");
+  }
+  const tokenUid = rawTokenUid;
 
   try {
     const cmd = await sendOcppCommand(
@@ -492,11 +502,21 @@ async function stopSessionOcpp(
   let ocppTxId: number;
   if (transactionId) {
     ocppTxId = Number(transactionId);
+    // ── Ownership check: verify this transaction belongs to the user ──
+    const { data: ownerCheck } = await db
+      .from("ocpp_transactions")
+      .select("consumer_id")
+      .eq("ocpp_transaction_id", ocppTxId)
+      .eq("chargepoint_id", cp.id)
+      .single();
+    if (ownerCheck && ownerCheck.consumer_id && ownerCheck.consumer_id !== userId) {
+      return apiBadRequest("This charging session does not belong to you");
+    }
   } else {
-    // Find last active transaction on this chargepoint
+    // Find last active transaction on this chargepoint OWNED BY this user
     const { data: tx } = await db
       .from("ocpp_transactions")
-      .select("ocpp_transaction_id")
+      .select("ocpp_transaction_id, consumer_id")
       .eq("chargepoint_id", cp.id)
       .eq("status", "Active")
       .order("started_at", { ascending: false })
@@ -505,6 +525,10 @@ async function stopSessionOcpp(
 
     if (!tx) {
       return apiBadRequest("No active charging session found on this chargepoint");
+    }
+    // Verify ownership if consumer_id is set
+    if (tx.consumer_id && tx.consumer_id !== userId) {
+      return apiBadRequest("Active session on this chargepoint belongs to another user");
     }
     ocppTxId = tx.ocpp_transaction_id;
   }
@@ -549,17 +573,22 @@ async function getChargingStatus(ctx: RouteContext): Promise<Response> {
   const stationId = ctx.url.searchParams.get("station_id");
   const commandId = ctx.url.searchParams.get("command_id");
 
-  // Check OCPP command status
+  // Check OCPP command status — only own commands
   if (commandId) {
     const db = getServiceClient();
     const { data: cmd } = await db
       .from("ocpp_command_queue")
-      .select("id, command, status, result, created_at, processed_at")
+      .select("id, command, status, result, created_at, processed_at, requested_by")
       .eq("id", commandId)
       .single();
 
     if (!cmd) return apiNotFound("Command not found");
-    return apiSuccess(cmd);
+    // Ownership check: only return commands requested by this user
+    if (cmd.requested_by && cmd.requested_by !== userId) {
+      return apiNotFound("Command not found");
+    }
+    const { requested_by: _, ...safeCmd } = cmd;
+    return apiSuccess(safeCmd);
   }
 
   // Check OCPP station active transaction

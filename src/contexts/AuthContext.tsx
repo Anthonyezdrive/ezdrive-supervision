@@ -14,9 +14,14 @@ interface AuthState {
   session: Session | null;
   profile: UserProfile | null;
   loading: boolean;
+  isRecovery: boolean;
+  clearRecovery: () => void;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
+  signInWithGoogle: () => Promise<{ error: string | null }>;
+  signInWithApple: () => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
+  updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
 }
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
@@ -26,6 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isRecovery, setIsRecovery] = useState(false);
 
   async function fetchProfile(userId: string) {
     const { data } = await supabase
@@ -48,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             currentUser.user_metadata?.full_name ?? currentUser.email ?? "",
           role: "admin",
           territory: null,
+          cpo_id: null,
           created_at: currentUser.created_at,
         });
       }
@@ -64,9 +71,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, s) => {
+    } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
       setUser(s?.user ?? null);
+      if (event === "PASSWORD_RECOVERY") {
+        setIsRecovery(true);
+      }
       if (s?.user) {
         fetchProfile(s.user.id);
       } else {
@@ -86,6 +96,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error?.message ?? null };
   }
 
+  async function signInWithGoogle() {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/dashboard`,
+      },
+    });
+    return { error: error?.message ?? null };
+  }
+
+  async function signInWithApple() {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "apple",
+      options: {
+        redirectTo: `${window.location.origin}/dashboard`,
+      },
+    });
+    return { error: error?.message ?? null };
+  }
+
   async function signOut() {
     await supabase.auth.signOut();
     setProfile(null);
@@ -93,14 +123,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function resetPassword(email: string) {
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/login`,
+      redirectTo: `${window.location.origin}/reset-password`,
     });
     return { error: error?.message ?? null };
   }
 
+  async function updatePassword(newPassword: string) {
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (!error) setIsRecovery(false);
+    return { error: error?.message ?? null };
+  }
+
+  function clearRecovery() {
+    setIsRecovery(false);
+  }
+
   return (
     <AuthContext.Provider
-      value={{ user, session, profile, loading, signIn, signOut, resetPassword }}
+      value={{ user, session, profile, loading, isRecovery, clearRecovery, signIn, signInWithGoogle, signInWithApple, signOut, resetPassword, updatePassword }}
     >
       {children}
     </AuthContext.Provider>

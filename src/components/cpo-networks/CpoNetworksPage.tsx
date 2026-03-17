@@ -25,6 +25,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { KPICard } from "@/components/ui/KPICard";
+import { PageHelp } from "@/components/ui/PageHelp";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -338,6 +339,16 @@ export function CpoNetworksPage() {
           Nouveau reseau
         </button>
       </div>
+
+      <PageHelp
+        summary="Réseaux partenaires connectés à votre infrastructure de recharge"
+        items={[
+          { label: "Réseau partenaire", description: "Un eMSP (e-Mobility Service Provider) dont les clients peuvent charger sur vos bornes." },
+          { label: "Statut connexion", description: "Connected (actif), Pending (en attente), Disconnected (déconnecté)." },
+          { label: "Volume échangé", description: "Nombre de sessions et énergie totale consommée par les clients de ce partenaire." },
+          { label: "Synchronisation", description: "Fréquence de mise à jour des données (bornes, tarifs, sessions) avec le partenaire." },
+        ]}
+      />
 
       {/* KPIs */}
       {isLoading ? (

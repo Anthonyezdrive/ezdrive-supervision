@@ -10,6 +10,7 @@ import {
   RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PageHelp } from "@/components/ui/PageHelp";
 
 // ============================================================
 // Smart Charging — OCPP Smart Charging Profiles Management
@@ -115,6 +116,17 @@ export function SmartChargingPage() {
           {toggleEnabled ? "Actif" : "Désactivé"}
         </div>
       </div>
+
+      <PageHelp
+        summary="Gestion intelligente de la puissance de charge pour optimiser votre consommation"
+        items={[
+          { label: "Profils de charge", description: "Définissez des limites de puissance par tranche horaire pour éviter les dépassements." },
+          { label: "Load balancing", description: "Répartition automatique de la puissance disponible entre les bornes actives." },
+          { label: "Pics de consommation", description: "Visualisez les pics pour ajuster vos profils et réduire votre facture électrique." },
+          { label: "Planification", description: "Programmez des restrictions horaires (ex: réduire la puissance aux heures de pointe)." },
+        ]}
+        tips={["Le smart charging nécessite des bornes compatibles OCPP Smart Charging (profil 2.0+)."]}
+      />
 
       {/* KPI Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
