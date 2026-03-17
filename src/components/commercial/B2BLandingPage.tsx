@@ -132,17 +132,25 @@ function PainPoints() {
 /* ────────────────────── MOCK DASHBOARD ────────────────────── */
 function MockDashboard() {
   const kpis = [
-    { label: "Durée totale", value: "8 542h", icon: Clock, color: EZ_BLUE },
-    { label: "Volume total", value: "71 570 kWh", icon: Zap, color: EZ_GREEN },
-    { label: "Redevance", value: "16 326 €", icon: Euro, color: "#F39C12" },
-    { label: "Saturation", value: "18,4%", icon: Gauge, color: "#E74C3C" },
+    { label: "Durée totale", value: "757h48min", icon: Clock, color: EZ_BLUE },
+    { label: "Volume total", value: "28 575 kWh", icon: Zap, color: EZ_GREEN },
+    { label: "Redevance", value: "3 964,65 €", icon: Euro, color: "#F39C12" },
+    { label: "Saturation", value: "12,3%", icon: Gauge, color: EZ_GREEN },
   ];
 
   const months = [
-    { name: "jan", v: 42 }, { name: "fév", v: 48 }, { name: "mars", v: 55 },
-    { name: "avr", v: 52 }, { name: "mai", v: 61 }, { name: "juin", v: 68 },
-    { name: "juil", v: 73 }, { name: "août", v: 65 }, { name: "sept", v: 78 },
-    { name: "oct", v: 85 }, { name: "nov", v: 82 }, { name: "déc", v: 90 },
+    { name: "jan", v: 9409, label: "9 409" },
+    { name: "fév", v: 9451, label: "9 451" },
+    { name: "mars", v: 9715, label: "9 715" },
+    { name: "avr", v: 8820, label: "8 820" },
+    { name: "mai", v: 10230, label: "10 230" },
+    { name: "juin", v: 11050, label: "11 050" },
+    { name: "juil", v: 9870, label: "9 870" },
+    { name: "août", v: 7540, label: "7 540" },
+    { name: "sept", v: 10680, label: "10 680" },
+    { name: "oct", v: 11290, label: "11 290" },
+    { name: "nov", v: 10450, label: "10 450" },
+    { name: "déc", v: 8920, label: "8 920" },
   ];
   const maxV = Math.max(...months.map((m) => m.v));
 
@@ -171,8 +179,8 @@ function MockDashboard() {
                 <Building2 className="w-4 h-4" style={{ color: EZ_GREEN }} />
               </div>
               <div>
-                <p className="text-sm font-semibold text-foreground">Votre Entreprise SA</p>
-                <p className="text-xs text-foreground-muted">6 sites — 25 conducteurs</p>
+                <p className="text-sm font-semibold text-foreground">Entreprise Démo SA</p>
+                <p className="text-xs text-foreground-muted">4 sites — 32 bornes — 18 conducteurs</p>
               </div>
             </div>
             <div className="text-xs text-foreground-muted bg-surface-elevated px-3 py-1.5 rounded-lg border border-border">
@@ -195,24 +203,51 @@ function MockDashboard() {
 
           {/* Bar chart mock */}
           <div className="bg-surface-elevated border border-border rounded-xl p-4">
-            <p className="text-sm font-medium text-foreground mb-4">Volume mensuel (kWh)</p>
-            <div className="flex items-end gap-1.5 h-40">
-              {months.map((m, i) => (
-                <div key={m.name} className="flex-1 flex flex-col items-center gap-1">
-                  <div
-                    className="w-full rounded-t-md transition-all"
-                    style={{
-                      height: `${(m.v / maxV) * 100}%`,
-                      backgroundColor: i % 2 === 0 ? EZ_GREEN : EZ_BLUE,
-                      opacity: 0.8,
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
-                    onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.8")}
-                  />
-                  <span className="text-[10px] text-foreground-muted">{m.name}</span>
-                </div>
-              ))}
+            <p className="text-sm font-medium text-foreground mb-2">Somme de Volume par Mois</p>
+            {/* Y axis labels + bars */}
+            <div className="flex gap-2">
+              <div className="flex flex-col justify-between text-[10px] text-foreground-muted py-1 w-10 text-right shrink-0" style={{ height: "180px" }}>
+                <span>12 000</span>
+                <span>9 000</span>
+                <span>6 000</span>
+                <span>3 000</span>
+                <span>0</span>
+              </div>
+              <div className="flex items-end gap-1 flex-1" style={{ height: "180px" }}>
+                {months.map((m, i) => (
+                  <div key={m.name} className="flex-1 flex flex-col items-center gap-0.5">
+                    <span className="text-[9px] text-foreground-muted font-medium">{m.label}</span>
+                    <div
+                      className="w-full rounded-t-md transition-all cursor-pointer"
+                      style={{
+                        height: `${(m.v / maxV) * 100}%`,
+                        backgroundColor: EZ_GREEN,
+                        opacity: 0.85,
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
+                      onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.85")}
+                    />
+                    <span className="text-[10px] text-foreground-muted">{m.name}</span>
+                  </div>
+                ))}
+              </div>
             </div>
+          </div>
+
+          {/* Secondary stats row */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
+            {[
+              { label: "Sessions", value: "1 847", sub: "total" },
+              { label: "Vol. moyen / session", value: "15,5 kWh", sub: "" },
+              { label: "CO₂ évité", value: "8,2 tonnes", sub: "vs thermique" },
+              { label: "Taux d'utilisation", value: "67%", sub: "heures ouvrées" },
+            ].map((s) => (
+              <div key={s.label} className="bg-surface border border-border rounded-xl p-3 text-center">
+                <p className="text-[10px] text-foreground-muted">{s.label}</p>
+                <p className="text-sm font-heading font-bold text-foreground">{s.value}</p>
+                {s.sub && <p className="text-[9px] text-foreground-muted">{s.sub}</p>}
+              </div>
+            ))}
           </div>
         </div>
       </div>

@@ -33,10 +33,13 @@ export function computeTempsEquivalent(energyPerSessionKwh: number): number {
   return energyPerSessionKwh / 7.4;
 }
 
-/** Saturation = (temps réel moyen − temps équivalent moyen) / temps réel moyen */
+/** Saturation = (temps réel moyen − temps équivalent moyen) / temps réel moyen
+ *  Clampé entre 0% et 100% — les valeurs négatives arrivent sur les DC
+ *  (énergie délivrée plus vite que la référence 7.4 kW AC) */
 export function computeSaturation(avgRealTimeHours: number, avgEquivTimeHours: number): number {
   if (avgRealTimeHours === 0) return 0;
-  return (avgRealTimeHours - avgEquivTimeHours) / avgRealTimeHours;
+  const raw = (avgRealTimeHours - avgEquivTimeHours) / avgRealTimeHours;
+  return Math.max(0, Math.min(1, raw));
 }
 
 /** Volume avec tarif = sessions avec cost != 0 et pas employés EZDrive */
