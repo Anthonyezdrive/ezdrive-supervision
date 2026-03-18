@@ -1,6 +1,6 @@
 // ============================================================
 // EZDrive — CPO Networks Page
-// Manage CPO charging networks (internal and external)
+// GreenFlux-style: list view + detail view with tabs
 // ============================================================
 
 import { useState, useMemo, useCallback } from "react";
@@ -10,13 +10,18 @@ import {
   Search,
   Plus,
   Pencil,
-  Trash2,
+
   ChevronUp,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Globe,
-  Home,
+  ArrowLeft,
+
+  FileSignature,
+  Handshake,
+  Receipt,
+  ExternalLink,
+  Building2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -24,7 +29,6 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/contexts/ToastContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SlideOver } from "@/components/ui/SlideOver";
-import { KPICard } from "@/components/ui/KPICard";
 import { PageHelp } from "@/components/ui/PageHelp";
 
 // ── Types ─────────────────────────────────────────────────────
@@ -41,13 +45,62 @@ interface CpoNetwork {
   updated_at: string;
 }
 
-const EMPTY_NETWORK: {
-  type: CpoNetwork["type"];
+interface CpoContract {
+  id: string;
+  type: "internal" | "external";
   name: string;
-  remarks: string;
-  updated_by: string;
-} = {
-  type: "internal",
+  network_id: string | null;
+  country_code: string;
+  party_id: string | null;
+  contract_code: string | null;
+  currency: string;
+  url: string | null;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+interface RoamingAgreement {
+  id: string;
+  status: "active" | "expired" | "planned";
+  management: string | null;
+  emsp_network: { name: string } | null;
+  emsp_contract: { name: string } | null;
+  cpo_contract: { name: string } | null;
+  connection_method: string | null;
+  valid_from: string | null;
+  valid_to: string | null;
+  professional_contact: string | null;
+  professional_email: string | null;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+interface ReimbursementRule {
+  id: string;
+  status: "active" | "expired" | "planned";
+  cpo_name: string | null;
+  emsp_name: string | null;
+  price_per_kwh: number;
+  price_per_min: number;
+  start_fee: number;
+  idle_fee_per_min: number;
+  currency: string;
+  valid_from: string | null;
+  valid_to: string | null;
+  remarks: string | null;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+interface CpoOperator {
+  id: string;
+  name: string;
+  code: string;
+  color: string | null;
+}
+
+const EMPTY_NETWORK = {
+  type: "internal" as CpoNetwork["type"],
   name: "",
   remarks: "",
   updated_by: "",
@@ -56,13 +109,14 @@ const EMPTY_NETWORK: {
 type SortKey = "name" | "type" | "cpo_contracts_count" | "updated_at";
 type SortDir = "asc" | "desc";
 type FilterTab = "all" | "internal" | "external";
+type DetailTab = "details" | "contracts" | "cpos" | "agreements" | "billing";
 
 const PAGE_SIZE = 15;
 
-// ── Type badge ────────────────────────────────────────────────
+// ── Badges ──────────────────────────────────────────────────
 
-function TypeBadge({ type }: { type: CpoNetwork["type"] }) {
-  const config: Record<CpoNetwork["type"], { bg: string; text: string; border: string; dot: string; label: string }> = {
+function TypeBadge({ type }: { type: "internal" | "external" }) {
+  const config = {
     internal: { bg: "bg-blue-500/10", text: "text-blue-400", border: "border-blue-500/25", dot: "#60A5FA", label: "Interne" },
     external: { bg: "bg-amber-500/10", text: "text-amber-400", border: "border-amber-500/25", dot: "#FBBF24", label: "Externe" },
   };
@@ -75,44 +129,47 @@ function TypeBadge({ type }: { type: CpoNetwork["type"] }) {
   );
 }
 
-// ── Loading skeletons ─────────────────────────────────────────
-
-function NetworksKPISkeleton() {
+function StatusBadge({ status }: { status: string }) {
+  const config: Record<string, { bg: string; text: string; border: string; label: string }> = {
+    active: { bg: "bg-emerald-500/10", text: "text-emerald-400", border: "border-emerald-500/25", label: "Valide" },
+    expired: { bg: "bg-red-500/10", text: "text-red-400", border: "border-red-500/25", label: "Expire" },
+    planned: { bg: "bg-blue-500/10", text: "text-blue-400", border: "border-blue-500/25", label: "Prevu" },
+  };
+  const c = config[status] ?? config.active;
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="bg-surface border border-border rounded-2xl p-5 space-y-3">
-          <div className="flex items-center gap-3">
-            <Skeleton className="w-12 h-12 rounded-xl" />
-            <div className="space-y-2 flex-1">
-              <Skeleton className="h-6 w-20" />
-              <Skeleton className="h-3 w-28" />
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
+    <span className={cn("inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold", c.bg, c.text, c.border)}>
+      {c.label}
+    </span>
   );
 }
 
-function NetworksTableSkeleton({ rows = 8 }: { rows?: number }) {
+// ── Date formatter ──────────────────────────────────────────
+
+function formatDate(d: string | null) {
+  if (!d) return "\u2014";
+  return new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function formatDateFull(d: string | null) {
+  if (!d) return "\u2014";
+  return new Date(d).toLocaleDateString("fr-FR", {
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
+// ── Skeletons ───────────────────────────────────────────────
+
+function TableSkeleton({ rows = 5, cols = 6 }: { rows?: number; cols?: number }) {
   return (
     <div className="bg-surface border border-border rounded-2xl overflow-hidden">
       <div className="border-b border-border px-4 py-3 flex gap-6">
-        {Array.from({ length: 7 }).map((_, i) => (
-          <Skeleton key={i} className="h-3 w-20" />
-        ))}
+        {Array.from({ length: cols }).map((_, i) => <Skeleton key={i} className="h-3 w-20" />)}
       </div>
       <div className="divide-y divide-border">
         {Array.from({ length: rows }).map((_, i) => (
           <div key={i} className="px-4 py-3.5 flex items-center gap-6">
-            <Skeleton className="h-4 w-16" />
-            <Skeleton className="h-4 w-32" />
-            <Skeleton className="h-4 w-20" />
-            <Skeleton className="h-4 w-20" />
-            <Skeleton className="h-4 w-28" />
-            <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-4 w-32" />
+            {Array.from({ length: cols }).map((_, j) => <Skeleton key={j} className="h-4 w-24" />)}
           </div>
         ))}
       </div>
@@ -123,43 +180,79 @@ function NetworksTableSkeleton({ rows = 8 }: { rows?: number }) {
 // ── Main Page ─────────────────────────────────────────────────
 
 export function CpoNetworksPage() {
+  const [selectedNetwork, setSelectedNetwork] = useState<CpoNetwork | null>(null);
+
+  if (selectedNetwork) {
+    return (
+      <NetworkDetailView
+        network={selectedNetwork}
+        onBack={() => setSelectedNetwork(null)}
+      />
+    );
+  }
+
+  return <NetworkListView onSelect={setSelectedNetwork} />;
+}
+
+// ══════════════════════════════════════════════════════════════
+// LIST VIEW
+// ══════════════════════════════════════════════════════════════
+
+function NetworkListView({ onSelect }: { onSelect: (n: CpoNetwork) => void }) {
   const queryClient = useQueryClient();
   const { success: toastSuccess, error: toastError } = useToast();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<CpoNetwork | null>(null);
   const [form, setForm] = useState(EMPTY_NETWORK);
   const [confirmDelete, setConfirmDelete] = useState<CpoNetwork | null>(null);
+  const [search, setSearch] = useState("");
+  const [filterTab, setFilterTab] = useState<FilterTab>("all");
+  const [sortKey, setSortKey] = useState<SortKey>("updated_at");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [page, setPage] = useState(1);
+
+  // ── Fetch networks ──
+  const { data: networks, isLoading } = useQuery<CpoNetwork[]>({
+    queryKey: ["cpo-networks"],
+    retry: false,
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase
+          .from("cpo_networks")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (error) return [];
+        return (data ?? []) as CpoNetwork[];
+      } catch {
+        return [];
+      }
+    },
+  });
 
   // ── Mutations ──
   const createMutation = useMutation({
     mutationFn: async (data: typeof EMPTY_NETWORK) => {
-      const { data: result, error } = await supabase.from("cpo_networks").insert({
-        type: data.type,
-        name: data.name.trim(),
-        remarks: data.remarks || null,
-        updated_by: data.updated_by || null,
-      }).select().single();
+      const { error } = await supabase.from("cpo_networks").insert({
+        type: data.type, name: data.name.trim(),
+        remarks: data.remarks || null, updated_by: data.updated_by || null,
+      });
       if (error) throw error;
-      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["cpo-networks"] });
       closeModal();
-      toastSuccess("Reseau cree", "Le reseau CPO a ete ajoute avec succes");
+      toastSuccess("Reseau cree", "Le reseau CPO a ete ajoute");
     },
     onError: (err: Error) => toastError("Erreur", err.message),
   });
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, ...data }: { id: string } & Partial<typeof EMPTY_NETWORK>) => {
-      const { data: result, error } = await supabase.from("cpo_networks").update({
-        type: data.type,
-        name: data.name?.trim(),
-        remarks: data.remarks || null,
-        updated_by: data.updated_by || null,
-      }).eq("id", id).select().single();
+      const { error } = await supabase.from("cpo_networks").update({
+        type: data.type, name: data.name?.trim(),
+        remarks: data.remarks || null, updated_by: data.updated_by || null,
+      }).eq("id", id);
       if (error) throw error;
-      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["cpo-networks"] });
@@ -188,14 +281,10 @@ export function CpoNetworksPage() {
     setModalOpen(true);
   }
 
-  function openEdit(network: CpoNetwork) {
+  function openEdit(e: React.MouseEvent, network: CpoNetwork) {
+    e.stopPropagation();
     setEditing(network);
-    setForm({
-      type: network.type,
-      name: network.name,
-      remarks: network.remarks ?? "",
-      updated_by: network.updated_by ?? "",
-    });
+    setForm({ type: network.type, name: network.name, remarks: network.remarks ?? "", updated_by: network.updated_by ?? "" });
     setModalOpen(true);
   }
 
@@ -207,86 +296,35 @@ export function CpoNetworksPage() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (editing) {
-      updateMutation.mutate({ id: editing.id, ...form });
-    } else {
-      createMutation.mutate(form);
-    }
+    if (editing) updateMutation.mutate({ id: editing.id, ...form });
+    else createMutation.mutate(form);
   }
-
-  // ── Data fetching ──
-  const { data: networks, isLoading } = useQuery<CpoNetwork[]>({
-    queryKey: ["cpo-networks"],
-    retry: false,
-    queryFn: async () => {
-      try {
-        const { data, error } = await supabase
-          .from("cpo_networks")
-          .select("*")
-          .order("created_at", { ascending: false });
-        if (error) {
-          console.warn("[CpoNetworksPage] Table not found:", error.message);
-          return [];
-        }
-        return (data ?? []) as CpoNetwork[];
-      } catch {
-        return [];
-      }
-    },
-  });
-
-  // ── KPIs ──
-  const stats = useMemo(() => {
-    const list = networks ?? [];
-    return {
-      total: list.length,
-      internal: list.filter((n) => n.type === "internal").length,
-      external: list.filter((n) => n.type === "external").length,
-      withContracts: list.filter((n) => n.cpo_contracts_count > 0).length,
-    };
-  }, [networks]);
-
-  // ── Local state ──
-  const [search, setSearch] = useState("");
-  const [filterTab, setFilterTab] = useState<FilterTab>("all");
-  const [sortKey, setSortKey] = useState<SortKey>("updated_at");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [page, setPage] = useState(1);
 
   const handleSort = useCallback((key: SortKey) => {
     setSortKey((prev) => {
-      if (prev === key) {
-        setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-        return key;
-      }
+      if (prev === key) { setSortDir((d) => (d === "asc" ? "desc" : "asc")); return key; }
       setSortDir("asc");
       return key;
     });
     setPage(1);
   }, []);
 
-  // ── Filter + Search + Sort ──
+  // ── Filter + Sort ──
   const processed = useMemo(() => {
     let list = networks ?? [];
     if (filterTab !== "all") list = list.filter((n) => n.type === filterTab);
     if (search.trim()) {
       const q = search.toLowerCase();
-      list = list.filter(
-        (n) =>
-          n.name?.toLowerCase().includes(q) ||
-          n.remarks?.toLowerCase().includes(q) ||
-          n.updated_by?.toLowerCase().includes(q)
+      list = list.filter((n) =>
+        n.name?.toLowerCase().includes(q) || n.remarks?.toLowerCase().includes(q) || n.updated_by?.toLowerCase().includes(q)
       );
     }
     return [...list].sort((a, b) => {
-      const av = a[sortKey];
-      const bv = b[sortKey];
+      const av = a[sortKey], bv = b[sortKey];
       if (av == null && bv == null) return 0;
       if (av == null) return 1;
       if (bv == null) return -1;
-      let cmp: number;
-      if (typeof av === "number" && typeof bv === "number") cmp = av - bv;
-      else cmp = String(av).localeCompare(String(bv), "fr");
+      const cmp = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv), "fr");
       return sortDir === "asc" ? cmp : -cmp;
     });
   }, [networks, filterTab, search, sortKey, sortDir]);
@@ -296,14 +334,9 @@ export function CpoNetworksPage() {
   const start = (safePage - 1) * PAGE_SIZE;
   const paginated = processed.slice(start, start + PAGE_SIZE);
 
-  // ── Tab counts ──
   const tabCounts = useMemo(() => {
     const list = networks ?? [];
-    return {
-      all: list.length,
-      internal: list.filter((n) => n.type === "internal").length,
-      external: list.filter((n) => n.type === "external").length,
-    };
+    return { all: list.length, internal: list.filter((n) => n.type === "internal").length, external: list.filter((n) => n.type === "external").length };
   }, [networks]);
 
   const TABS: { key: FilterTab; label: string }[] = [
@@ -324,12 +357,19 @@ export function CpoNetworksPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-heading text-xl font-bold text-foreground">
-            Reseaux CPO
-          </h1>
-          <p className="text-sm text-foreground-muted mt-0.5">
-            Gerer les reseaux de charge CPO (internes et externes)
-          </p>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Network className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="font-heading text-xl font-bold text-foreground">
+                Reseaux CPO ({tabCounts.all})
+              </h1>
+              <p className="text-sm text-foreground-muted">
+                Gerer les reseaux de charge et accords roaming
+              </p>
+            </div>
+          </div>
         </div>
         <button
           onClick={openCreate}
@@ -341,26 +381,14 @@ export function CpoNetworksPage() {
       </div>
 
       <PageHelp
-        summary="Réseaux partenaires connectés à votre infrastructure de recharge"
+        summary="Reseaux CPO et accords de roaming avec les partenaires eMSP"
         items={[
-          { label: "Réseau partenaire", description: "Un eMSP (e-Mobility Service Provider) dont les clients peuvent charger sur vos bornes." },
-          { label: "Statut connexion", description: "Connected (actif), Pending (en attente), Disconnected (déconnecté)." },
-          { label: "Volume échangé", description: "Nombre de sessions et énergie totale consommée par les clients de ce partenaire." },
-          { label: "Synchronisation", description: "Fréquence de mise à jour des données (bornes, tarifs, sessions) avec le partenaire." },
+          { label: "Reseau CPO", description: "Un reseau regroupe vos contrats CPO et les accords de roaming avec les partenaires eMSP." },
+          { label: "Contrat CPO", description: "Identifiant OCPI de votre infrastructure (code pays, party ID, code contrat)." },
+          { label: "Accord", description: "Convention de roaming avec un reseau eMSP partenaire (methode de connexion, validite)." },
+          { label: "Regles de facturation", description: "Tarification appliquee aux sessions de roaming (prix/kWh, prix/min, frais de demarrage)." },
         ]}
       />
-
-      {/* KPIs */}
-      {isLoading ? (
-        <NetworksKPISkeleton />
-      ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPICard label="Total reseaux" value={stats.total} icon={Network} color="#8892B0" />
-          <KPICard label="Internes" value={stats.internal} icon={Home} color="#60A5FA" />
-          <KPICard label="Externes" value={stats.external} icon={Globe} color="#FBBF24" />
-          <KPICard label="Avec contrats" value={stats.withContracts} icon={Network} color="#00D4AA" />
-        </div>
-      )}
 
       {/* Tabs */}
       <div className="flex items-center gap-1 bg-surface border border-border rounded-xl p-1 w-fit">
@@ -375,8 +403,7 @@ export function CpoNetworksPage() {
                 : "text-foreground-muted hover:text-foreground hover:bg-surface-elevated"
             )}
           >
-            {tab.label}{" "}
-            <span className="opacity-60">{tabCounts[tab.key]}</span>
+            {tab.label} <span className="opacity-60">{tabCounts[tab.key]}</span>
           </button>
         ))}
       </div>
@@ -386,7 +413,7 @@ export function CpoNetworksPage() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
         <input
           type="text"
-          placeholder="Rechercher par nom, remarques, mis a jour par..."
+          placeholder="Rechercher par nom, remarques..."
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           className="w-full pl-9 pr-3 py-2.5 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-border-focus transition-colors"
@@ -395,24 +422,21 @@ export function CpoNetworksPage() {
 
       {/* Table */}
       {isLoading ? (
-        <NetworksTableSkeleton />
+        <TableSkeleton rows={5} cols={7} />
       ) : processed.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-56 bg-surface border border-border rounded-2xl">
           <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
             <Network className="w-7 h-7 text-primary" />
           </div>
           <p className="text-foreground font-medium text-lg">Aucun reseau</p>
-          <p className="text-sm text-foreground-muted mt-1 max-w-sm text-center">
-            {search.trim()
-              ? `Aucun reseau ne correspond a \u00AB ${search} \u00BB`
-              : "Creez votre premier reseau CPO pour gerer vos infrastructures de charge."}
+          <p className="text-sm text-foreground-muted mt-1">
+            {search.trim() ? `Aucun resultat pour "${search}"` : "Creez votre premier reseau CPO."}
           </p>
-          <button
-            onClick={openCreate}
-            className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 transition-colors"
-          >
-            <Plus className="w-4 h-4" /> Creer un reseau
-          </button>
+          {!search.trim() && (
+            <button onClick={openCreate} className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 transition-colors">
+              <Plus className="w-4 h-4" /> Creer un reseau
+            </button>
+          )}
         </div>
       ) : (
         <div className="bg-surface border border-border rounded-2xl overflow-hidden">
@@ -420,71 +444,49 @@ export function CpoNetworksPage() {
             <table className="w-full">
               <thead className="border-b border-border">
                 <tr>
-                  <th className={thClass} onClick={() => handleSort("type")}>
-                    Type <SortIcon col="type" />
-                  </th>
-                  <th className={thClass} onClick={() => handleSort("name")}>
-                    Nom <SortIcon col="name" />
-                  </th>
-                  <th className={thClass} onClick={() => handleSort("cpo_contracts_count")}>
-                    Contrats CPO <SortIcon col="cpo_contracts_count" />
-                  </th>
+                  <th className={thClass} onClick={() => handleSort("type")}>Type de reseau <SortIcon col="type" /></th>
+                  <th className={thClass} onClick={() => handleSort("name")}>Nom <SortIcon col="name" /></th>
+                  <th className={thClass} onClick={() => handleSort("cpo_contracts_count")}>Contrats CPO <SortIcon col="cpo_contracts_count" /></th>
                   <th className={thClass}>Accords</th>
-                  <th className={thClass} onClick={() => handleSort("updated_at")}>
-                    Derniere MAJ <SortIcon col="updated_at" />
-                  </th>
+                  <th className={thClass} onClick={() => handleSort("updated_at")}>Derniere mise a jour <SortIcon col="updated_at" /></th>
                   <th className={thClass}>Mis a jour par</th>
                   <th className={thClass}>Remarques</th>
-                  <th className={cn(thClass, "text-right w-20")}>Actions</th>
+                  <th className={cn(thClass, "text-right w-20")} />
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {paginated.map((network) => (
-                  <tr key={network.id} className="hover:bg-surface-elevated/50 transition-colors">
+                  <tr
+                    key={network.id}
+                    onClick={() => onSelect(network)}
+                    className="hover:bg-surface-elevated/50 transition-colors cursor-pointer"
+                  >
+                    <td className="px-4 py-3"><TypeBadge type={network.type} /></td>
                     <td className="px-4 py-3">
-                      <TypeBadge type={network.type} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="text-sm font-medium text-foreground truncate max-w-[200px]">{network.name}</p>
+                      <p className="text-sm font-medium text-foreground hover:text-primary transition-colors">{network.name}</p>
                     </td>
                     <td className="px-4 py-3 text-sm text-foreground tabular-nums">
-                      {network.cpo_contracts_count ?? 0}
+                      {network.cpo_contracts_count ?? 0} contrats
                     </td>
                     <td className="px-4 py-3 text-sm text-foreground tabular-nums">
-                      {network.agreements_count ?? 0}
+                      {network.agreements_count ?? 0} agreements
                     </td>
                     <td className="px-4 py-3 text-sm text-foreground-muted whitespace-nowrap">
-                      {network.updated_at
-                        ? new Date(network.updated_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" })
-                        : "\u2014"}
+                      {formatDateFull(network.updated_at)}
                     </td>
                     <td className="px-4 py-3">
-                      <p className="text-sm text-foreground-muted truncate max-w-[150px]">
-                        {network.updated_by ?? "\u2014"}
-                      </p>
+                      <p className="text-sm text-foreground-muted truncate max-w-[180px]">{network.updated_by ?? "\u2014"}</p>
                     </td>
                     <td className="px-4 py-3">
-                      <p className="text-sm text-foreground-muted truncate max-w-[200px]">
-                        {network.remarks ?? "\u2014"}
-                      </p>
+                      <p className="text-sm text-foreground-muted truncate max-w-[200px]">{network.remarks ?? "\u2014"}</p>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => openEdit(network)}
-                          className="p-1.5 text-foreground-muted hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
-                          title="Modifier"
-                        >
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => setConfirmDelete(network)}
-                          className="p-1.5 text-foreground-muted hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                          title="Supprimer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      <button
+                        onClick={(e) => openEdit(e, network)}
+                        className="px-3 py-1.5 text-xs font-medium text-foreground-muted hover:text-primary border border-border hover:border-primary/30 rounded-lg transition-colors"
+                      >
+                        Editer
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -499,21 +501,11 @@ export function CpoNetworksPage() {
                 {start + 1}\u2013{Math.min(start + PAGE_SIZE, processed.length)} sur {processed.length}
               </span>
               <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={safePage === 1}
-                  className="p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated disabled:opacity-30 transition-colors"
-                >
+                <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={safePage === 1} className="p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated disabled:opacity-30 transition-colors">
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                <span className="text-xs text-foreground-muted px-2">
-                  {safePage} / {totalPages}
-                </span>
-                <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={safePage === totalPages}
-                  className="p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated disabled:opacity-30 transition-colors"
-                >
+                <span className="text-xs text-foreground-muted px-2">{safePage} / {totalPages}</span>
+                <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={safePage === totalPages} className="p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated disabled:opacity-30 transition-colors">
                   <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
@@ -522,7 +514,7 @@ export function CpoNetworksPage() {
         </div>
       )}
 
-      {/* ── Create / Edit SlideOver ── */}
+      {/* Create / Edit SlideOver */}
       <SlideOver open={modalOpen} onClose={closeModal} title={editing ? "Modifier le reseau" : "Nouveau reseau CPO"}>
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           <div>
@@ -561,7 +553,7 @@ export function CpoNetworksPage() {
             <input
               value={form.updated_by}
               onChange={(e) => setForm((f) => ({ ...f, updated_by: e.target.value }))}
-              placeholder="Nom de l'operateur"
+              placeholder="Email de l'operateur"
               className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-lg text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-primary/50"
             />
           </div>
@@ -585,17 +577,742 @@ export function CpoNetworksPage() {
         </form>
       </SlideOver>
 
-      {/* ── Confirm Delete Dialog ── */}
+      {/* Confirm Delete */}
       <ConfirmDialog
         open={!!confirmDelete}
         onConfirm={() => confirmDelete && deleteMutation.mutate(confirmDelete.id)}
         onCancel={() => setConfirmDelete(null)}
         title="Supprimer ce reseau ?"
-        description={`Le reseau "${confirmDelete?.name}" sera definitivement supprime. Cette action est irreversible.`}
+        description={`Le reseau "${confirmDelete?.name}" sera definitivement supprime.`}
         confirmLabel="Supprimer"
         variant="danger"
         loading={deleteMutation.isPending}
       />
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// DETAIL VIEW (GreenFlux-style with tabs)
+// ══════════════════════════════════════════════════════════════
+
+function NetworkDetailView({
+  network,
+  onBack,
+}: {
+  network: CpoNetwork;
+  onBack: () => void;
+}) {
+  const [activeTab, setActiveTab] = useState<DetailTab>("details");
+  const queryClient = useQueryClient();
+  const { success: toastSuccess, error: toastError } = useToast();
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    type: network.type,
+    name: network.name,
+    remarks: network.remarks ?? "",
+    updated_by: network.updated_by ?? "",
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async (data: typeof editForm) => {
+      const { error } = await supabase.from("cpo_networks").update({
+        type: data.type, name: data.name.trim(),
+        remarks: data.remarks || null, updated_by: data.updated_by || null,
+      }).eq("id", network.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["cpo-networks"] });
+      setEditModalOpen(false);
+      toastSuccess("Reseau modifie", "Les modifications ont ete enregistrees");
+      // Update local network reference
+      network.name = editForm.name;
+      network.type = editForm.type as CpoNetwork["type"];
+      network.remarks = editForm.remarks || null;
+      network.updated_by = editForm.updated_by || null;
+    },
+    onError: (err: Error) => toastError("Erreur", err.message),
+  });
+
+  const DETAIL_TABS: { key: DetailTab; label: string; icon: typeof Network }[] = [
+    { key: "details", label: "Details", icon: Network },
+    { key: "contracts", label: "Contrats CPO", icon: FileSignature },
+    { key: "cpos", label: "CPO", icon: Building2 },
+    { key: "agreements", label: "Accords", icon: Handshake },
+    { key: "billing", label: "Regles de facturation en gros", icon: Receipt },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={onBack}
+            className="p-2 rounded-xl border border-border hover:bg-surface-elevated transition-colors"
+            title="Retour"
+          >
+            <ArrowLeft className="w-4 h-4 text-foreground-muted" />
+          </button>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Network className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="font-heading text-xl font-bold text-foreground">{network.name}</h1>
+              <p className="text-sm text-foreground-muted">Reseau CPO</p>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <TypeBadge type={network.type} />
+          <button
+            onClick={() => setEditModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+            Editer
+          </button>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 border-b border-border overflow-x-auto">
+        {DETAIL_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={cn(
+              "px-4 py-2.5 text-sm font-medium transition-colors relative whitespace-nowrap",
+              activeTab === tab.key
+                ? "text-primary"
+                : "text-foreground-muted hover:text-foreground"
+            )}
+          >
+            {tab.label}
+            {activeTab === tab.key && (
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === "details" && <DetailsTab network={network} />}
+      {activeTab === "contracts" && <ContractsTab networkId={network.id} />}
+      {activeTab === "cpos" && <CposTab networkId={network.id} />}
+      {activeTab === "agreements" && <AgreementsTab networkId={network.id} />}
+      {activeTab === "billing" && <BillingTab networkId={network.id} />}
+
+      {/* Edit SlideOver */}
+      <SlideOver open={editModalOpen} onClose={() => setEditModalOpen(false)} title="Modifier le reseau">
+        <form onSubmit={(e) => { e.preventDefault(); updateMutation.mutate(editForm); }} className="p-6 space-y-5">
+          <div>
+            <label className="block text-xs font-semibold text-foreground-muted mb-1.5">Type</label>
+            <select
+              value={editForm.type}
+              onChange={(e) => setEditForm((f) => ({ ...f, type: e.target.value as CpoNetwork["type"] }))}
+              className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-lg text-sm text-foreground focus:outline-none focus:border-primary/50"
+            >
+              <option value="internal">Interne</option>
+              <option value="external">Externe</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-foreground-muted mb-1.5">Nom</label>
+            <input
+              required
+              value={editForm.name}
+              onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+              className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-lg text-sm text-foreground focus:outline-none focus:border-primary/50"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-foreground-muted mb-1.5">Remarques</label>
+            <textarea
+              value={editForm.remarks}
+              onChange={(e) => setEditForm((f) => ({ ...f, remarks: e.target.value }))}
+              rows={3}
+              className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-lg text-sm text-foreground focus:outline-none focus:border-primary/50 resize-none"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-foreground-muted mb-1.5">Mis a jour par</label>
+            <input
+              value={editForm.updated_by}
+              onChange={(e) => setEditForm((f) => ({ ...f, updated_by: e.target.value }))}
+              className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-lg text-sm text-foreground focus:outline-none focus:border-primary/50"
+            />
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={() => setEditModalOpen(false)} className="px-4 py-2 text-sm text-foreground-muted hover:text-foreground border border-border rounded-xl transition-colors">
+              Annuler
+            </button>
+            <button type="submit" disabled={updateMutation.isPending} className="px-5 py-2 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 disabled:opacity-50 transition-colors">
+              {updateMutation.isPending ? "..." : "Enregistrer"}
+            </button>
+          </div>
+        </form>
+      </SlideOver>
+    </div>
+  );
+}
+
+// ── Tab: Details ──────────────────────────────────────────────
+
+function DetailsTab({ network }: { network: CpoNetwork }) {
+  return (
+    <div className="bg-surface border border-border rounded-2xl">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+        <h3 className="text-sm font-semibold text-foreground">Details</h3>
+        <TypeBadge type={network.type} />
+      </div>
+      <div className="px-6 py-5 space-y-4">
+        <DetailRow label="Identifiant externe" value={network.id} />
+        <DetailRow
+          label="Derniere mise a jour"
+          value={
+            network.updated_at
+              ? `${formatDateFull(network.updated_at)}${network.updated_by ? ` (${network.updated_by})` : ""}`
+              : "\u2014"
+          }
+          isLink
+        />
+        <DetailRow label="Remarques" value={network.remarks ?? "\u2014"} />
+      </div>
+    </div>
+  );
+}
+
+function DetailRow({ label, value, isLink }: { label: string; value: string; isLink?: boolean }) {
+  return (
+    <div className="grid grid-cols-[200px_1fr] gap-4 items-start">
+      <span className="text-sm font-medium text-foreground-muted">{label}</span>
+      {isLink ? (
+        <span className="text-sm text-primary">{value}</span>
+      ) : (
+        <span className="text-sm text-foreground">{value}</span>
+      )}
+    </div>
+  );
+}
+
+// ── Tab: Contrats CPO ─────────────────────────────────────────
+
+function ContractsTab({ networkId }: { networkId: string }) {
+  const [search, setSearch] = useState("");
+  const [filterTab, setFilterTab] = useState<FilterTab>("all");
+
+  const { data: contracts, isLoading } = useQuery<CpoContract[]>({
+    queryKey: ["cpo-contracts-for-network", networkId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("cpo_contracts")
+        .select("*")
+        .eq("network_id", networkId)
+        .order("name");
+      if (error) return [];
+      return (data ?? []) as CpoContract[];
+    },
+  });
+
+  const filtered = useMemo(() => {
+    let list = contracts ?? [];
+    if (filterTab !== "all") list = list.filter((c) => c.type === filterTab);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter((c) => c.name?.toLowerCase().includes(q) || c.contract_code?.toLowerCase().includes(q));
+    }
+    return list;
+  }, [contracts, filterTab, search]);
+
+  const tabCounts = useMemo(() => {
+    const list = contracts ?? [];
+    return { all: list.length, internal: list.filter((c) => c.type === "internal").length, external: list.filter((c) => c.type === "external").length };
+  }, [contracts]);
+
+  const TABS: { key: FilterTab; label: string }[] = [
+    { key: "all", label: "Tout" },
+    { key: "internal", label: "Interne" },
+    { key: "external", label: "Externe" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Section header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <FileSignature className="w-4 h-4 text-foreground-muted" />
+          <h3 className="text-sm font-semibold text-foreground">Contrats CPO ({tabCounts.all})</h3>
+        </div>
+      </div>
+
+      {/* Filter tabs */}
+      <div className="flex items-center gap-1 bg-surface border border-border rounded-xl p-1 w-fit">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setFilterTab(tab.key)}
+            className={cn(
+              "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+              filterTab === tab.key ? "bg-primary/15 text-primary" : "text-foreground-muted hover:text-foreground hover:bg-surface-elevated"
+            )}
+          >
+            {tab.label} <span className="opacity-60">{tabCounts[tab.key]}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
+        <input
+          type="text"
+          placeholder="Rechercher..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full pl-9 pr-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-border-focus"
+        />
+      </div>
+
+      {isLoading ? (
+        <TableSkeleton rows={3} cols={7} />
+      ) : filtered.length === 0 ? (
+        <EmptyState icon={FileSignature} message="Aucun contrat CPO lie a ce reseau" />
+      ) : (
+        <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="border-b border-border">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Type</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Nom</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Code pays</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Identifiant de groupe</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Code contrat</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Devise</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">URL du site internet</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Derniere mise a jour</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Mis a jour par</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filtered.map((c) => (
+                  <tr key={c.id} className="hover:bg-surface-elevated/50 transition-colors">
+                    <td className="px-4 py-3"><TypeBadge type={c.type} /></td>
+                    <td className="px-4 py-3 text-sm font-medium text-foreground">{c.name}</td>
+                    <td className="px-4 py-3 text-sm text-foreground">{c.country_code}</td>
+                    <td className="px-4 py-3 text-sm text-foreground-muted">{c.party_id ?? "\u2014"}</td>
+                    <td className="px-4 py-3 text-sm text-foreground-muted">{c.contract_code ?? "\u2014"}</td>
+                    <td className="px-4 py-3 text-sm text-foreground">{c.currency}</td>
+                    <td className="px-4 py-3">
+                      {c.url ? (
+                        <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline inline-flex items-center gap-1">
+                          {c.url} <ExternalLink className="w-3 h-3" />
+                        </a>
+                      ) : (
+                        <span className="text-sm text-foreground-muted">\u2014</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-foreground-muted whitespace-nowrap">{formatDateFull(c.updated_at)}</td>
+                    <td className="px-4 py-3 text-sm text-foreground-muted">{c.updated_by ?? "\u2014"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Tab: CPO ──────────────────────────────────────────────────
+
+function CposTab({ networkId }: { networkId: string }) {
+  const [search, setSearch] = useState("");
+
+  // Show CPO operators that have contracts linked to this network
+  const { data: contracts } = useQuery<(CpoContract & { cpo_operator?: CpoOperator })[]>({
+    queryKey: ["cpo-contracts-for-cpo-tab", networkId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("cpo_contracts")
+        .select("*")
+        .eq("network_id", networkId)
+        .order("name");
+      if (error) return [];
+      return (data ?? []) as CpoContract[];
+    },
+  });
+
+  // Also fetch all CPO operators to cross-reference
+  const { data: cpoOperators, isLoading } = useQuery<CpoOperator[]>({
+    queryKey: ["cpo-operators-for-network"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("cpo_operators")
+        .select("id, name, code, color")
+        .order("name");
+      if (error) return [];
+      return (data ?? []) as CpoOperator[];
+    },
+  });
+
+  const filtered = useMemo(() => {
+    let list = cpoOperators ?? [];
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter((c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q));
+    }
+    return list;
+  }, [cpoOperators, search]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Building2 className="w-4 h-4 text-foreground-muted" />
+          <h3 className="text-sm font-semibold text-foreground">CPO ({filtered.length})</h3>
+        </div>
+      </div>
+
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
+        <input
+          type="text"
+          placeholder="Rechercher..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full pl-9 pr-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-border-focus"
+        />
+      </div>
+
+      {isLoading ? (
+        <TableSkeleton rows={4} cols={5} />
+      ) : filtered.length === 0 ? (
+        <EmptyState icon={Building2} message="Aucun CPO" />
+      ) : (
+        <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="border-b border-border">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Type</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Nom</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Identifiant externe</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Contrat CPO</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Afficher nom OCPI</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filtered.map((cpo) => {
+                  const linkedContract = (contracts ?? []).find((c) =>
+                    c.name.toLowerCase().includes(cpo.name.toLowerCase()) ||
+                    c.name.toLowerCase().includes(cpo.code.toLowerCase())
+                  );
+                  return (
+                    <tr key={cpo.id} className="hover:bg-surface-elevated/50 transition-colors">
+                      <td className="px-4 py-3"><TypeBadge type="internal" /></td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          {cpo.color && (
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cpo.color }} />
+                          )}
+                          <span className="text-sm font-medium text-foreground">{cpo.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-foreground-muted font-mono">{cpo.code}</td>
+                      <td className="px-4 py-3 text-sm text-foreground-muted">{linkedContract?.name ?? "\u2014"}</td>
+                      <td className="px-4 py-3 text-sm text-foreground">{cpo.name}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Tab: Accords ──────────────────────────────────────────────
+
+function AgreementsTab({ networkId }: { networkId: string }) {
+  const [search, setSearch] = useState("");
+  const [filterTab, setFilterTab] = useState<"all" | "active" | "expired">("all");
+  const [page, setPage] = useState(1);
+
+  const { data: agreements, isLoading } = useQuery<RoamingAgreement[]>({
+    queryKey: ["agreements-for-network", networkId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("roaming_agreements")
+        .select(`
+          id, status, management, connection_method,
+          valid_from, valid_to, professional_contact, professional_email,
+          updated_by, updated_at,
+          emsp_network:emsp_networks(name),
+          emsp_contract:emsp_contracts(name),
+          cpo_contract:cpo_contracts(name)
+        `)
+        .eq("cpo_network_id", networkId)
+        .order("updated_at", { ascending: false });
+      if (error) return [];
+      return (data ?? []) as unknown as RoamingAgreement[];
+    },
+  });
+
+  const filtered = useMemo(() => {
+    let list = agreements ?? [];
+    if (filterTab === "active") list = list.filter((a) => a.status === "active");
+    else if (filterTab === "expired") list = list.filter((a) => a.status === "expired");
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter((a) =>
+        a.emsp_network?.name?.toLowerCase().includes(q) ||
+        a.management?.toLowerCase().includes(q) ||
+        a.connection_method?.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [agreements, filterTab, search]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const paginated = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  const tabCounts = useMemo(() => {
+    const list = agreements ?? [];
+    return {
+      all: list.length,
+      active: list.filter((a) => a.status === "active").length,
+      expired: list.filter((a) => a.status === "expired").length,
+    };
+  }, [agreements]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Handshake className="w-4 h-4 text-foreground-muted" />
+          <h3 className="text-sm font-semibold text-foreground">Accords ({tabCounts.all})</h3>
+        </div>
+      </div>
+
+      {/* Filter tabs */}
+      <div className="flex items-center gap-1 bg-surface border border-border rounded-xl p-1 w-fit">
+        {[
+          { key: "all" as const, label: "Tout" },
+          { key: "active" as const, label: "Valide" },
+          { key: "expired" as const, label: "Expire" },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => { setFilterTab(tab.key); setPage(1); }}
+            className={cn(
+              "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+              filterTab === tab.key ? "bg-primary/15 text-primary" : "text-foreground-muted hover:text-foreground hover:bg-surface-elevated"
+            )}
+          >
+            {tab.label} <span className="opacity-60">{tabCounts[tab.key]}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
+        <input
+          type="text"
+          placeholder="Rechercher..."
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          className="w-full pl-9 pr-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-border-focus"
+        />
+      </div>
+
+      {isLoading ? (
+        <TableSkeleton rows={5} cols={7} />
+      ) : filtered.length === 0 ? (
+        <EmptyState icon={Handshake} message="Aucun accord de roaming lie a ce reseau" />
+      ) : (
+        <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="border-b border-border">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Validite</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Gestion des accords</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Reseau eMSP</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Contrat CPO</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Contrat eMSP</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Methode de connexion</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Valide a partir de</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Valable jusqu'au</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Pro. Contact</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {paginated.map((a) => (
+                  <tr key={a.id} className="hover:bg-surface-elevated/50 transition-colors">
+                    <td className="px-4 py-3"><StatusBadge status={a.status} /></td>
+                    <td className="px-4 py-3 text-sm text-foreground">{a.management ?? "\u2014"}</td>
+                    <td className="px-4 py-3 text-sm text-foreground font-medium">{a.emsp_network?.name ?? "\u2014"}</td>
+                    <td className="px-4 py-3 text-sm text-foreground-muted">{a.cpo_contract?.name ?? "\u2014"}</td>
+                    <td className="px-4 py-3 text-sm text-foreground-muted">{a.emsp_contract?.name ?? "\u2014"}</td>
+                    <td className="px-4 py-3 text-sm text-foreground-muted">{a.connection_method ?? "\u2014"}</td>
+                    <td className="px-4 py-3 text-sm text-foreground-muted whitespace-nowrap">{formatDate(a.valid_from)}</td>
+                    <td className="px-4 py-3 text-sm text-foreground-muted whitespace-nowrap">
+                      {a.valid_to ? formatDate(a.valid_to) : "Indefinie"}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-foreground-muted">{a.professional_contact ?? "\u2014"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+              <span className="text-xs text-foreground-muted">
+                {(safePage - 1) * PAGE_SIZE + 1}\u2013{Math.min(safePage * PAGE_SIZE, filtered.length)} sur {filtered.length}
+              </span>
+              <div className="flex items-center gap-1">
+                <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={safePage === 1} className="p-1.5 rounded-lg text-foreground-muted hover:bg-surface-elevated disabled:opacity-30 transition-colors">
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="text-xs text-foreground-muted px-2">{safePage} / {totalPages}</span>
+                <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={safePage === totalPages} className="p-1.5 rounded-lg text-foreground-muted hover:bg-surface-elevated disabled:opacity-30 transition-colors">
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Tab: Regles de facturation en gros ────────────────────────
+
+function BillingTab({ networkId }: { networkId: string }) {
+  const [filterTab, setFilterTab] = useState<"all" | "active" | "expired">("all");
+
+  const { data: rules, isLoading } = useQuery<ReimbursementRule[]>({
+    queryKey: ["billing-rules-for-network", networkId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("reimbursement_rules")
+        .select("*")
+        .eq("cpo_network_id", networkId)
+        .order("updated_at", { ascending: false });
+      if (error) return [];
+      return (data ?? []) as ReimbursementRule[];
+    },
+  });
+
+  const filtered = useMemo(() => {
+    let list = rules ?? [];
+    if (filterTab === "active") list = list.filter((r) => r.status === "active");
+    else if (filterTab === "expired") list = list.filter((r) => r.status === "expired");
+    return list;
+  }, [rules, filterTab]);
+
+  const tabCounts = useMemo(() => {
+    const list = rules ?? [];
+    return {
+      all: list.length,
+      active: list.filter((r) => r.status === "active").length,
+      expired: list.filter((r) => r.status === "expired").length,
+    };
+  }, [rules]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Receipt className="w-4 h-4 text-foreground-muted" />
+          <h3 className="text-sm font-semibold text-foreground">Regles de facturation en gros ({tabCounts.all})</h3>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1 bg-surface border border-border rounded-xl p-1 w-fit">
+        {[
+          { key: "all" as const, label: "Tout" },
+          { key: "active" as const, label: "Actif" },
+          { key: "expired" as const, label: "Expire" },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setFilterTab(tab.key)}
+            className={cn(
+              "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+              filterTab === tab.key ? "bg-primary/15 text-primary" : "text-foreground-muted hover:text-foreground hover:bg-surface-elevated"
+            )}
+          >
+            {tab.label} <span className="opacity-60">{tabCounts[tab.key]}</span>
+          </button>
+        ))}
+      </div>
+
+      {isLoading ? (
+        <TableSkeleton rows={3} cols={8} />
+      ) : filtered.length === 0 ? (
+        <EmptyState icon={Receipt} message="Aucune regle de facturation en gros" />
+      ) : (
+        <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="border-b border-border">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Statut</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">CPO</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">eMSP</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-foreground-muted uppercase">Prix/kWh</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-foreground-muted uppercase">Prix/min</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-foreground-muted uppercase">Frais demarrage</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-foreground-muted uppercase">Frais stationnement/min</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Validite</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Remarques</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {filtered.map((r) => (
+                  <tr key={r.id} className="hover:bg-surface-elevated/50 transition-colors">
+                    <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
+                    <td className="px-4 py-3 text-sm text-foreground font-medium">{r.cpo_name ?? "\u2014"}</td>
+                    <td className="px-4 py-3 text-sm text-foreground">{r.emsp_name ?? "\u2014"}</td>
+                    <td className="px-4 py-3 text-sm text-foreground tabular-nums text-right">{r.price_per_kwh.toFixed(4)} {r.currency}</td>
+                    <td className="px-4 py-3 text-sm text-foreground tabular-nums text-right">{r.price_per_min.toFixed(4)} {r.currency}</td>
+                    <td className="px-4 py-3 text-sm text-foreground tabular-nums text-right">{r.start_fee.toFixed(2)} {r.currency}</td>
+                    <td className="px-4 py-3 text-sm text-foreground tabular-nums text-right">{r.idle_fee_per_min.toFixed(4)} {r.currency}</td>
+                    <td className="px-4 py-3 text-sm text-foreground-muted whitespace-nowrap">
+                      {formatDate(r.valid_from)} \u2192 {r.valid_to ? formatDate(r.valid_to) : "Indefinie"}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-foreground-muted truncate max-w-[200px]">{r.remarks ?? "\u2014"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Empty State ───────────────────────────────────────────────
+
+function EmptyState({ icon: Icon, message }: { icon: typeof Network; message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-40 bg-surface border border-border rounded-2xl">
+      <div className="w-12 h-12 rounded-xl bg-surface-elevated flex items-center justify-center mb-3">
+        <Icon className="w-6 h-6 text-foreground-muted" />
+      </div>
+      <p className="text-sm text-foreground-muted">{message}</p>
     </div>
   );
 }

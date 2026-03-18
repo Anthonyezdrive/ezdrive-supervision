@@ -80,13 +80,6 @@ const POWER_COLORS: Record<string, string> = {
   "Non renseigné": "#6b7280",
 };
 
-const TERRITORY_COLORS: Record<string, string> = {
-  "971": "#3b82f6",
-  "972": "#10b981",
-  "973": "#f59e0b",
-  "974": "#8b5cf6",
-};
-
 const TABS = ["Vue d'ensemble", "Bornes en panne"] as const;
 type Tab = (typeof TABS)[number];
 
