@@ -508,22 +508,16 @@ export function AgreementsPage() {
             <div className="space-y-4">
               <DetailRow label="Réseau CPO">
                 <span className="text-primary">{cpoName}</span>
-                <TypeBadge type="internal" />
               </DetailRow>
               <DetailRow label="Réseau eMSP">
                 <span className="text-primary">{emspName}</span>
-                <TypeBadge type="external" />
               </DetailRow>
               <DetailRow label="Nom de contact professionnel">
                 {a.professional_contact ?? "—"}
               </DetailRow>
-              <DetailRow label="Adresse email professionnelle">—</DetailRow>
-              <DetailRow label="Numéro de téléphone professionnel">—</DetailRow>
               <DetailRow label="Nom du contact technique">
                 {a.technical_contact ?? "—"}
               </DetailRow>
-              <DetailRow label="Adresse mail du contact technique">—</DetailRow>
-              <DetailRow label="Numéro de téléphone du contact technique">—</DetailRow>
               <DetailRow label="Remarques">
                 {a.remarks ?? "—"}
               </DetailRow>

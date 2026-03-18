@@ -30,13 +30,13 @@ import {
   Loader2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { cn } from "@/lib/utils";
-import { formatDuration, formatRelativeTime } from "@/lib/utils";
+import { cn, formatDuration, formatRelativeTime } from "@/lib/utils";
 import { useCpo } from "@/contexts/CpoContext";
 import { KPICard } from "@/components/ui/KPICard";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { KPISkeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PageHelp } from "@/components/ui/PageHelp";
 import type { Station } from "@/types/station";
 import { MaintenancePage } from "@/components/maintenance/MaintenancePage";
@@ -247,9 +247,9 @@ function computeEnergy(tx: OcppTransaction): string {
 
 type WizardStep = "setup" | "configuration" | "sharing";
 const WIZARD_STEPS: { key: WizardStep; label: string }[] = [
-  { key: "setup", label: "Setup" },
+  { key: "setup", label: "Paramétrage" },
   { key: "configuration", label: "Configuration" },
-  { key: "sharing", label: "Sharing" },
+  { key: "sharing", label: "Partage" },
 ];
 
 function AddAlertWizard({
@@ -387,7 +387,7 @@ function AddAlertWizard({
             <ArrowLeft className="w-4 h-4" />
           </button>
           <h1 className="font-heading text-xl font-bold">
-            {editingRule ? "Modifier l'alerte" : "Add alert"}
+            {editingRule ? "Modifier l'alerte" : "Ajouter une alerte"}
           </h1>
         </div>
         <div className="flex items-center gap-3">
@@ -397,7 +397,7 @@ function AddAlertWizard({
               className="flex items-center gap-1.5 px-4 py-2.5 border border-border rounded-xl text-sm font-medium text-foreground hover:bg-surface-elevated transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
-              Back
+              Retour
             </button>
           )}
           <button
@@ -416,7 +416,7 @@ function AddAlertWizard({
               "Enregistrer"
             ) : (
               <>
-                Continue
+                Continuer
                 <ArrowRight className="w-4 h-4" />
               </>
             )}
@@ -463,14 +463,14 @@ function AddAlertWizard({
             {/* Alert Type */}
             <div>
               <label className="block text-sm font-medium text-foreground mb-1.5">
-                Alert Type <span className="text-red-500">*</span>
+                Type d'alerte <span className="text-red-500">*</span>
               </label>
               <select
                 value={alertType}
                 onChange={(e) => setAlertType(e.target.value)}
                 className="w-full px-4 py-2.5 bg-surface border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-primary/50"
               >
-                <option value="">Select</option>
+                <option value="">Sélectionner</option>
                 {ALERT_TYPES.map((at) => (
                   <option key={at.value} value={at.value}>
                     {at.label}
@@ -487,7 +487,7 @@ function AddAlertWizard({
             {/* Title */}
             <div>
               <label className="block text-sm font-medium text-foreground mb-1.5">
-                Title <span className="text-red-500">*</span>
+                Titre <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
@@ -501,7 +501,7 @@ function AddAlertWizard({
             {/* Notification interval */}
             <div>
               <label className="block text-sm font-medium text-foreground mb-1.5">
-                Notification interval
+                Intervalle de notification
               </label>
               <div className="flex items-center gap-2">
                 <input
@@ -512,11 +512,11 @@ function AddAlertWizard({
                   className="w-24 px-4 py-2.5 bg-surface border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-primary/50"
                 />
                 <span className="px-3 py-2 bg-primary/10 text-primary text-sm font-medium rounded-lg">
-                  hours
+                  heures
                 </span>
               </div>
               <p className="mt-1.5 text-xs text-foreground-muted">
-                AlertsTriggeredReceiveNotification
+                Les alertes déclenchées recevront une notification à cet intervalle
               </p>
             </div>
           </div>
@@ -533,7 +533,7 @@ function AddAlertWizard({
               {/* Threshold */}
               <div className="mb-4">
                 <label className="block text-sm font-medium text-foreground mb-1.5">
-                  Threshold
+                  Seuil
                 </label>
                 <input
                   type="number"
@@ -555,7 +555,7 @@ function AddAlertWizard({
                     <ToggleLeft className="w-10 h-6" />
                   )}
                 </button>
-                <span className="text-sm text-foreground">Global configuration</span>
+                <span className="text-sm text-foreground">Configuration globale</span>
                 <Info className="w-4 h-4 text-foreground-muted" />
               </div>
             </div>
@@ -563,13 +563,13 @@ function AddAlertWizard({
             {/* Filters section */}
             <div>
               <h2 className="text-lg font-bold text-foreground border-b border-border pb-2 mb-4">
-                Filters
+                Filtres
               </h2>
 
               {/* Charge Station Type */}
               <div className="mb-5">
                 <label className="block text-sm font-medium text-foreground mb-2">
-                  Charge Station Type
+                  Type de borne
                 </label>
                 <div className="flex items-center gap-4">
                   {["any", "business", "home", "public"].map((val) => (
@@ -583,7 +583,7 @@ function AddAlertWizard({
                         className="w-4 h-4 text-primary border-border focus:ring-primary"
                       />
                       <span className="text-sm text-foreground capitalize">
-                        {val === "any" ? "Any" : val === "business" ? "Business" : val === "home" ? "Home" : "Public"}
+                        {val === "any" ? "Tous" : val === "business" ? "Entreprise" : val === "home" ? "Domicile" : "Public"}
                       </span>
                     </label>
                   ))}
@@ -593,7 +593,7 @@ function AddAlertWizard({
               {/* Deploy state */}
               <div className="mb-5">
                 <label className="block text-sm font-medium text-foreground mb-2">
-                  Deploy state
+                  État de déploiement
                 </label>
                 <div className="flex items-center gap-4">
                   {["any", "production", "stock", "deprecated"].map((val) => (
@@ -607,7 +607,7 @@ function AddAlertWizard({
                         className="w-4 h-4 text-primary border-border focus:ring-primary"
                       />
                       <span className="text-sm text-foreground capitalize">
-                        {val === "any" ? "Any" : val === "production" ? "Production" : val === "stock" ? "Stock" : "Deprecated"}
+                        {val === "any" ? "Tous" : val === "production" ? "Production" : val === "stock" ? "Stock" : "Obsolète"}
                       </span>
                     </label>
                   ))}
@@ -618,7 +618,7 @@ function AddAlertWizard({
               <div className="grid grid-cols-2 gap-4 mb-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1.5">
-                    Firmware Version
+                    Version firmware
                   </label>
                   <input
                     type="text"
@@ -629,7 +629,7 @@ function AddAlertWizard({
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1.5">
-                    Chargepoint vendor
+                    Fabricant
                   </label>
                   <input
                     type="text"
@@ -644,7 +644,7 @@ function AddAlertWizard({
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1.5">
-                    Chargepoint model
+                    Modèle
                   </label>
                   <input
                     type="text"
@@ -655,7 +655,7 @@ function AddAlertWizard({
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-1.5">
-                    Chargepoint location ID
+                    ID de localisation
                   </label>
                   <input
                     type="text"
@@ -674,7 +674,7 @@ function AddAlertWizard({
             {/* Email recipients */}
             <div>
               <label className="block text-sm font-medium text-foreground mb-1.5">
-                Email recipients <span className="text-red-500">*</span>
+                Destinataires e-mail <span className="text-red-500">*</span>
               </label>
               <div className="flex flex-wrap items-center gap-1.5 px-3 py-2.5 bg-surface border border-border rounded-xl min-h-[44px] focus-within:border-primary/50">
                 {emailRecipients.map((email) => (
@@ -704,7 +704,7 @@ function AddAlertWizard({
                 />
               </div>
               <p className="mt-1.5 text-xs text-foreground-muted">
-                Add items by typing, then use comma or enter to separate
+                Saisissez une adresse e-mail, puis appuyez sur virgule ou Entrée pour valider
               </p>
             </div>
           </div>
@@ -724,6 +724,7 @@ function AlertsTab() {
   const { data: alertHistory } = useAlertHistory();
   const [showWizard, setShowWizard] = useState(false);
   const [editingRule, setEditingRule] = useState<AlertRule | null>(null);
+  const [confirmDeleteAlert, setConfirmDeleteAlert] = useState<string | null>(null);
 
   const toggleMutation = useMutation({
     mutationFn: async ({ id, is_active }: { id: string; is_active: boolean }) => {
@@ -781,7 +782,7 @@ function AlertsTab() {
           className="flex items-center gap-1.5 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
         >
           <Plus className="w-4 h-4" />
-          Add alert
+          Ajouter une alerte
         </button>
       </div>
 
@@ -899,11 +900,7 @@ function AlertsTab() {
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          onClick={() => {
-                            if (confirm("Supprimer cette alerte ?")) {
-                              deleteMutation.mutate(rule.id);
-                            }
-                          }}
+                          onClick={() => setConfirmDeleteAlert(rule.id)}
                           className="p-1.5 text-foreground-muted hover:text-red-500 rounded-lg hover:bg-surface-elevated transition-colors"
                           title="Supprimer"
                         >
@@ -970,6 +967,25 @@ function AlertsTab() {
           </div>
         </div>
       )}
+
+      {/* Confirm delete dialog */}
+      <ConfirmDialog
+        open={confirmDeleteAlert !== null}
+        title="Supprimer cette alerte ?"
+        description="Cette action est irréversible. L'alerte et sa configuration seront définitivement supprimées."
+        confirmLabel="Supprimer"
+        cancelLabel="Annuler"
+        variant="danger"
+        loading={deleteMutation.isPending}
+        onConfirm={() => {
+          if (confirmDeleteAlert) {
+            deleteMutation.mutate(confirmDeleteAlert, {
+              onSuccess: () => setConfirmDeleteAlert(null),
+            });
+          }
+        }}
+        onCancel={() => setConfirmDeleteAlert(null)}
+      />
     </div>
   );
 }

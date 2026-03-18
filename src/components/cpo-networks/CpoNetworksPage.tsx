@@ -39,8 +39,8 @@ interface CpoNetwork {
   type: "internal" | "external";
   name: string;
   remarks: string | null;
-  cpo_contracts_count: number;
-  agreements_count: number;
+  cpo_contracts_count?: number;
+  agreements_count?: number;
   updated_by: string | null;
   created_at: string;
   updated_at: string;
@@ -252,6 +252,32 @@ function NetworkListView({ onSelect }: { onSelect: (n: CpoNetwork) => void }) {
       } catch {
         return [];
       }
+    },
+  });
+
+  // ── Fetch contract counts per network ──
+  const { data: contractCounts } = useQuery({
+    queryKey: ["cpo-contract-counts"],
+    queryFn: async () => {
+      const { data } = await supabase.from("cpo_contracts").select("network_id");
+      const counts = new Map<string, number>();
+      (data ?? []).forEach((c: any) => {
+        if (c.network_id) counts.set(c.network_id, (counts.get(c.network_id) ?? 0) + 1);
+      });
+      return counts;
+    },
+  });
+
+  // ── Fetch agreement counts per network ──
+  const { data: agreementCounts } = useQuery({
+    queryKey: ["cpo-agreement-counts"],
+    queryFn: async () => {
+      const { data } = await supabase.from("roaming_agreements").select("cpo_network_id");
+      const counts = new Map<string, number>();
+      (data ?? []).forEach((a: any) => {
+        if (a.cpo_network_id) counts.set(a.cpo_network_id, (counts.get(a.cpo_network_id) ?? 0) + 1);
+      });
+      return counts;
     },
   });
 
@@ -492,10 +518,10 @@ function NetworkListView({ onSelect }: { onSelect: (n: CpoNetwork) => void }) {
                       <p className="text-sm font-medium text-foreground hover:text-primary transition-colors">{network.name}</p>
                     </td>
                     <td className="px-4 py-3 text-sm text-foreground tabular-nums">
-                      {network.cpo_contracts_count ?? 0} contrats
+                      {contractCounts?.get(network.id) ?? 0} contrats
                     </td>
                     <td className="px-4 py-3 text-sm text-foreground tabular-nums">
-                      {network.agreements_count ?? 0} agreements
+                      {agreementCounts?.get(network.id) ?? 0} agreements
                     </td>
                     <td className="px-4 py-3 text-sm text-foreground-muted whitespace-nowrap">
                       {formatDateFull(network.updated_at)}
@@ -663,11 +689,6 @@ function NetworkDetailView({
       queryClient.invalidateQueries({ queryKey: ["cpo-networks"] });
       setEditModalOpen(false);
       toastSuccess("Reseau modifie", "Les modifications ont ete enregistrees");
-      // Update local network reference
-      network.name = editForm.name;
-      network.type = editForm.type as CpoNetwork["type"];
-      network.remarks = editForm.remarks || null;
-      network.updated_by = editForm.updated_by || null;
     },
     onError: (err: Error) => toastError("Erreur", err.message),
   });
@@ -1041,7 +1062,7 @@ function CposTab({ networkId }: { networkId: string }) {
       </div>
 
       {isLoading ? (
-        <TableSkeleton rows={4} cols={5} />
+        <TableSkeleton rows={4} cols={4} />
       ) : filtered.length === 0 ? (
         <EmptyState icon={Building2} message="Aucun CPO" />
       ) : (
@@ -1050,7 +1071,6 @@ function CposTab({ networkId }: { networkId: string }) {
             <table className="w-full">
               <thead className="border-b border-border">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Type</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Nom</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Identifiant externe</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Contrat CPO</th>
@@ -1065,7 +1085,6 @@ function CposTab({ networkId }: { networkId: string }) {
                   );
                   return (
                     <tr key={cpo.id} className="hover:bg-surface-elevated/50 transition-colors">
-                      <td className="px-4 py-3"><TypeBadge type="internal" /></td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
                           {cpo.color && (
@@ -1621,14 +1640,6 @@ function ContractDetailView({
       queryClient.invalidateQueries({ queryKey: ["cpo-contracts-for-network"] });
       setEditModalOpen(false);
       toastSuccess("Contrat modifie", "Les modifications ont ete enregistrees");
-      contract.name = editForm.name;
-      contract.type = editForm.type as CpoContract["type"];
-      contract.network_id = editForm.network_id || null;
-      contract.country_code = editForm.country_code;
-      contract.party_id = editForm.party_id || null;
-      contract.contract_code = editForm.contract_code || null;
-      contract.currency = editForm.currency;
-      contract.url = editForm.url || null;
     },
     onError: (err: Error) => toastError("Erreur", err.message),
   });
@@ -1894,7 +1905,7 @@ function ContractCposSubTab({ contractId }: { contractId: string }) {
       </div>
 
       {isLoading ? (
-        <TableSkeleton rows={4} cols={8} />
+        <TableSkeleton rows={4} cols={7} />
       ) : filtered.length === 0 ? (
         <EmptyState icon={Building2} message="Aucun CPO" />
       ) : (
@@ -1903,7 +1914,6 @@ function ContractCposSubTab({ contractId }: { contractId: string }) {
             <table className="w-full">
               <thead className="border-b border-border">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Type</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Nom</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Identifiant externe</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Tariff Group</th>
@@ -1916,7 +1926,6 @@ function ContractCposSubTab({ contractId }: { contractId: string }) {
               <tbody className="divide-y divide-border">
                 {filtered.map((cpo) => (
                   <tr key={cpo.id} className="hover:bg-surface-elevated/50 transition-colors">
-                    <td className="px-4 py-3"><TypeBadge type="internal" /></td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         {cpo.color && <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: cpo.color }} />}

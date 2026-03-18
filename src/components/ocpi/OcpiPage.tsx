@@ -19,6 +19,7 @@ import {
   ChevronLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/contexts/ToastContext";
 import { Skeleton } from "@/components/ui/Skeleton";
 
 // ── Types ─────────────────────────────────────────────────────
@@ -114,6 +115,7 @@ const formatDate = (d: string | null) =>
 
 export function OcpiPage() {
   const queryClient = useQueryClient();
+  const { success: toastSuccess, error: toastError } = useToast();
 
   // Navigation
   const [selectedSubscription, setSelectedSubscription] = useState<OcpiSubscription | null>(null);
@@ -147,7 +149,7 @@ export function OcpiPage() {
         subscription_id: cred.id,
         name: `[GFX-M-Roam] EZDrive ${cred.role} - ${cred.gireve_country_code}${cred.gireve_party_id}`,
         party: "GreenFlux Netherlands",
-        role: cred.role as "CPO" | "eMSP",
+        role: cred.role === "EMSP" ? "eMSP" : "CPO",
         other_party: `Gireve ${isCpo ? "eMSP" : "CPO"}`,
         other_party_role: isCpo ? "eMSP" as const : "CPO" as const,
         protocol: "OCPI 2.2.1",
@@ -157,13 +159,13 @@ export function OcpiPage() {
         our_url: cred.our_versions_url ?? "—",
         our_token: cred.token_a ?? "",
         our_date: cred.created_at,
-        our_version: "2.1.1",
+        our_version: "2.2.1",
         our_is_platform: false,
         other_country_code: `${cred.gireve_country_code ?? "FR"}/${cred.gireve_party_id ?? "107"}`,
         other_party_id: cred.gireve_party_id ?? "107",
         other_url: cred.versions_url ?? "—",
         other_token: cred.token_b ?? "",
-        other_broadcast_name: isCpo ? "Gireve" : "Gireve",
+        other_broadcast_name: "Gireve",
         other_website: "—",
         modules_own: OCPI_MODULES,
         modules_other: OCPI_MODULES,
@@ -194,7 +196,9 @@ export function OcpiPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ocpi-credentials"] });
+      toastSuccess("Seed locations terminé", "Les locations ont été synchronisées");
     },
+    onError: (err: Error) => toastError("Erreur lors du seed locations", err.message),
   });
 
   const pushMutation = useMutation({
@@ -208,7 +212,9 @@ export function OcpiPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ocpi-credentials"] });
+      toastSuccess("Push vers Gireve terminé", "Les données ont été envoyées");
     },
+    onError: (err: Error) => toastError("Erreur lors du push vers Gireve", err.message),
   });
 
   // ── Sorting ──
@@ -451,48 +457,7 @@ export function OcpiPage() {
 
         {/* Parties relayées tab */}
         {detailTab === "parties" && (
-          <div className="space-y-4">
-            <CollapsibleSection title={`Autorisations de publication de CPO (${(cpoParties ?? []).length})`} defaultOpen>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className={thClass}>Nom</th>
-                      <th className={thClass}>Identifiant externe</th>
-                      <th className={thClass}>Contrat CPO</th>
-                      <th className={thClass}>Code pays</th>
-                      <th className={thClass}>Identifiant de groupe</th>
-                      <th className={thClass}>Réseau CPO</th>
-                    </tr>
-                    {/* Filter row */}
-                    <tr className="border-b border-border bg-surface-elevated/30">
-                      <td className="px-3 py-2"><input placeholder="Recherche..." className={filterInputClass} /></td>
-                      <td className="px-3 py-2"><input placeholder="Recherche..." className={filterInputClass} /></td>
-                      <td className="px-3 py-2"><input placeholder="Recherche..." className={filterInputClass} /></td>
-                      <td className="px-3 py-2"><input placeholder="Recherche..." className={filterInputClass} /></td>
-                      <td className="px-3 py-2"><input placeholder="Recherche..." className={filterInputClass} /></td>
-                      <td className="px-3 py-2"><input placeholder="Recherche..." className={filterInputClass} /></td>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {(cpoParties ?? []).map((cpo: Record<string, unknown>) => (
-                      <tr key={cpo.id as string} className="hover:bg-surface-elevated/50 transition-colors">
-                        <td className="px-3 py-2.5 text-sm text-foreground font-medium">{cpo.name as string}</td>
-                        <td className="px-3 py-2.5 text-sm text-foreground-muted font-mono">{(cpo.external_id as string) ?? "—"}</td>
-                        <td className="px-3 py-2.5 text-sm text-foreground-muted">{cpo.gfx_id ? `GFX ${cpo.country_code} GFX` : "—"}</td>
-                        <td className="px-3 py-2.5 text-sm text-foreground-muted">{(cpo.country_code as string) ?? "FR"}</td>
-                        <td className="px-3 py-2.5 text-sm text-foreground-muted">GFX</td>
-                        <td className="px-3 py-2.5 text-sm text-foreground-muted">GreenFlux CPO Network</td>
-                      </tr>
-                    ))}
-                    {(cpoParties ?? []).length === 0 && (
-                      <tr><td colSpan={6} className="px-4 py-8 text-center text-foreground-muted text-sm">Aucune partie relayée</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </CollapsibleSection>
-          </div>
+          <PartiesRelayeesTab cpoParties={cpoParties ?? []} thClass={thClass} filterInputClass={filterInputClass} />
         )}
 
         {/* Diagnostic tab */}
@@ -711,6 +676,7 @@ function DiagnosticTab({ subscriptionId }: { subscriptionId: string }) {
       const { data } = await supabase
         .from("ocpi_push_log")
         .select("*")
+        .eq("credential_id", subscriptionId)
         .order("created_at", { ascending: false })
         .limit(30);
       return data ?? [];
@@ -825,6 +791,76 @@ function DiagnosticTab({ subscriptionId }: { subscriptionId: string }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function PartiesRelayeesTab({ cpoParties, thClass, filterInputClass }: { cpoParties: Record<string, unknown>[]; thClass: string; filterInputClass: string }) {
+  const [partyFilters, setPartyFilters] = useState<Record<string, string>>({
+    name: "", external_id: "", contract: "", country_code: "", group_id: "", network: "",
+  });
+
+  const filteredParties = useMemo(() => {
+    return cpoParties.filter((cpo) => {
+      const name = ((cpo.name as string) ?? "").toLowerCase();
+      const externalId = ((cpo.external_id as string) ?? "").toLowerCase();
+      const contract = (cpo.gfx_id ? `GFX ${cpo.country_code} GFX` : "—").toLowerCase();
+      const countryCode = ((cpo.country_code as string) ?? "FR").toLowerCase();
+      const groupId = "gfx";
+      const network = "greenflux cpo network";
+
+      if (partyFilters.name && !name.includes(partyFilters.name.toLowerCase())) return false;
+      if (partyFilters.external_id && !externalId.includes(partyFilters.external_id.toLowerCase())) return false;
+      if (partyFilters.contract && !contract.includes(partyFilters.contract.toLowerCase())) return false;
+      if (partyFilters.country_code && !countryCode.includes(partyFilters.country_code.toLowerCase())) return false;
+      if (partyFilters.group_id && !groupId.includes(partyFilters.group_id.toLowerCase())) return false;
+      if (partyFilters.network && !network.includes(partyFilters.network.toLowerCase())) return false;
+      return true;
+    });
+  }, [cpoParties, partyFilters]);
+
+  return (
+    <div className="space-y-4">
+      <CollapsibleSection title={`Autorisations de publication de CPO (${filteredParties.length})`} defaultOpen>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-border">
+                <th className={thClass}>Nom</th>
+                <th className={thClass}>Identifiant externe</th>
+                <th className={thClass}>Contrat CPO</th>
+                <th className={thClass}>Code pays</th>
+                <th className={thClass}>Identifiant de groupe</th>
+                <th className={thClass}>Réseau CPO</th>
+              </tr>
+              {/* Filter row */}
+              <tr className="border-b border-border bg-surface-elevated/30">
+                <td className="px-3 py-2"><input placeholder="Recherche..." value={partyFilters.name} onChange={(e) => setPartyFilters((f) => ({ ...f, name: e.target.value }))} className={filterInputClass} /></td>
+                <td className="px-3 py-2"><input placeholder="Recherche..." value={partyFilters.external_id} onChange={(e) => setPartyFilters((f) => ({ ...f, external_id: e.target.value }))} className={filterInputClass} /></td>
+                <td className="px-3 py-2"><input placeholder="Recherche..." value={partyFilters.contract} onChange={(e) => setPartyFilters((f) => ({ ...f, contract: e.target.value }))} className={filterInputClass} /></td>
+                <td className="px-3 py-2"><input placeholder="Recherche..." value={partyFilters.country_code} onChange={(e) => setPartyFilters((f) => ({ ...f, country_code: e.target.value }))} className={filterInputClass} /></td>
+                <td className="px-3 py-2"><input placeholder="Recherche..." value={partyFilters.group_id} onChange={(e) => setPartyFilters((f) => ({ ...f, group_id: e.target.value }))} className={filterInputClass} /></td>
+                <td className="px-3 py-2"><input placeholder="Recherche..." value={partyFilters.network} onChange={(e) => setPartyFilters((f) => ({ ...f, network: e.target.value }))} className={filterInputClass} /></td>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {filteredParties.map((cpo) => (
+                <tr key={cpo.id as string} className="hover:bg-surface-elevated/50 transition-colors">
+                  <td className="px-3 py-2.5 text-sm text-foreground font-medium">{cpo.name as string}</td>
+                  <td className="px-3 py-2.5 text-sm text-foreground-muted font-mono">{(cpo.external_id as string) ?? "—"}</td>
+                  <td className="px-3 py-2.5 text-sm text-foreground-muted">{cpo.gfx_id ? `GFX ${cpo.country_code} GFX` : "—"}</td>
+                  <td className="px-3 py-2.5 text-sm text-foreground-muted">{(cpo.country_code as string) ?? "FR"}</td>
+                  <td className="px-3 py-2.5 text-sm text-foreground-muted">GFX</td>
+                  <td className="px-3 py-2.5 text-sm text-foreground-muted">GreenFlux CPO Network</td>
+                </tr>
+              ))}
+              {filteredParties.length === 0 && (
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-foreground-muted text-sm">Aucune partie relayée</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </CollapsibleSection>
     </div>
   );
 }

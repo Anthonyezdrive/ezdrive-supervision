@@ -203,7 +203,7 @@ function RuleDetailModal({
                   <p className="text-sm text-foreground mt-0.5">{rule.start_fee.toFixed(2)} {rule.currency}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-foreground-muted">Frais de marge de l'opérateur (par kWh)</p>
+                  <p className="text-xs text-foreground-muted">Frais de marge de l'opérateur (par min)</p>
                   <p className="text-sm text-foreground mt-0.5">{rule.idle_fee_per_min.toFixed(2)} {rule.currency}</p>
                 </div>
               </div>
@@ -619,7 +619,7 @@ export function ReimbursementPage() {
                                   {rule.price_per_min.toFixed(1)}
                                 </td>
                                 <td className="px-3 py-2.5">
-                                  <SourceBadge source="CPO" />
+                                  <SourceBadge source={rule.agreement_id ? "Accord" : rule.emsp_network_id || rule.emsp_name ? "eMSP" : "CPO"} />
                                 </td>
                                 <td className="px-3 py-2.5 text-sm text-foreground-muted truncate max-w-[100px]">
                                   {rule.remarks ?? "—"}

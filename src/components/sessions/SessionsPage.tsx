@@ -378,7 +378,7 @@ export function SessionsPage() {
     isError,
     refetch,
   } = useQuery({
-    queryKey: ["sessions", page, statusFilter, dateFrom, dateTo, selectedCpoId ?? "all"],
+    queryKey: ["sessions", page, statusFilter, dateFrom, dateTo, searchQuery, selectedCpoId ?? "all"],
     retry: false,
     queryFn: async () => {
       try {
@@ -406,6 +406,10 @@ export function SessionsPage() {
 
         if (dateFrom) query = query.gte("started_at", dateFrom);
         if (dateTo) query = query.lte("started_at", dateTo + "T23:59:59");
+
+        if (searchQuery.trim()) {
+          query = query.or(`transaction_id.ilike.%${searchQuery.trim()}%,chargepoint_id.ilike.%${searchQuery.trim()}%`);
+        }
 
         const { data, error, count } = await query;
         if (error) { console.warn("[Sessions] main query:", error.message); return { data: [] as Transaction[], total: 0 }; }
@@ -563,45 +567,105 @@ export function SessionsPage() {
     setPage(0);
   }
 
-  function handleExport() {
-    const rows = (filteredSessions ?? []).map((t) => ({
-      "ID Transaction": t.transaction_id,
-      Borne: getStation(t).name,
-      Ville: getStation(t).city,
-      Connecteur: t.connector_id,
-      "Tag RFID": t.id_tag ?? "",
-      Début: t.started_at,
-      Fin: t.stopped_at ?? "",
-      Durée: formatSessionDuration(t.started_at, t.stopped_at),
-      "Énergie (kWh)": t.energy_kwh ?? "",
-      Statut: t.status,
-      "Raison arrêt": t.stop_reason ?? "",
-    }));
-    downloadCSV(rows, `ezdrive-sessions-cdr-${todayISO()}.csv`);
+  const [exporting, setExporting] = useState(false);
+
+  async function handleExport() {
+    try {
+      setExporting(true);
+
+      let query = supabase
+        .from("ocpp_transactions")
+        .select("*, ocpp_chargepoints(identity, stations(name, city, address))")
+        .order("started_at", { ascending: false });
+
+      if (selectedCpoId && cpoFilterIds?.chargepointIds.length) {
+        query = query.in("chargepoint_id", cpoFilterIds.chargepointIds);
+      }
+
+      if (statusFilter === "Suspect") {
+        query = query.eq("status", "Completed").or("energy_kwh.is.null,energy_kwh.eq.0");
+      } else if (statusFilter === "Deposé") {
+        query = query.not("stop_reason", "is", null).eq("status", "Completed");
+      } else if (statusFilter !== "all") {
+        query = query.eq("status", statusFilter);
+      }
+
+      if (dateFrom) query = query.gte("started_at", dateFrom);
+      if (dateTo) query = query.lte("started_at", dateTo + "T23:59:59");
+
+      if (searchQuery.trim()) {
+        query = query.or(`transaction_id.ilike.%${searchQuery.trim()}%,chargepoint_id.ilike.%${searchQuery.trim()}%`);
+      }
+
+      const { data } = await query;
+      if (!data?.length) return;
+
+      const rows = (data as Transaction[]).map((t) => ({
+        "ID Transaction": t.transaction_id,
+        Borne: getStation(t).name,
+        Ville: getStation(t).city,
+        Connecteur: t.connector_id,
+        "Tag RFID": t.id_tag ?? "",
+        Début: t.started_at,
+        Fin: t.stopped_at ?? "",
+        Durée: formatSessionDuration(t.started_at, t.stopped_at),
+        "Énergie (kWh)": t.energy_kwh ?? "",
+        Statut: t.status,
+        "Raison arrêt": t.stop_reason ?? "",
+      }));
+      downloadCSV(rows, `ezdrive-sessions-cdr-${todayISO()}.csv`);
+    } catch (err) {
+      console.error("[Export] error:", err);
+    } finally {
+      setExporting(false);
+    }
   }
 
-  function handleCdrExport() {
-    const rows = (cdrData?.data ?? []).map((c) => ({
-      "CDR ID": c.cdr_id,
-      "GFX CDR ID": c.gfx_cdr_id ?? "",
-      Source: c.source ?? "",
-      Station: (c.cdr_location as any)?.name ?? "",
-      Ville: (c.cdr_location as any)?.city ?? "",
-      "Token UID": (c.cdr_token as any)?.uid ?? "",
-      Début: c.start_date_time,
-      Fin: c.end_date_time,
-      "Énergie (kWh)": c.total_energy,
-      "Durée (h)": c.total_time,
-      "Coût HT (€)": c.total_cost,
-      "TVA (€)": c.total_vat ?? "",
-      "Taux TVA (%)": c.vat_rate ?? "",
-      "Coût TTC (€)": c.total_cost_incl_vat ?? "",
-      "Retail HT (€)": c.total_retail_cost ?? "",
-      "Retail TTC (€)": c.total_retail_cost_incl_vat ?? "",
-      Devise: c.currency,
-      "Client ext. ID": c.customer_external_id ?? "",
-    }));
-    downloadCSV(rows, `ezdrive-cdrs-${todayISO()}.csv`);
+  async function handleCdrExport() {
+    try {
+      setExporting(true);
+
+      let query = supabase
+        .from("ocpi_cdrs")
+        .select("*")
+        .order("start_date_time", { ascending: false });
+
+      if (selectedCpoId && cpoFilterIds?.stationIds.length) {
+        query = query.in("station_id", cpoFilterIds.stationIds);
+      }
+
+      if (dateFrom) query = query.gte("start_date_time", dateFrom);
+      if (dateTo) query = query.lte("start_date_time", dateTo + "T23:59:59");
+
+      const { data } = await query;
+      if (!data?.length) return;
+
+      const rows = (data as OcpiCdr[]).map((c) => ({
+        "CDR ID": c.cdr_id,
+        "GFX CDR ID": c.gfx_cdr_id ?? "",
+        Source: c.source ?? "",
+        Station: (c.cdr_location as any)?.name ?? "",
+        Ville: (c.cdr_location as any)?.city ?? "",
+        "Token UID": (c.cdr_token as any)?.uid ?? "",
+        Début: c.start_date_time,
+        Fin: c.end_date_time,
+        "Énergie (kWh)": c.total_energy,
+        "Durée (h)": c.total_time,
+        "Coût HT (€)": c.total_cost,
+        "TVA (€)": c.total_vat ?? "",
+        "Taux TVA (%)": c.vat_rate ?? "",
+        "Coût TTC (€)": c.total_cost_incl_vat ?? "",
+        "Retail HT (€)": c.total_retail_cost ?? "",
+        "Retail TTC (€)": c.total_retail_cost_incl_vat ?? "",
+        Devise: c.currency,
+        "Client ext. ID": c.customer_external_id ?? "",
+      }));
+      downloadCSV(rows, `ezdrive-cdrs-${todayISO()}.csv`);
+    } catch (err) {
+      console.error("[CDR Export] error:", err);
+    } finally {
+      setExporting(false);
+    }
   }
 
   function formatAvgDuration(minutes: number): string {
@@ -662,11 +726,11 @@ export function SessionsPage() {
         </div>
         <button
           onClick={activeView === "cdr" ? handleCdrExport : handleExport}
-          disabled={activeView === "cdr" ? !cdrData?.data?.length : !filteredSessions.length}
+          disabled={exporting || (activeView === "cdr" ? !cdrData?.data?.length : !filteredSessions.length)}
           className="flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-border rounded-xl text-xs text-foreground-muted hover:text-foreground hover:border-foreground-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Download className="w-3.5 h-3.5" />
-          Export CSV
+          {exporting ? "Export..." : "Export CSV"}
         </button>
       </div>
 
@@ -847,7 +911,7 @@ export function SessionsPage() {
                   type="text"
                   placeholder="Rechercher ID, borne, tag..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => { setSearchQuery(e.target.value); setPage(0); }}
                   className="w-full pl-9 pr-3 py-2 bg-surface border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-primary/50 transition-colors"
                 />
               </div>
