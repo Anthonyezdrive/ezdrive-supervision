@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { useCpo } from "@/contexts/CpoContext";
 import { PageHelp } from "@/components/ui/PageHelp";
 import {
   Wallet,
@@ -56,26 +57,43 @@ interface TariffFormData {
 
 export function TariffsPage() {
   const queryClient = useQueryClient();
+  const { selectedCpoId } = useCpo();
   const [activeTab, setActiveTab] = useState<"station" | "ocpi">("station");
   const [search, setSearch] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<StationTariff | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<StationTariff | null>(null);
 
+  // ── Resolve station IDs for selected CPO ──
+  const { data: cpoStationIds } = useQuery({
+    queryKey: ["tariffs-cpo-station-ids", selectedCpoId ?? "all"],
+    enabled: !!selectedCpoId,
+    queryFn: async () => {
+      const { data: stns } = await supabase.from("stations").select("id").eq("cpo_id", selectedCpoId!);
+      return (stns ?? []).map((s: { id: string }) => s.id);
+    },
+    staleTime: 60000,
+  });
+
   // Station tariffs
   const { data: stationTariffs, isLoading: stLoading } = useQuery({
-    queryKey: ["station-tariffs"],
+    queryKey: ["station-tariffs", selectedCpoId ?? "all"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      if (selectedCpoId && cpoStationIds?.length === 0) return [] as StationTariff[];
+      let query = supabase
         .from("station_tariffs")
         .select("*, stations(name, city)")
         .order("created_at", { ascending: false });
+      if (selectedCpoId && cpoStationIds?.length) {
+        query = query.in("station_id", cpoStationIds);
+      }
+      const { data, error } = await query;
       if (error) throw error;
       return (data ?? []) as StationTariff[];
     },
   });
 
-  // OCPI tariffs
+  // OCPI tariffs — TODO: no direct cpo_id column, left unfiltered
   const { data: ocpiTariffs, isLoading: ocpiLoading } = useQuery({
     queryKey: ["ocpi-tariffs"],
     queryFn: async () => {
@@ -559,14 +577,19 @@ function TariffModal({
     idle_fee_per_hour: editing?.idle_fee_per_hour ?? null,
   });
 
-  // Fetch stations for the select
+  // Fetch stations for the select — need CPO context to filter
+  const { selectedCpoId: modalCpoId } = useCpo();
   const { data: stations } = useQuery({
-    queryKey: ["stations-list"],
+    queryKey: ["stations-list", modalCpoId ?? "all"],
     queryFn: async () => {
-      const { data } = await supabase
+      let query = supabase
         .from("stations")
         .select("id, name, city")
         .order("name");
+      if (modalCpoId) {
+        query = query.eq("cpo_id", modalCpoId);
+      }
+      const { data } = await query;
       return data ?? [];
     },
   });

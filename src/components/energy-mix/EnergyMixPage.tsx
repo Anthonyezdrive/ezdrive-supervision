@@ -23,6 +23,7 @@ import {
   Pencil,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { useCpo } from "@/contexts/CpoContext";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/contexts/ToastContext";
@@ -293,6 +294,8 @@ function ProfileCard({
 export function EnergyMixPage() {
   const queryClient = useQueryClient();
   const { success: toastSuccess, error: toastError } = useToast();
+  // TODO: energy_mix_profiles is org-level configuration data — not filtered by CPO
+  const { selectedCpoId: _selectedCpoId } = useCpo();
   const [expandedProfile, setExpandedProfile] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingProfile, setEditingProfile] = useState<EnergyMixProfile | null>(null);

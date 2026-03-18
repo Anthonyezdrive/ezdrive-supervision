@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { useCpo } from "@/contexts/CpoContext";
 import {
   BatteryCharging,
   Zap,
@@ -17,18 +18,38 @@ import { PageHelp } from "@/components/ui/PageHelp";
 // ============================================================
 
 export function SmartChargingPage() {
+  const { selectedCpoId } = useCpo();
   const [activeTab, setActiveTab] = useState<"profiles" | "commands">("profiles");
+
+  // ── Resolve station IDs and chargepoint IDs for selected CPO ──
+  const { data: cpoFilterIds } = useQuery({
+    queryKey: ["smart-charging-cpo-filter-ids", selectedCpoId ?? "all"],
+    enabled: !!selectedCpoId,
+    queryFn: async () => {
+      const { data: stns } = await supabase.from("stations").select("id").eq("cpo_id", selectedCpoId!);
+      const stationIds = (stns ?? []).map((s: { id: string }) => s.id);
+      if (stationIds.length === 0) return { stationIds: [], chargepointIds: [] };
+      const { data: cps } = await supabase.from("ocpp_chargepoints").select("id").in("station_id", stationIds);
+      return { stationIds, chargepointIds: (cps ?? []).map((c: { id: string }) => c.id) };
+    },
+    staleTime: 60000,
+  });
 
   // Fetch chargepoints with their status
   const { data: chargepoints, isLoading: cpLoading } = useQuery({
-    queryKey: ["smart-charging-chargepoints"],
+    queryKey: ["smart-charging-chargepoints", selectedCpoId ?? "all"],
     retry: false,
     queryFn: async () => {
       try {
-        const { data, error } = await supabase
+        if (selectedCpoId && cpoFilterIds?.stationIds.length === 0) return [];
+        let query = supabase
           .from("ocpp_chargepoints")
           .select("*")
           .order("last_heartbeat_at", { ascending: false });
+        if (selectedCpoId && cpoFilterIds?.stationIds.length) {
+          query = query.in("station_id", cpoFilterIds.stationIds);
+        }
+        const { data, error } = await query;
         if (error) { console.warn("[SmartCharging] ocpp_chargepoints:", error.message); return []; }
         return data ?? [];
       } catch { return []; }
@@ -37,15 +58,20 @@ export function SmartChargingPage() {
 
   // Fetch active transactions for current load
   const { data: activeSessions } = useQuery({
-    queryKey: ["smart-charging-sessions"],
+    queryKey: ["smart-charging-sessions", selectedCpoId ?? "all"],
     retry: false,
     queryFn: async () => {
       try {
-        const { data, error } = await supabase
+        if (selectedCpoId && cpoFilterIds?.chargepointIds.length === 0) return [];
+        let query = supabase
           .from("ocpp_transactions")
           .select("*, stations(name, city, max_power_kw)")
           .eq("status", "Active")
           .order("started_at", { ascending: false });
+        if (selectedCpoId && cpoFilterIds?.chargepointIds.length) {
+          query = query.in("chargepoint_id", cpoFilterIds.chargepointIds);
+        }
+        const { data, error } = await query;
         if (error) { console.warn("[SmartCharging] ocpp_transactions:", error.message); return []; }
         return data ?? [];
       } catch { return []; }
@@ -70,6 +96,7 @@ export function SmartChargingPage() {
   });
 
   // Fetch command history
+  // TODO: ocpp_command_queue uses chargepoint_identity (string), not chargepoint_id (UUID) — filtering by CPO would require resolving identities
   const { data: commands } = useQuery({
     queryKey: ["smart-charging-commands"],
     retry: false,

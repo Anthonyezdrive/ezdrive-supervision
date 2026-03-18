@@ -23,6 +23,7 @@ import {
   Legend,
 } from "recharts";
 import { supabase } from "@/lib/supabase";
+import { useCpo } from "@/contexts/CpoContext";
 import { cn } from "@/lib/utils";
 import { KPICard } from "@/components/ui/KPICard";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -75,6 +76,7 @@ const PAGE_SIZE = 15;
 // ── Component ─────────────────────────────────────────────────
 
 export function CpoOverviewPage() {
+  const { selectedCpoId } = useCpo();
   const [activeTab, setActiveTab] = useState<Tab>("Vue d'ensemble");
   const [faultedSearch, setFaultedSearch] = useState("");
   const [faultedPage, setFaultedPage] = useState(1);
@@ -82,14 +84,18 @@ export function CpoOverviewPage() {
   // ── Fetch stations ────────────────────────────────────────
 
   const { data: stations, isLoading } = useQuery<StationRow[]>({
-    queryKey: ["cpo-overview-stations"],
+    queryKey: ["cpo-overview-stations", selectedCpoId ?? "all"],
     retry: false,
     queryFn: async () => {
       try {
-        const { data, error } = await supabase
+        let query = supabase
           .from("stations")
           .select("id, name, address, city, ocpp_status, is_online, last_synced_at, max_power_kw, connectors")
           .order("name");
+        if (selectedCpoId) {
+          query = query.eq("cpo_id", selectedCpoId);
+        }
+        const { data, error } = await query;
         if (error) {
           console.warn("[CpoOverview] stations query error:", error.message);
           return [];

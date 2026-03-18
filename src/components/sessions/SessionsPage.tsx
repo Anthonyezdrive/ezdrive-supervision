@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
+import { useCpo } from "@/contexts/CpoContext";
 import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { downloadCSV, todayISO } from "@/lib/export";
@@ -342,6 +343,21 @@ export function SessionsPage() {
   const [dateTo, setDateTo] = useState("");
   const [selectedSession, setSelectedSession] = useState<Transaction | null>(null);
   const [activeView, setActiveView] = useState<"ocpp" | "cdr">("ocpp");
+  const { selectedCpoId } = useCpo();
+
+  // ── Resolve station IDs and chargepoint IDs for selected CPO ──
+  const { data: cpoFilterIds } = useQuery({
+    queryKey: ["cpo-filter-ids", selectedCpoId ?? "all"],
+    enabled: !!selectedCpoId,
+    queryFn: async () => {
+      const { data: stns } = await supabase.from("stations").select("id").eq("cpo_id", selectedCpoId!);
+      const stationIds = (stns ?? []).map((s: { id: string }) => s.id);
+      if (stationIds.length === 0) return { stationIds: [], chargepointIds: [] };
+      const { data: cps } = await supabase.from("ocpp_chargepoints").select("id").in("station_id", stationIds);
+      return { stationIds, chargepointIds: (cps ?? []).map((c: { id: string }) => c.id) };
+    },
+    staleTime: 60000,
+  });
 
   // ── Main sessions query (server-side paginated) ──
   const {
@@ -350,15 +366,23 @@ export function SessionsPage() {
     isError,
     refetch,
   } = useQuery({
-    queryKey: ["sessions", page, statusFilter, dateFrom, dateTo],
+    queryKey: ["sessions", page, statusFilter, dateFrom, dateTo, selectedCpoId ?? "all"],
     retry: false,
     queryFn: async () => {
       try {
+        if (selectedCpoId && cpoFilterIds?.chargepointIds.length === 0) {
+          return { data: [] as Transaction[], total: 0 };
+        }
+
         let query = supabase
           .from("ocpp_transactions")
           .select("*, stations(name, city, address)", { count: "exact" })
           .order("started_at", { ascending: false })
           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
+        if (selectedCpoId && cpoFilterIds?.chargepointIds.length) {
+          query = query.in("chargepoint_id", cpoFilterIds.chargepointIds);
+        }
 
         if (statusFilter === "Suspect") {
           query = query.eq("status", "Completed").or("energy_kwh.is.null,energy_kwh.eq.0");
@@ -380,13 +404,18 @@ export function SessionsPage() {
 
   // ── Aggregate: total sessions ──
   const { data: totalCount } = useQuery({
-    queryKey: ["sessions-total"],
+    queryKey: ["sessions-total", selectedCpoId ?? "all"],
     retry: false,
     queryFn: async () => {
       try {
-        const { count, error } = await supabase
+        if (selectedCpoId && cpoFilterIds?.chargepointIds.length === 0) return 0;
+        let query = supabase
           .from("ocpp_transactions")
           .select("*", { count: "exact", head: true });
+        if (selectedCpoId && cpoFilterIds?.chargepointIds.length) {
+          query = query.in("chargepoint_id", cpoFilterIds.chargepointIds);
+        }
+        const { count, error } = await query;
         if (error) return 0;
         return count ?? 0;
       } catch { return 0; }
@@ -395,14 +424,19 @@ export function SessionsPage() {
 
   // ── Aggregate: active sessions ──
   const { data: activeCount } = useQuery({
-    queryKey: ["sessions-active"],
+    queryKey: ["sessions-active", selectedCpoId ?? "all"],
     retry: false,
     queryFn: async () => {
       try {
-        const { count, error } = await supabase
+        if (selectedCpoId && cpoFilterIds?.chargepointIds.length === 0) return 0;
+        let query = supabase
           .from("ocpp_transactions")
           .select("*", { count: "exact", head: true })
           .eq("status", "Active");
+        if (selectedCpoId && cpoFilterIds?.chargepointIds.length) {
+          query = query.in("chargepoint_id", cpoFilterIds.chargepointIds);
+        }
+        const { count, error } = await query;
         if (error) return 0;
         return count ?? 0;
       } catch { return 0; }
@@ -411,33 +445,43 @@ export function SessionsPage() {
 
   // ── Aggregate: total energy ──
   const { data: totalEnergy } = useQuery({
-    queryKey: ["sessions-energy"],
+    queryKey: ["sessions-energy", selectedCpoId ?? "all"],
     retry: false,
     queryFn: async () => {
       try {
-        const { data, error } = await supabase
+        if (selectedCpoId && cpoFilterIds?.chargepointIds.length === 0) return 0;
+        let query = supabase
           .from("ocpp_transactions")
           .select("energy_kwh")
           .not("energy_kwh", "is", null);
+        if (selectedCpoId && cpoFilterIds?.chargepointIds.length) {
+          query = query.in("chargepoint_id", cpoFilterIds.chargepointIds);
+        }
+        const { data, error } = await query;
         if (error) return 0;
-        return data?.reduce((sum, r) => sum + (r.energy_kwh ?? 0), 0) ?? 0;
+        return data?.reduce((sum: number, r: { energy_kwh: number | null }) => sum + (r.energy_kwh ?? 0), 0) ?? 0;
       } catch { return 0; }
     },
   });
 
   // ── Aggregate: average duration ──
   const { data: avgDuration } = useQuery({
-    queryKey: ["sessions-avg-duration"],
+    queryKey: ["sessions-avg-duration", selectedCpoId ?? "all"],
     retry: false,
     queryFn: async () => {
       try {
-        const { data, error } = await supabase
+        if (selectedCpoId && cpoFilterIds?.chargepointIds.length === 0) return 0;
+        let query = supabase
           .from("ocpp_transactions")
           .select("started_at, stopped_at")
           .not("stopped_at", "is", null)
           .limit(1000);
+        if (selectedCpoId && cpoFilterIds?.chargepointIds.length) {
+          query = query.in("chargepoint_id", cpoFilterIds.chargepointIds);
+        }
+        const { data, error } = await query;
         if (error || !data || data.length === 0) return 0;
-        const totalMinutes = data.reduce((sum, r) => {
+        const totalMinutes = data.reduce((sum: number, r: { started_at: string; stopped_at: string | null }) => {
           const start = new Date(r.started_at).getTime();
           const stop = new Date(r.stopped_at!).getTime();
           return sum + (stop - start) / 60000;
@@ -453,16 +497,22 @@ export function SessionsPage() {
     isLoading: cdrLoading,
     refetch: cdrRefetch,
   } = useQuery({
-    queryKey: ["ocpi-cdrs", page, dateFrom, dateTo],
+    queryKey: ["ocpi-cdrs", page, dateFrom, dateTo, selectedCpoId ?? "all"],
     enabled: activeView === "cdr",
     retry: false,
     queryFn: async () => {
       try {
+        if (selectedCpoId && cpoFilterIds?.stationIds.length === 0) {
+          return { data: [] as OcpiCdr[], total: 0 };
+        }
         let query = supabase
           .from("ocpi_cdrs")
           .select("*", { count: "exact" })
           .order("start_date_time", { ascending: false })
           .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+        if (selectedCpoId && cpoFilterIds?.stationIds.length) {
+          query = query.in("station_id", cpoFilterIds.stationIds);
+        }
         if (dateFrom) query = query.gte("start_date_time", dateFrom);
         if (dateTo) query = query.lte("start_date_time", dateTo + "T23:59:59");
         const { data, error, count } = await query;
