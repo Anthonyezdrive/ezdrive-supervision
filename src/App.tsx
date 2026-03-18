@@ -48,6 +48,7 @@ import { B2BOverviewPage } from "@/components/b2b/B2BOverviewPage";
 import { B2BMonthlyPage } from "@/components/b2b/B2BMonthlyPage";
 import { B2BChargepointsPage } from "@/components/b2b/B2BChargepointsPage";
 import { B2BDriversPage } from "@/components/b2b/B2BDriversPage";
+import { B2BCompanyPage } from "@/components/b2b/B2BCompanyPage";
 // ── Auth & Public ────────────────────────────────────────
 import { B2BLoginPage } from "@/components/auth/B2BLoginPage";
 import { ResetPasswordPage } from "@/components/auth/ResetPasswordPage";
@@ -155,6 +156,7 @@ export default function App() {
                   <Route path="monthly" element={<B2BMonthlyPage />} />
                   <Route path="chargepoints" element={<B2BChargepointsPage />} />
                   <Route path="drivers" element={<B2BDriversPage />} />
+                  <Route path="company" element={<B2BCompanyPage />} />
                 </Route>
               </Route>
             </Route>

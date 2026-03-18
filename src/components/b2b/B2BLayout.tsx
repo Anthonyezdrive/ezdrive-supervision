@@ -1,5 +1,5 @@
-import { NavLink, Outlet } from "react-router-dom";
-import { LayoutDashboard, FileText, Radio, UserCheck } from "lucide-react";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { LayoutDashboard, FileText, Radio, UserCheck, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { B2BFilterProvider, useB2BFilters } from "@/contexts/B2BFilterContext";
@@ -12,12 +12,15 @@ const B2B_TABS = [
   { to: "/b2b/monthly", label: "Rapport mensuel", icon: FileText },
   { to: "/b2b/chargepoints", label: "Par borne", icon: Radio },
   { to: "/b2b/drivers", label: "Par conducteur", icon: UserCheck },
+  { to: "/b2b/company", label: "Mon Entreprise", icon: Building2 },
 ];
 
 function B2BLayoutInner() {
   const { profile } = useAuth();
   const isAdmin = profile?.role === "admin";
   const { selectedClientId, setSelectedClientId } = useB2BFilters();
+  const location = useLocation();
+  const isCompanyPage = location.pathname.includes("/b2b/company");
 
   // Admin: fetch all clients; B2B user: fetch own
   const { data: allClients } = useB2BClients();
@@ -64,34 +67,45 @@ function B2BLayoutInner() {
           </div>
         </div>
 
-        {/* Admin: client selector */}
-        {isAdmin && clients.length > 1 && (
-          <div>
-            <label className="block text-xs text-foreground-muted uppercase tracking-wider mb-1">
-              Client
-            </label>
-            <select
-              value={activeClient?.id ?? ""}
-              onChange={(e) => setSelectedClientId(e.target.value || null)}
-              className="px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground focus:border-border-focus focus:outline-none min-w-[200px]"
-            >
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+        <div className="flex items-center gap-4">
+          {/* Admin: client selector */}
+          {isAdmin && clients.length > 1 && (
+            <div>
+              <label className="block text-xs text-foreground-muted uppercase tracking-wider mb-1">
+                Client
+              </label>
+              <select
+                value={activeClient?.id ?? ""}
+                onChange={(e) => setSelectedClientId(e.target.value || null)}
+                className="px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground focus:border-border-focus focus:outline-none min-w-[200px]"
+              >
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* EZDrive branding */}
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-px bg-border hidden sm:block" />
+            <img src="/logo-ezdrive.png" alt="EZDrive" className="h-6 opacity-60 hidden sm:block" />
+            <span className="text-xs font-semibold opacity-50 hidden sm:inline tracking-wide">Business</span>
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Filters */}
-      <B2BFilterBar
-        availableSites={filterOptions.sites}
-        availableBornes={filterOptions.bornes}
-        availableTokens={filterOptions.tokens}
-        availableYears={[2023, 2024, 2025, 2026]}
-      />
+      {/* Filters (hidden on company page) */}
+      {!isCompanyPage && (
+        <B2BFilterBar
+          availableSites={filterOptions.sites}
+          availableBornes={filterOptions.bornes}
+          availableTokens={filterOptions.tokens}
+          availableYears={[2023, 2024, 2025, 2026]}
+        />
+      )}
 
       {/* Tab navigation */}
       <div className="flex items-center gap-1 border-b border-border overflow-x-auto">
@@ -117,6 +131,14 @@ function B2BLayoutInner() {
 
       {/* Page content — pass activeClient via context */}
       <Outlet context={{ activeClient, customerExternalIds }} />
+
+      {/* EZDrive footer branding */}
+      <div className="flex items-center justify-center gap-2 pt-6 pb-2">
+        <img src="/logo-ezdrive.png" alt="EZDrive" className="h-4 opacity-30" />
+        <span className="text-[11px] text-foreground-muted/40">
+          Propulsé par EZDrive
+        </span>
+      </div>
     </div>
   );
 }
