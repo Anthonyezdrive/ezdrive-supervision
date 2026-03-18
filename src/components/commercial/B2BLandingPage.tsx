@@ -214,22 +214,25 @@ function MockDashboard() {
                 <span>0</span>
               </div>
               <div className="flex items-end gap-1 flex-1" style={{ height: "180px" }}>
-                {months.map((m, i) => (
-                  <div key={m.name} className="flex-1 flex flex-col items-center gap-0.5">
-                    <span className="text-[9px] text-foreground-muted font-medium">{m.label}</span>
-                    <div
-                      className="w-full rounded-t-md transition-all cursor-pointer"
-                      style={{
-                        height: `${(m.v / maxV) * 100}%`,
-                        backgroundColor: EZ_GREEN,
-                        opacity: 0.85,
-                      }}
-                      onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
-                      onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.85")}
-                    />
-                    <span className="text-[10px] text-foreground-muted">{m.name}</span>
-                  </div>
-                ))}
+                {months.map((m) => {
+                  const barH = Math.max((m.v / maxV) * 140, 4);
+                  return (
+                    <div key={m.name} className="flex-1 flex flex-col items-center justify-end h-full">
+                      <span className="text-[9px] text-foreground-muted font-medium mb-0.5">{m.label}</span>
+                      <div
+                        className="w-full rounded-t-md transition-all cursor-pointer"
+                        style={{
+                          height: `${barH}px`,
+                          backgroundColor: EZ_GREEN,
+                          opacity: 0.85,
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
+                        onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.85")}
+                      />
+                      <span className="text-[10px] text-foreground-muted mt-1">{m.name}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
