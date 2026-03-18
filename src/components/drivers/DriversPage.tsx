@@ -33,6 +33,14 @@ interface Driver {
   id: string;
   driver_external_id: string;
   full_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  email: string | null;
+  phone: string | null;
+  country: string | null;
+  status: string | null;
+  retail_package: string | null;
+  emsp_contract: string | null;
   primary_token_uid: string | null;
   customer_group: string | null;
   total_sessions: number;
@@ -41,6 +49,7 @@ interface Driver {
   last_session_at: string | null;
   is_active: boolean;
   admin_notes: string | null;
+  source: string | null;
   created_at: string;
   cpo_id: string | null;
 }
@@ -122,7 +131,7 @@ export function DriversPage() {
       while (hasMore) {
         let query = supabase
           .from("gfx_consumers")
-          .select("id, driver_external_id, full_name, primary_token_uid, customer_group, total_sessions, total_energy_kwh, first_session_at, last_session_at, is_active, admin_notes, created_at, cpo_id")
+          .select("id, driver_external_id, full_name, first_name, last_name, email, phone, country, status, retail_package, emsp_contract, primary_token_uid, customer_group, total_sessions, total_energy_kwh, first_session_at, last_session_at, is_active, admin_notes, source, created_at, cpo_id")
           .order("total_sessions", { ascending: false })
           .range(from, from + PAGE - 1);
 
@@ -348,11 +357,11 @@ export function DriversPage() {
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase tracking-wider">État</th>
                   <th className={thClass} onClick={() => handleSort("full_name")}>Conducteur <SortIcon col="full_name" /></th>
-                  <th className={thClass} onClick={() => handleSort("customer_group")}>Groupe <SortIcon col="customer_group" /></th>
+                  <th className={thClass} onClick={() => handleSort("customer_group")}>Forfait / Groupe <SortIcon col="customer_group" /></th>
+                  <th className={thClass}>Pays</th>
                   <th className={cn(thClass, "text-right")} onClick={() => handleSort("total_sessions")}>Sessions <SortIcon col="total_sessions" /></th>
                   <th className={cn(thClass, "text-right")} onClick={() => handleSort("total_energy_kwh")}>Énergie <SortIcon col="total_energy_kwh" /></th>
                   <th className={thClass} onClick={() => handleSort("last_session_at")}>Dernière charge <SortIcon col="last_session_at" /></th>
-                  <th className={thClass} onClick={() => handleSort("first_session_at")}>Première charge <SortIcon col="first_session_at" /></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -387,14 +396,17 @@ export function DriversPage() {
                           </div>
                           <div className="min-w-0">
                             <p className="text-sm font-medium text-foreground truncate max-w-[200px]">{displayName}</p>
-                            {driver.primary_token_uid && (
-                              <p className="text-xs text-foreground-muted truncate font-mono max-w-[200px]">{driver.primary_token_uid}</p>
-                            )}
+                            <p className="text-xs text-foreground-muted truncate max-w-[200px]">
+                              {driver.email ?? driver.primary_token_uid ?? driver.driver_external_id}
+                            </p>
                           </div>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-sm text-foreground-muted truncate max-w-[180px]">
-                        {driver.customer_group ?? "—"}
+                        {driver.retail_package ?? driver.customer_group ?? "—"}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-foreground-muted">
+                        {driver.country ?? "—"}
                       </td>
                       <td className="px-4 py-3 text-sm text-foreground-muted text-right tabular-nums">
                         {driver.total_sessions.toLocaleString("fr-FR")}
@@ -404,9 +416,6 @@ export function DriversPage() {
                       </td>
                       <td className="px-4 py-3 text-sm text-foreground-muted whitespace-nowrap">
                         {driver.last_session_at ? formatRelativeDate(driver.last_session_at) : "—"}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-foreground-muted whitespace-nowrap">
-                        {driver.first_session_at ? formatRelativeDate(driver.first_session_at) : "—"}
                       </td>
                     </tr>
                   );
@@ -530,11 +539,29 @@ function DriverDetailDrawer({ driver, onClose }: { driver: Driver; onClose: () =
             </div>
           </div>
 
-          {/* Informations */}
+          {/* Informations personnelles */}
           <div className="space-y-2">
             <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Informations</p>
-            <DetailItem label="Groupe client" value={driver.customer_group ?? "—"} />
+            {driver.first_name && <DetailItem label="Prénom" value={driver.first_name} />}
+            {driver.last_name && <DetailItem label="Nom" value={driver.last_name} />}
+            {driver.email && <DetailItem label="Email" value={driver.email} />}
+            {driver.phone && <DetailItem label="Téléphone" value={driver.phone} />}
+            <DetailItem label="Pays" value={driver.country ?? "—"} />
+            <DetailItem label="Statut GFX" value={driver.status ?? "—"} />
+          </div>
+
+          {/* Abonnement & rattachement */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Forfait & Rattachement</p>
+            <DetailItem label="Forfait" value={driver.retail_package ?? "—"} />
+            <DetailItem label="Contrat eMSP" value={driver.emsp_contract ?? "—"} />
+            <DetailItem label="Groupe / Client" value={driver.customer_group ?? "—"} />
             <DetailItem label="Token principal" value={driver.primary_token_uid ?? "—"} />
+          </div>
+
+          {/* Charge */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Historique de charge</p>
             {driver.first_session_at && (
               <DetailItem label="Première charge" value={formatDate(driver.first_session_at)} />
             )}
@@ -543,12 +570,17 @@ function DriverDetailDrawer({ driver, onClose }: { driver: Driver; onClose: () =
             )}
           </div>
 
-          {/* ID GreenFlux */}
+          {/* ID externe */}
           <div className="space-y-2">
-            <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Identifiant externe</p>
+            <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Identifiants</p>
             <p className="text-xs text-foreground font-mono bg-surface-elevated border border-border rounded-lg px-3 py-2 break-all">
               {driver.driver_external_id}
             </p>
+            {driver.source && (
+              <p className="text-xs text-foreground-muted">
+                Source: <span className="font-medium">{driver.source === "gfx_crm" ? "API GreenFlux CRM" : "Extraction CDRs"}</span>
+              </p>
+            )}
           </div>
 
           {/* Notes */}
