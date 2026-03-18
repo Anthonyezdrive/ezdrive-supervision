@@ -33,25 +33,62 @@ export function DashboardPage() {
   const { data: kpis, isLoading, isError, refetch } = useStationKPIs(selectedCpoId);
   const { data: stations } = useStations(selectedCpoId);
 
-  // Extra metrics for business overview
-  // TODO: ocpp_transactions, consumer_profiles, invoices, user_subscriptions queries
-  // need future CPO scoping (join through stations.cpo_id or a cpo_id column)
+  // Extra metrics for business overview — scoped by CPO when a CPO is selected
   const { data: businessMetrics } = useQuery({
     queryKey: ["dashboard-business-metrics", selectedCpoId ?? "all"],
     retry: false,
     queryFn: async () => {
-      // Each query may fail independently (table may not exist) — handle gracefully
       const safe = async <T,>(fn: () => Promise<T>, fallback: T): Promise<T> => {
         try { return await fn(); } catch { return fallback; }
       };
 
+      // When a CPO is selected, resolve the chargepoint IDs belonging to its stations
+      let cpChargepointIds: string[] | null = null;
+      if (selectedCpoId) {
+        const { data: cpStations } = await supabase
+          .from("stations")
+          .select("id")
+          .eq("cpo_id", selectedCpoId);
+        const stationIds = (cpStations ?? []).map((s) => s.id);
+        if (stationIds.length > 0) {
+          const { data: cps } = await supabase
+            .from("ocpp_chargepoints")
+            .select("id")
+            .in("station_id", stationIds);
+          cpChargepointIds = (cps ?? []).map((c) => c.id);
+        } else {
+          cpChargepointIds = [];
+        }
+      }
+
+      // Helper: apply chargepoint filter to a transaction query
+      const withCpoFilter = (query: ReturnType<typeof supabase.from>) => {
+        if (cpChargepointIds !== null) {
+          if (cpChargepointIds.length === 0) return null; // no chargepoints → skip query
+          return query.in("chargepoint_id", cpChargepointIds);
+        }
+        return query;
+      };
+
+      const emptyResult = { count: 0, data: null, error: null };
+
+      const txAllQuery = withCpoFilter(
+        supabase.from("ocpp_transactions").select("*", { count: "exact", head: true })
+      );
+      const txActiveQuery = withCpoFilter(
+        supabase.from("ocpp_transactions").select("*", { count: "exact", head: true }).eq("status", "Active")
+      );
+      const txEnergyQuery = withCpoFilter(
+        supabase.from("ocpp_transactions").select("energy_kwh").not("energy_kwh", "is", null)
+      );
+
       const [sessionsRes, activeRes, customersRes, invoicesRes, energyRes, subsRes] = await Promise.all([
-        safe(() => supabase.from("ocpp_transactions").select("*", { count: "exact", head: true }), { count: 0, data: null, error: null }),
-        safe(() => supabase.from("ocpp_transactions").select("*", { count: "exact", head: true }).eq("status", "Active"), { count: 0, data: null, error: null }),
-        safe(() => supabase.from("consumer_profiles").select("*", { count: "exact", head: true }), { count: 0, data: null, error: null }),
-        safe(() => supabase.from("invoices").select("total_cents").eq("status", "paid"), { count: 0, data: null, error: null }),
-        safe(() => supabase.from("ocpp_transactions").select("energy_kwh").not("energy_kwh", "is", null), { count: 0, data: null, error: null }),
-        safe(() => supabase.from("user_subscriptions").select("*", { count: "exact", head: true }).eq("status", "ACTIVE"), { count: 0, data: null, error: null }),
+        safe(() => txAllQuery ? txAllQuery : Promise.resolve(emptyResult), emptyResult),
+        safe(() => txActiveQuery ? txActiveQuery : Promise.resolve(emptyResult), emptyResult),
+        safe(() => supabase.from("consumer_profiles").select("*", { count: "exact", head: true }), emptyResult),
+        safe(() => supabase.from("invoices").select("total_cents").eq("status", "paid"), emptyResult),
+        safe(() => txEnergyQuery ? txEnergyQuery : Promise.resolve(emptyResult), emptyResult),
+        safe(() => supabase.from("user_subscriptions").select("*", { count: "exact", head: true }).eq("status", "ACTIVE"), emptyResult),
       ]);
 
       const totalRevenue = (invoicesRes.data as { total_cents?: number }[] | null)?.reduce(
@@ -73,17 +110,34 @@ export function DashboardPage() {
     staleTime: 30000,
   });
 
-  // Recent sessions
+  // Recent sessions — scoped by CPO via chargepoint → station chain
   const { data: recentSessions } = useQuery({
     queryKey: ["dashboard-recent-sessions", selectedCpoId ?? "all"],
     retry: false,
     queryFn: async () => {
       try {
+        // When CPO is selected, get relevant chargepoint IDs first
+        let chargepointIds: string[] | null = null;
+        if (selectedCpoId) {
+          const { data: cpStations } = await supabase
+            .from("stations")
+            .select("id")
+            .eq("cpo_id", selectedCpoId);
+          const stationIds = (cpStations ?? []).map((s) => s.id);
+          if (stationIds.length === 0) return [];
+          const { data: cps } = await supabase
+            .from("ocpp_chargepoints")
+            .select("id")
+            .in("station_id", stationIds);
+          chargepointIds = (cps ?? []).map((c) => c.id);
+          if (chargepointIds.length === 0) return [];
+        }
+
         let query = supabase
           .from("ocpp_transactions")
-          .select("id, chargepoint_id, connector_id, status, started_at, stopped_at, energy_kwh, stations(name, city, cpo_id)");
-        if (selectedCpoId) {
-          query = query.eq("stations.cpo_id", selectedCpoId);
+          .select("id, chargepoint_id, connector_id, status, started_at, stopped_at, energy_kwh, ocpp_chargepoints(station_id, stations(name, city, cpo_id))");
+        if (chargepointIds) {
+          query = query.in("chargepoint_id", chargepointIds);
         }
         const { data, error } = await query
           .order("started_at", { ascending: false })
@@ -273,6 +327,13 @@ export function DashboardPage() {
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium text-foreground truncate">
                     {(() => {
+                      // Navigate: ocpp_chargepoints → stations
+                      const cp = session.ocpp_chargepoints;
+                      if (cp && typeof cp === "object") {
+                        const st = (cp as Record<string, unknown>).stations;
+                        if (st && typeof st === "object" && "name" in (st as object)) return (st as { name: string }).name;
+                      }
+                      // Fallback: direct stations relation (legacy)
                       const st = session.stations;
                       if (Array.isArray(st) && st[0]) return st[0].name;
                       if (st && typeof st === "object" && "name" in (st as object)) return (st as { name: string }).name;

@@ -150,8 +150,9 @@ serve(async (req: Request) => {
       ])
     );
 
+    // Default CPO for GFX stations = EZDrive AG (the operational CPO, not the root eMSP entity)
     const ezdriveCpoId = cpos?.find(
-      (c: { code: string }) => c.code === "ezdrive"
+      (c: { code: string }) => c.code === "ezdrive-ag"
     )?.id;
     const totalEnergiesCpoId = cpos?.find(
       (c: { code: string }) => c.code === "totalenergies"

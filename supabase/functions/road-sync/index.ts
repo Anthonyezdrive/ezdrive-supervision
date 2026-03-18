@@ -217,14 +217,11 @@ serve(async (req: Request) => {
       ])
     );
 
-    // Prefer ROAD EZDrive CPO; fallback to GFX EZDrive CPO
-    const roadEzdriveCpoId = cpos?.find(
-      (c: { code: string }) => c.code === "road-ezdrive"
+    // Default CPO for ROAD stations = EZDrive AG (the operational CPO)
+    const ezdriveAgCpoId = cpos?.find(
+      (c: { code: string }) => c.code === "ezdrive-ag"
     )?.id;
-    const ezdriveCpoId = cpos?.find(
-      (c: { code: string }) => c.code === "ezdrive"
-    )?.id;
-    const defaultCpoId = roadEzdriveCpoId ?? ezdriveCpoId ?? null;
+    const defaultCpoId = ezdriveAgCpoId ?? null;
 
     const seenRoadIds = new Set<string>();
 
