@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { useB2BFilters } from "@/contexts/B2BFilterContext";
 import { useAuth } from "@/contexts/AuthContext";
 import type { B2BCdr, B2BClient } from "@/types/b2b";
-import { getLocationName, getChargePointId } from "@/lib/b2b-formulas";
+import { getLocationName, getChargePointId, formatChargePointLabel, buildTokenDriverMap } from "@/lib/b2b-formulas";
 
 /**
  * Fetch CDRs for the current B2B client, filtered by year + global filters.
@@ -112,10 +112,25 @@ export function useMyB2BClients() {
 
 /**
  * Extract unique filter options from CDR data
+ * Returns raw values (for filtering) + label maps (for display)
  */
 export function useB2BFilterOptions(cdrs: B2BCdr[]) {
   const sites = [...new Set(cdrs.map(getLocationName))].filter((s) => s !== "Inconnu").sort();
   const bornes = [...new Set(cdrs.map(getChargePointId))].filter((b) => b !== "Inconnu").sort();
+
+  // Build human-readable labels for bornes: EVSE ID → "Site - Borne N"
+  const borneLabelMap = new Map<string, string>();
+  for (const cdr of cdrs) {
+    const cpId = getChargePointId(cdr);
+    if (cpId !== "Inconnu" && !borneLabelMap.has(cpId)) {
+      const locName = getLocationName(cdr);
+      borneLabelMap.set(cpId, formatChargePointLabel(cpId, locName));
+    }
+  }
+
+  // Build token → driver name map
+  const tokenDriverMap = buildTokenDriverMap(cdrs);
+
   const tokenSet = new Set<string>();
   for (const c of cdrs) {
     const t = c.cdr_token?.uid ?? c.auth_id;
@@ -123,11 +138,27 @@ export function useB2BFilterOptions(cdrs: B2BCdr[]) {
   }
   const tokensList = [...tokenSet].sort();
 
+  // Build label map for tokens: token UID → "Driver Name (token)"
+  const tokenLabelMap = new Map<string, string>();
+  for (const t of tokensList) {
+    const driver = tokenDriverMap.get(t);
+    if (driver) {
+      tokenLabelMap.set(t, `${driver}`);
+    }
+  }
+
   // Available years
   const yearSet = new Set<number>();
   for (const c of cdrs) {
     yearSet.add(new Date(c.start_date_time).getFullYear());
   }
 
-  return { sites, bornes, tokens: tokensList, years: [...yearSet].sort() };
+  return {
+    sites,
+    bornes,
+    borneLabelMap,
+    tokens: tokensList,
+    tokenLabelMap,
+    years: [...yearSet].sort(),
+  };
 }

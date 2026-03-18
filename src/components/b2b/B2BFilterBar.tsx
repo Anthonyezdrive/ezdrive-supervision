@@ -7,6 +7,8 @@ interface B2BFilterBarProps {
   availableBornes: string[];
   availableTokens: string[];
   availableYears: number[];
+  borneLabelMap?: Map<string, string>;
+  tokenLabelMap?: Map<string, string>;
 }
 
 export function B2BFilterBar({
@@ -14,6 +16,8 @@ export function B2BFilterBar({
   availableBornes,
   availableTokens,
   availableYears,
+  borneLabelMap,
+  tokenLabelMap,
 }: B2BFilterBarProps) {
   const { year, sites, bornes, tokens, setYear, setSites, setBornes, setTokens, resetFilters } =
     useB2BFilters();
@@ -62,6 +66,7 @@ export function B2BFilterBar({
         selected={bornes}
         onChange={setBornes}
         placeholder="Toutes les bornes"
+        labelMap={borneLabelMap}
       />
 
       {/* Tokens */}
@@ -71,6 +76,7 @@ export function B2BFilterBar({
         selected={tokens}
         onChange={setTokens}
         placeholder="Tous les tokens"
+        labelMap={tokenLabelMap}
       />
 
       {/* Reset */}

@@ -9,6 +9,8 @@ interface MultiSelectDropdownProps {
   onChange: (selected: string[]) => void;
   placeholder?: string;
   maxDisplay?: number;
+  /** Optional map of option value → display label (for human-readable names) */
+  labelMap?: Map<string, string>;
 }
 
 export function MultiSelectDropdown({
@@ -18,6 +20,7 @@ export function MultiSelectDropdown({
   onChange,
   placeholder = "Tous",
   maxDisplay = 2,
+  labelMap,
 }: MultiSelectDropdownProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -35,8 +38,10 @@ export function MultiSelectDropdown({
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
+  const getLabel = (o: string) => labelMap?.get(o) ?? o;
+
   const filtered = search
-    ? options.filter((o) => o.toLowerCase().includes(search.toLowerCase()))
+    ? options.filter((o) => getLabel(o).toLowerCase().includes(search.toLowerCase()))
     : options;
 
   function toggle(option: string) {
@@ -55,7 +60,7 @@ export function MultiSelectDropdown({
     selected.length === 0
       ? placeholder
       : selected.length <= maxDisplay
-        ? selected.join(", ")
+        ? selected.map(getLabel).join(", ")
         : `${selected.length} sélectionnés`;
 
   return (
@@ -134,7 +139,7 @@ export function MultiSelectDropdown({
                     <Check className="w-3 h-3 text-background" />
                   )}
                 </div>
-                <span className="truncate">{option}</span>
+                <span className="truncate">{getLabel(option)}</span>
               </button>
             ))}
             {filtered.length === 0 && (

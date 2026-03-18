@@ -199,8 +199,11 @@ export function groupByChargePoint(
     // Enrich with station hardware data
     const station = resolveStation(chargePointId, locationName, stationLookup);
 
+    // Build human-readable label
+    const displayLabel = formatChargePointLabel(chargePointId, locationName);
+
     return {
-      chargePointId,
+      chargePointId: displayLabel,
       siteName: locationName || station?.name || "—",
       volume,
       duration,
@@ -260,4 +263,44 @@ export function getLocationName(cdr: B2BCdr): string {
 export function getChargePointId(cdr: B2BCdr): string {
   const evses = cdr.cdr_location?.evses;
   return evses?.[0]?.evse_id ?? evses?.[0]?.uid ?? "Inconnu";
+}
+
+/**
+ * Build a human-readable label for a chargepoint.
+ * e.g. "FR*DMO*E001*2" + "Siège Social - La Défense" → "Siège La Défense - Borne 2"
+ * Falls back to the raw EVSE ID if no location name is available.
+ */
+export function formatChargePointLabel(evseId: string, locationName: string): string {
+  if (!locationName || locationName === "Inconnu") return evseId;
+
+  // Extract connector/point number from EVSE ID (last segment after *)
+  const parts = evseId.split("*");
+  const connectorNum = parts.length > 1 ? parts[parts.length - 1] : null;
+
+  // Shorten location name (remove common prefixes/suffixes for compactness)
+  const shortLoc = locationName
+    .replace(/^Siège Social\s*[-–—]\s*/i, "Siège ")
+    .replace(/\s*[-–—]\s*Ombrière$/i, "")
+    .trim();
+
+  if (connectorNum) {
+    return `${shortLoc} - Borne ${connectorNum}`;
+  }
+  return shortLoc;
+}
+
+/**
+ * Resolve a token UID to a driver name using CDR data.
+ * Returns the driver_external_id if found, otherwise the raw token UID.
+ */
+export function buildTokenDriverMap(cdrs: B2BCdr[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const cdr of cdrs) {
+    const tokenUid = cdr.cdr_token?.uid;
+    const driver = cdr.driver_external_id;
+    if (tokenUid && driver && driver !== "Inconnu") {
+      map.set(tokenUid, driver);
+    }
+  }
+  return map;
 }

@@ -104,6 +104,8 @@ function B2BLayoutInner() {
           availableBornes={filterOptions.bornes}
           availableTokens={filterOptions.tokens}
           availableYears={[2023, 2024, 2025, 2026]}
+          borneLabelMap={filterOptions.borneLabelMap}
+          tokenLabelMap={filterOptions.tokenLabelMap}
         />
       )}
 
