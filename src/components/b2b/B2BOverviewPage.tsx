@@ -1,11 +1,13 @@
+import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList, Legend,
 } from "recharts";
-import { Clock, Zap, Euro, Gauge, AlertTriangle, CheckCircle } from "lucide-react";
+import { Clock, Zap, Euro, Gauge, AlertTriangle, CheckCircle, GitCompareArrows } from "lucide-react";
 import { KPICard } from "@/components/ui/KPICard";
 import { PageHelp } from "@/components/ui/PageHelp";
-import { useB2BCdrs } from "@/hooks/useB2BCdrs";
+import { useB2BCdrs, useB2BCdrsPrevYear } from "@/hooks/useB2BCdrs";
+import { useB2BFilters } from "@/contexts/B2BFilterContext";
 import {
   computeKPIs, groupByMonth, formatDuration, formatDurationShort,
   formatNumber, formatEUR,
@@ -18,6 +20,7 @@ const MONTH_SHORT = [
 ];
 
 const BAR_COLOR = "#9ACC0E";
+const BAR_COLOR_PREV = "#4A5568";
 
 const tooltipStyle = {
   backgroundColor: "#111638",
@@ -30,8 +33,12 @@ const tooltipStyle = {
 export function B2BOverviewPage() {
   const { activeClient, customerExternalIds } =
     useOutletContext<{ activeClient: B2BClient | null; customerExternalIds: string[] }>();
+  const { year } = useB2BFilters();
+
+  const [showComparison, setShowComparison] = useState(false);
 
   const { data: cdrs, isLoading } = useB2BCdrs(customerExternalIds);
+  const { data: prevCdrs } = useB2BCdrsPrevYear(customerExternalIds, showComparison);
 
   if (isLoading) {
     return (
@@ -51,9 +58,14 @@ export function B2BOverviewPage() {
   const kpis = computeKPIs(data, rate);
   const monthlyData = groupByMonth(data, rate);
 
+  // Previous year data for comparison
+  const prevMonthlyData = showComparison && prevCdrs ? groupByMonth(prevCdrs, rate) : null;
+  const prevMonthMap = new Map(prevMonthlyData?.map((m) => [m.month, m.volume]) ?? []);
+
   const chartData = monthlyData.map((m) => ({
     name: MONTH_SHORT[m.month - 1],
     volume: Math.round(m.volume),
+    ...(showComparison ? { volumePrev: Math.round(prevMonthMap.get(m.month) ?? 0) } : {}),
   }));
 
   return (
@@ -99,38 +111,62 @@ export function B2BOverviewPage() {
 
       {/* Bar Chart: Volume par mois */}
       <div className="bg-surface border border-border rounded-2xl p-6">
-        <h3 className="text-base font-semibold text-foreground mb-4">
-          Somme de Volume par Mois
-        </h3>
-        {chartData.length > 0 ? (
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={chartData} margin={{ top: 20, right: 10, bottom: 5, left: -10 }}>
-              <XAxis
-                dataKey="name"
-                tick={{ fill: "#B0B8D4", fontSize: 12 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                tick={{ fill: "#B0B8D4", fontSize: 12 }}
-                axisLine={false}
-                tickLine={false}
-                allowDecimals={false}
-              />
-              <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`${v} kWh`, "Volume"]} />
-              <Bar dataKey="volume" radius={[8, 8, 0, 0]} maxBarSize={50}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-base font-semibold text-foreground">
+            Somme de Volume par Mois
+          </h3>
+          <button
+            onClick={() => setShowComparison((v) => !v)}
+            className={`flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+              showComparison
+                ? "border-primary/40 bg-primary/10 text-primary"
+                : "border-border text-foreground-muted hover:text-foreground hover:bg-surface-elevated"
+            }`}
+          >
+            <GitCompareArrows className="w-3.5 h-3.5" />
+            Comparer {year - 1}
+          </button>
+        </div>
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={chartData} margin={{ top: 20, right: 10, bottom: 5, left: -10 }}>
+            <XAxis
+              dataKey="name"
+              tick={{ fill: "#B0B8D4", fontSize: 12 }}
+              axisLine={false}
+              tickLine={false}
+            />
+            <YAxis
+              tick={{ fill: "#B0B8D4", fontSize: 12 }}
+              axisLine={false}
+              tickLine={false}
+              allowDecimals={false}
+            />
+            <Tooltip
+              contentStyle={tooltipStyle}
+              formatter={(v: number, name: string) => [
+                `${v.toLocaleString("fr-FR")} kWh`,
+                name === "volumePrev" ? `${year - 1}` : `${year}`,
+              ]}
+            />
+            {showComparison && (
+              <>
+                <Legend
+                  wrapperStyle={{ fontSize: 12, color: "#B0B8D4" }}
+                  formatter={(value: string) => (value === "volumePrev" ? `${year - 1}` : `${year}`)}
+                />
+                <Bar dataKey="volumePrev" radius={[6, 6, 0, 0]} maxBarSize={35} fill={BAR_COLOR_PREV} opacity={0.5} />
+              </>
+            )}
+            <Bar dataKey="volume" radius={[8, 8, 0, 0]} maxBarSize={showComparison ? 35 : 50}>
+              {!showComparison && (
                 <LabelList dataKey="volume" position="top" fill="#D0D6E8" fontSize={12} fontWeight={500} />
-                {chartData.map((_, i) => (
-                  <Cell key={i} fill={BAR_COLOR} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        ) : (
-          <div className="flex items-center justify-center h-48 text-foreground-muted text-sm">
-            Aucune donnée pour cette période
-          </div>
-        )}
+              )}
+              {chartData.map((_, i) => (
+                <Cell key={i} fill={BAR_COLOR} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
       </div>
 
       {/* Secondary stats row */}

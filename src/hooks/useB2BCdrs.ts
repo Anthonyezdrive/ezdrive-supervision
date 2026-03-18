@@ -70,6 +70,54 @@ export function useB2BCdrs(clientExternalIds: string[]) {
 }
 
 /**
+ * Fetch CDRs for the previous year (N-1) — used for year-over-year comparison.
+ * Does NOT apply site/borne/token filters (raw yearly data for overlay).
+ */
+export function useB2BCdrsPrevYear(clientExternalIds: string[], enabled: boolean) {
+  const { year } = useB2BFilters();
+  const prevYear = year - 1;
+
+  return useQuery({
+    queryKey: ["b2b-cdrs-prev", clientExternalIds, prevYear],
+    queryFn: async () => {
+      if (clientExternalIds.length === 0) return [];
+
+      const startDate = `${prevYear}-01-01T00:00:00Z`;
+      const endDate = `${prevYear + 1}-01-01T00:00:00Z`;
+
+      const selectCols =
+        "id, start_date_time, total_energy, total_time, total_cost, total_retail_cost, total_retail_cost_incl_vat, customer_external_id, driver_external_id, cdr_token, cdr_location";
+
+      const PAGE = 1000;
+      let allRows: B2BCdr[] = [];
+      let from = 0;
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from("ocpi_cdrs")
+          .select(selectCols)
+          .in("customer_external_id", clientExternalIds)
+          .gte("start_date_time", startDate)
+          .lt("start_date_time", endDate)
+          .order("start_date_time", { ascending: true })
+          .range(from, from + PAGE - 1);
+
+        if (error) throw error;
+        const rows = (data ?? []) as B2BCdr[];
+        allRows = allRows.concat(rows);
+        from += PAGE;
+        hasMore = rows.length === PAGE;
+      }
+
+      return allRows;
+    },
+    staleTime: 300_000,
+    enabled: enabled && clientExternalIds.length > 0,
+  });
+}
+
+/**
  * Fetch all B2B clients (admin only)
  */
 export function useB2BClients() {

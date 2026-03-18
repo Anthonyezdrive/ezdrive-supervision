@@ -153,7 +153,6 @@ export function groupByMonth(cdrs: B2BCdr[], redevanceRate: number): B2BMonthlyR
   const rows: B2BMonthlyRow[] = [];
   for (let m = 0; m < 12; m++) {
     const monthCdrs = months.get(m) ?? [];
-    if (monthCdrs.length === 0) continue;
 
     const volume = monthCdrs.reduce((s, c) => s + c.total_energy, 0);
     const duration = monthCdrs.reduce((s, c) => s + c.total_time, 0);
@@ -163,9 +162,9 @@ export function groupByMonth(cdrs: B2BCdr[], redevanceRate: number): B2BMonthlyR
       monthLabel: `${String(m + 1).padStart(2, "0")} - ${MONTH_LABELS[m]}`,
       volume,
       duration,
-      volumeAvecTarif: computeVolAvecTarif(monthCdrs),
-      volumeGratuit: computeVolGratuit(monthCdrs),
-      redevance: computeRedevance(monthCdrs, redevanceRate),
+      volumeAvecTarif: monthCdrs.length > 0 ? computeVolAvecTarif(monthCdrs) : 0,
+      volumeGratuit: monthCdrs.length > 0 ? computeVolGratuit(monthCdrs) : 0,
+      redevance: monthCdrs.length > 0 ? computeRedevance(monthCdrs, redevanceRate) : 0,
     });
   }
 
