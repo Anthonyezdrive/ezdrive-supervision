@@ -4,6 +4,8 @@ import { Download } from "lucide-react";
 import { useB2BCdrs } from "@/hooks/useB2BCdrs";
 import { groupByDriver, formatNumber } from "@/lib/b2b-formulas";
 import { downloadCSV, todayISO } from "@/lib/export";
+import { exportPDF } from "@/lib/b2b-export";
+import { ExportButtons } from "./ExportButtons";
 import { PageHelp } from "@/components/ui/PageHelp";
 import type { B2BClient } from "@/types/b2b";
 
@@ -65,6 +67,40 @@ export function B2BDriversPage() {
       "Volume tarif gratuit (kWh)": formatNumber(r.volumeGratuit),
     }));
     downloadCSV(exportRows, `b2b-par-conducteur-${activeClient?.slug ?? "client"}-${todayISO()}.csv`);
+  }
+
+  function handleExportPDF() {
+    const clientName = activeClient?.name ?? "B2B";
+    const pdfRows = rows.map((r) => ({
+      nom: r.lastName,
+      prenom: r.firstName,
+      token: r.tokenVisualNumber,
+      volume: formatNumber(r.volumeGratuit),
+    }));
+    exportPDF(
+      `Rapport par conducteur — ${clientName}`,
+      `Genere le ${new Date().toLocaleDateString("fr-FR")}`,
+      [
+        { key: "nom", label: "Nom", width: 2 },
+        { key: "prenom", label: "Prenom", width: 2 },
+        { key: "token", label: "Token", width: 3 },
+        { key: "volume", label: "Vol. gratuit (kWh)", align: "right", width: 2 },
+      ],
+      pdfRows,
+      `rapport-par-conducteur-${activeClient?.slug ?? "client"}.pdf`,
+      {
+        kpis: [
+          { label: "Conducteurs", value: String(rows.length) },
+          { label: "Volume total", value: `${formatNumber(totalVolume)} kWh` },
+        ],
+        totalsRow: {
+          nom: "TOTAL",
+          prenom: "",
+          token: "",
+          volume: formatNumber(totalVolume),
+        },
+      }
+    );
   }
 
   return (
@@ -139,14 +175,7 @@ export function B2BDriversPage() {
         <h3 className="text-base font-semibold text-foreground">
           Détail par conducteur
         </h3>
-        <button
-          onClick={handleExport}
-          disabled={rows.length === 0}
-          className="flex items-center gap-2 px-3 py-2 text-sm bg-surface-elevated border border-border rounded-xl text-foreground-muted hover:text-foreground hover:border-border-focus transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Download className="w-4 h-4" />
-          Export CSV
-        </button>
+        <ExportButtons onCSV={handleExport} onPDF={handleExportPDF} disabled={rows.length === 0} />
       </div>
 
       <div className="bg-surface border border-border rounded-2xl overflow-hidden">

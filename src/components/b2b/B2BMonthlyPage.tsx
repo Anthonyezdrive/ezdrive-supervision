@@ -4,6 +4,8 @@ import { useB2BCdrs } from "@/hooks/useB2BCdrs";
 import { useB2BFilters } from "@/contexts/B2BFilterContext";
 import { groupByMonth, formatDuration, formatNumber, formatEUR } from "@/lib/b2b-formulas";
 import { downloadCSV, todayISO } from "@/lib/export";
+import { exportPDF } from "@/lib/b2b-export";
+import { ExportButtons } from "./ExportButtons";
 import { PageHelp } from "@/components/ui/PageHelp";
 import type { B2BClient } from "@/types/b2b";
 
@@ -56,6 +58,42 @@ export function B2BMonthlyPage() {
     downloadCSV(exportRows, `b2b-rapport-mensuel-${activeClient?.slug ?? "client"}-${year}-${todayISO()}.csv`);
   }
 
+  function handleExportPDF() {
+    const clientName = activeClient?.name ?? "B2B";
+    const pdfRows = rows.map((r) => ({
+      mois: r.monthLabel,
+      volume: formatNumber(r.volume),
+      duree: formatDuration(r.duration),
+      volAvecTarif: formatNumber(r.volumeAvecTarif),
+      volGratuit: formatNumber(r.volumeGratuit),
+      redevance: formatNumber(r.redevance),
+    }));
+    exportPDF(
+      `Rapport mensuel — ${clientName}`,
+      `Annee ${year}`,
+      [
+        { key: "mois", label: "Mois", width: 2 },
+        { key: "volume", label: "Volume (kWh)", align: "right", width: 1.5 },
+        { key: "duree", label: "Duree", align: "right", width: 1.5 },
+        { key: "volAvecTarif", label: "Vol. avec tarif", align: "right", width: 1.5 },
+        { key: "volGratuit", label: "Vol. gratuit", align: "right", width: 1.5 },
+        { key: "redevance", label: "Redevance (EUR)", align: "right", width: 1.5 },
+      ],
+      pdfRows,
+      `rapport-mensuel-${activeClient?.slug ?? "client"}-${year}.pdf`,
+      {
+        totalsRow: {
+          mois: "TOTAL",
+          volume: formatNumber(totals.volume),
+          duree: formatDuration(totals.duration),
+          volAvecTarif: formatNumber(totals.volumeAvecTarif),
+          volGratuit: formatNumber(totals.volumeGratuit),
+          redevance: formatNumber(totals.redevance),
+        },
+      }
+    );
+  }
+
   return (
     <div className="space-y-4">
       <PageHelp
@@ -73,14 +111,7 @@ export function B2BMonthlyPage() {
         <h3 className="text-xl font-heading font-bold text-foreground">
           Rapport mensuel — {year}
         </h3>
-        <button
-          onClick={handleExport}
-          disabled={rows.length === 0}
-          className="flex items-center gap-2 px-3 py-2 text-sm bg-surface-elevated border border-border rounded-xl text-foreground-muted hover:text-foreground hover:border-border-focus transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <Download className="w-4 h-4" />
-          Export CSV
-        </button>
+        <ExportButtons onCSV={handleExport} onPDF={handleExportPDF} disabled={rows.length === 0} />
       </div>
 
       {/* Table */}

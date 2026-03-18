@@ -6,12 +6,14 @@ import {
 import { Clock, Zap, Euro, Gauge, AlertTriangle, CheckCircle, GitCompareArrows } from "lucide-react";
 import { KPICard } from "@/components/ui/KPICard";
 import { PageHelp } from "@/components/ui/PageHelp";
+import { ExportButtons } from "./ExportButtons";
 import { useB2BCdrs, useB2BCdrsPrevYear } from "@/hooks/useB2BCdrs";
 import { useB2BFilters } from "@/contexts/B2BFilterContext";
 import {
   computeKPIs, groupByMonth, formatDuration, formatDurationShort,
   formatNumber, formatEUR,
 } from "@/lib/b2b-formulas";
+import { exportCSV, exportPDF } from "@/lib/b2b-export";
 import type { B2BClient } from "@/types/b2b";
 
 const MONTH_SHORT = [
@@ -68,8 +70,65 @@ export function B2BOverviewPage() {
     ...(showComparison ? { volumePrev: Math.round(prevMonthMap.get(m.month) ?? 0) } : {}),
   }));
 
+  const clientName = activeClient?.name ?? "B2B";
+
+  const handleExportCSV = () => {
+    const rows = monthlyData.map((m) => ({
+      mois: MONTH_SHORT[m.month - 1],
+      volume: formatNumber(m.volume),
+      duree: formatDuration(m.duration),
+      redevance: formatEUR(m.redevance),
+    }));
+    exportCSV(rows, [
+      { key: "mois", label: "Mois" },
+      { key: "volume", label: "Volume (kWh)" },
+      { key: "duree", label: "Duree" },
+      { key: "redevance", label: "Redevance (EUR)" },
+    ], `rapport-overview-${clientName}-${year}.csv`);
+  };
+
+  const handleExportPDF = () => {
+    const rows = monthlyData.map((m) => ({
+      mois: MONTH_SHORT[m.month - 1],
+      volume: formatNumber(m.volume),
+      duree: formatDuration(m.duration),
+      redevance: formatEUR(m.redevance),
+    }));
+    exportPDF(
+      `Vue d'ensemble — ${clientName}`,
+      `Annee ${year}`,
+      [
+        { key: "mois", label: "Mois", width: 2 },
+        { key: "volume", label: "Volume (kWh)", align: "right", width: 2 },
+        { key: "duree", label: "Duree", align: "right", width: 2 },
+        { key: "redevance", label: "Redevance", align: "right", width: 2 },
+      ],
+      rows,
+      `rapport-overview-${clientName}-${year}.pdf`,
+      {
+        kpis: [
+          { label: "Duree totale", value: formatDuration(kpis.totalTime) },
+          { label: "Volume total", value: `${formatNumber(kpis.totalEnergy)} kWh` },
+          { label: "Redevance", value: formatEUR(kpis.redevance) },
+          { label: "Saturation", value: `${formatNumber(kpis.saturation * 100)}%` },
+        ],
+        totalsRow: {
+          mois: "TOTAL",
+          volume: formatNumber(kpis.totalEnergy),
+          duree: formatDuration(kpis.totalTime),
+          redevance: formatEUR(kpis.redevance),
+        },
+      }
+    );
+  };
+
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div />
+        <ExportButtons onCSV={handleExportCSV} onPDF={handleExportPDF} />
+      </div>
+
       <PageHelp
         summary="Tableau de bord de votre consommation de recharge — KPIs et évolution mensuelle"
         items={[
