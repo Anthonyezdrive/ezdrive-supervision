@@ -26,6 +26,7 @@ import {
   Handshake,
   UserCheck,
   ScanLine,
+  Building2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -160,6 +161,7 @@ const NAV_SECTIONS: NavSection[] = [
       { to: "/b2b/monthly", label: "Rapport mensuel", icon: FileText },
       { to: "/b2b/chargepoints", label: "Par borne", icon: Radio },
       { to: "/b2b/drivers", label: "Par conducteur", icon: UserCheck },
+      { to: "/b2b/company", label: "Mon Entreprise", icon: Building2 },
     ],
   },
 ];
