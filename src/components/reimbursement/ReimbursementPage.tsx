@@ -405,12 +405,24 @@ export function ReimbursementPage() {
     });
   }, []);
 
-  // ── Grouped data ──
+  // ── Filtered list (all rules) ──
+  const filtered = useMemo(() => rules ?? [], [rules]);
+
+  const totalRules = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(totalRules / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+
+  // ── Paginate BEFORE grouping ──
+  const paginatedRules = useMemo(() => {
+    const start = (safePage - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, safePage]);
+
+  // ── Grouped data (from paginated subset) ──
   const groupedRules = useMemo(() => {
-    const list = rules ?? [];
     const groups = new Map<string, ReimbursementRule[]>();
 
-    list.forEach((r) => {
+    paginatedRules.forEach((r) => {
       let groupKey: string;
       if (filterTab === "cpo") {
         groupKey = r.cpo_network_id ? (cpoNetworkMap.get(r.cpo_network_id) ?? "CPO inconnu") : "Sans CPO";
@@ -426,11 +438,7 @@ export function ReimbursementPage() {
     });
 
     return groups;
-  }, [rules, filterTab, cpoNetworkMap]);
-
-  const totalRules = rules?.length ?? 0;
-  const totalPages = Math.max(1, Math.ceil(totalRules / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
+  }, [paginatedRules, filterTab, cpoNetworkMap]);
 
   const thClass = "px-3 py-2 text-left text-[11px] font-semibold text-foreground-muted uppercase tracking-wider whitespace-nowrap";
 
@@ -445,15 +453,10 @@ export function ReimbursementPage() {
           Règles de facturation de remboursement ({totalRules})
         </h1>
         {/* Add new split button */}
-        <div className="flex items-center">
-          <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white text-sm font-semibold rounded-l-xl hover:bg-primary/90 transition-colors">
-            <Plus className="w-4 h-4" />
-            Ajouter Nouveau
-          </button>
-          <button className="px-2.5 py-2.5 bg-primary text-white rounded-r-xl border-l border-white/20 hover:bg-primary/90 transition-colors">
-            <ChevronDown className="w-4 h-4" />
-          </button>
-        </div>
+        <button onClick={openCreate} className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 transition-colors">
+          <Plus className="w-4 h-4" />
+          Ajouter Nouveau
+        </button>
       </div>
 
       {/* Tabs */}
@@ -557,7 +560,7 @@ export function ReimbursementPage() {
                       onClick={() => toggleGroup(groupName + "-sub")}
                       className="w-full flex items-center gap-2 px-8 py-2 bg-surface-elevated/30 border-b border-border text-left"
                     >
-                      <ChevronDown className="w-3 h-3 text-foreground-muted shrink-0" />
+                      {collapsedGroups.has(groupName + "-sub") ? <ChevronRight className="w-3 h-3 text-foreground-muted shrink-0" /> : <ChevronDown className="w-3 h-3 text-foreground-muted shrink-0" />}
                       <span className="text-xs text-foreground-muted">
                         <span className="font-semibold">RÉSEAU CPO:</span> {cpoNet ?? "—"},
                         <span className="font-semibold ml-2">CONTRAT CPO:</span> {cpoContr ?? "Quelconque"},
@@ -569,6 +572,7 @@ export function ReimbursementPage() {
                     </button>
 
                     {/* Rule rows */}
+                    {!collapsedGroups.has(groupName + "-sub") && (
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <tbody className="divide-y divide-border">
@@ -634,6 +638,7 @@ export function ReimbursementPage() {
                         </tbody>
                       </table>
                     </div>
+                    )}
                   </>
                 )}
               </div>
@@ -663,7 +668,7 @@ export function ReimbursementPage() {
                 </div>
               )}
               <span className="text-xs text-foreground-muted">
-                montrer {totalRules} of {totalRules} enregistrements
+                montrer {Math.min(safePage * PAGE_SIZE, totalRules)} of {totalRules} enregistrements
               </span>
             </div>
           </div>
@@ -762,6 +767,8 @@ export function ReimbursementPage() {
                       <label className="block text-xs text-foreground-muted mb-1">CPO</label>
                       <select value={form.cpo_name} onChange={(e) => setForm((f) => ({ ...f, cpo_name: e.target.value }))} className={selClass}>
                         <option value="">Quelconque</option>
+                        {(cpoNetworks ?? []).map((n) => <option key={n.id} value={n.name}>{n.name}</option>)}
+                        {(cpoContracts ?? []).map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
                       </select>
                     </div>
                   </div>
@@ -787,6 +794,8 @@ export function ReimbursementPage() {
                       <label className="block text-xs text-foreground-muted mb-1">eMSP</label>
                       <select value={form.emsp_name} onChange={(e) => setForm((f) => ({ ...f, emsp_name: e.target.value }))} className={selClass}>
                         <option value="">Quelconque</option>
+                        {(emspNetworks ?? []).map((n) => <option key={n.id} value={n.name}>{n.name}</option>)}
+                        {(emspContracts ?? []).map((c) => <option key={c.id} value={c.name}>{c.name}</option>)}
                       </select>
                     </div>
                   </div>

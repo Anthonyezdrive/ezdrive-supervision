@@ -97,6 +97,7 @@ export function AgreementsPage() {
   const [editing, setEditing] = useState<Agreement | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Agreement | null>(null);
   const [form, setForm] = useState(EMPTY_AGREEMENT);
+  const [detailTab, setDetailTab] = useState<"details" | "billing">("details");
 
   // List state
   const [filterTab, setFilterTab] = useState<FilterTab>("all");
@@ -252,14 +253,29 @@ export function AgreementsPage() {
       }).eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["roaming-agreements"] });
       closeModal();
       toastSuccess("Accord modifié", "Les modifications ont été enregistrées");
-      // Refresh detail if viewing
+      // Refresh detail if viewing — use form data instead of stale agreements array
       if (selectedAgreement) {
-        const updated = agreements?.find((a) => a.id === selectedAgreement.id);
-        if (updated) setSelectedAgreement(updated);
+        setSelectedAgreement({
+          ...selectedAgreement,
+          status: form.status,
+          management: form.management || null,
+          cpo_network_id: form.cpo_network_id || null,
+          cpo_contract_id: form.cpo_contract_id || null,
+          emsp_network_id: form.emsp_network_id || null,
+          emsp_contract_id: form.emsp_contract_id || null,
+          connection_method: form.connection_method || null,
+          valid_from: form.valid_from || null,
+          valid_to: form.valid_to || null,
+          professional_contact: form.professional_contact || null,
+          technical_contact: form.technical_contact || null,
+          remarks: form.remarks || null,
+          updated_by: form.updated_by || null,
+          updated_at: new Date().toISOString(),
+        });
       }
     },
     onError: (err: Error) => toastError("Erreur", err.message),
@@ -367,6 +383,18 @@ export function AgreementsPage() {
       const q = colFilters.professional_contact.toLowerCase();
       list = list.filter((a) => a.professional_contact?.toLowerCase().includes(q));
     }
+    if (colFilters.status) {
+      const q = colFilters.status.toLowerCase();
+      list = list.filter((a) => a.status?.toLowerCase() === q);
+    }
+    if (colFilters.valid_from) {
+      const q = colFilters.valid_from.toLowerCase();
+      list = list.filter((a) => a.valid_from?.toLowerCase().includes(q));
+    }
+    if (colFilters.valid_to) {
+      const q = colFilters.valid_to.toLowerCase();
+      list = list.filter((a) => a.valid_to?.toLowerCase().includes(q));
+    }
 
     // Sort
     return [...list].sort((a, b) => {
@@ -416,7 +444,7 @@ export function AgreementsPage() {
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-3">
             <button
-              onClick={() => setSelectedAgreement(null)}
+              onClick={() => { setSelectedAgreement(null); setDetailTab("details"); }}
               className="mt-1 p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated transition-colors"
             >
               <ArrowLeft className="w-5 h-5" />
@@ -447,17 +475,32 @@ export function AgreementsPage() {
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-border">
-          <button className="px-4 py-2.5 text-sm font-medium text-primary relative">
+          <button
+            onClick={() => setDetailTab("details")}
+            className={cn("px-4 py-2.5 text-sm font-medium relative", detailTab === "details" ? "text-primary" : "text-foreground-muted hover:text-foreground transition-colors")}
+          >
             Détails
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
+            {detailTab === "details" && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />}
           </button>
-          <button className="px-4 py-2.5 text-sm font-medium text-foreground-muted hover:text-foreground transition-colors">
+          <button
+            onClick={() => setDetailTab("billing")}
+            className={cn("px-4 py-2.5 text-sm font-medium relative", detailTab === "billing" ? "text-primary" : "text-foreground-muted hover:text-foreground transition-colors")}
+          >
             Règles de facturation en gros
+            {detailTab === "billing" && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />}
           </button>
         </div>
 
+        {/* Billing tab content */}
+        {detailTab === "billing" && (
+          <div className="bg-surface border border-border rounded-2xl p-6">
+            <h2 className="text-lg font-semibold text-foreground mb-4">Règles de facturation en gros</h2>
+            <p className="text-foreground-muted text-sm">Les règles de facturation associées à cet accord sont gérées dans la page Remboursement.</p>
+          </div>
+        )}
+
         {/* Detail Content */}
-        <div className="bg-surface border border-border rounded-2xl p-6">
+        {detailTab === "details" && <div className="bg-surface border border-border rounded-2xl p-6">
           <h2 className="text-lg font-semibold text-foreground mb-6">Détails</h2>
 
           <div className="grid grid-cols-2 gap-x-12 gap-y-4">
@@ -498,7 +541,7 @@ export function AgreementsPage() {
               </DetailRow>
             </div>
           </div>
-        </div>
+        </div>}
       </div>
     );
   }
@@ -522,7 +565,10 @@ export function AgreementsPage() {
             <Plus className="w-4 h-4" />
             Ajouter Nouveau
           </button>
-          <button className="px-2.5 py-2.5 bg-primary text-white rounded-r-xl border-l border-white/20 hover:bg-primary/90 transition-colors">
+          <button
+            onClick={openCreate}
+            className="px-2.5 py-2.5 bg-primary text-white rounded-r-xl border-l border-white/20 hover:bg-primary/90 transition-colors"
+          >
             <ChevronDown className="w-4 h-4" />
           </button>
         </div>

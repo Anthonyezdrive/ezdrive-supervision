@@ -14,8 +14,6 @@ import {
   ChevronDown,
   X,
   Loader2,
-  Check,
-  ExternalLink,
   ArrowLeft,
   Save,
 } from "lucide-react";
@@ -169,11 +167,16 @@ function LocationListView({
   ];
 
   async function handleTogglePublish(stationId: string, currentlyPublished: boolean) {
-    await supabase
-      .from("stations")
-      .update({ is_public: !currentlyPublished })
-      .eq("id", stationId);
-    queryClient.invalidateQueries({ queryKey: ["stations"] });
+    try {
+      const { error } = await supabase
+        .from("stations")
+        .update({ is_public: !currentlyPublished })
+        .eq("id", stationId);
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ["stations"] });
+    } catch (err) {
+      console.error("Toggle publish failed:", err);
+    }
   }
 
   return (
@@ -273,12 +276,6 @@ function LocationListView({
                         className="flex items-center gap-1 px-3 py-1 bg-primary/10 text-primary rounded-lg text-xs font-medium hover:bg-primary/20 transition-colors"
                       >
                         Editer
-                      </button>
-                      <button className="p-1 text-foreground-muted hover:text-foreground transition-colors">
-                        <Check className="w-3.5 h-3.5" />
-                      </button>
-                      <button className="p-1 text-foreground-muted hover:text-foreground transition-colors">
-                        <ExternalLink className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </td>
@@ -406,12 +403,19 @@ function LocationEditView({
       await apiPut(`admin-stations/${station.id}`, {
         name: siteName,
         address: fullAddress || null,
+        address_line_2: addressLine2 || null,
         city: city || null,
         postal_code: postalCode || null,
+        country: country || null,
         latitude: lat ? parseFloat(lat) : null,
         longitude: lng ? parseFloat(lng) : null,
         cpo_id: cpoId || null,
         is_public: isPublished,
+        site_type: siteType || null,
+        directions: directions || null,
+        is_restricted: isRestricted,
+        qr_scan_enabled: qrScan,
+        facilities: facilities.size > 0 ? Array.from(facilities) : null,
       });
       onSaved();
     } catch (err) {
@@ -510,10 +514,6 @@ function LocationEditView({
                   />
                 </div>
 
-                <button className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors">
-                  <MapPin className="w-3.5 h-3.5" />
-                  Recherche D'un Lieu
-                </button>
 
                 <div className="grid grid-cols-[1fr_120px] gap-3">
                   <div>

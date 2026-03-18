@@ -10,6 +10,7 @@ import {
   Search,
   Plus,
   Pencil,
+  Trash2,
 
   ChevronUp,
   ChevronDown,
@@ -506,12 +507,21 @@ function NetworkListView({ onSelect }: { onSelect: (n: CpoNetwork) => void }) {
                       <p className="text-sm text-foreground-muted truncate max-w-[200px]">{network.remarks ?? "\u2014"}</p>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={(e) => openEdit(e, network)}
-                        className="px-3 py-1.5 text-xs font-medium text-foreground-muted hover:text-primary border border-border hover:border-primary/30 rounded-lg transition-colors"
-                      >
-                        Editer
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={(e) => openEdit(e, network)}
+                          className="px-3 py-1.5 text-xs font-medium text-foreground-muted hover:text-primary border border-border hover:border-primary/30 rounded-lg transition-colors"
+                        >
+                          Editer
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setConfirmDelete(network); }}
+                          className="p-1.5 text-foreground-muted hover:text-red-400 border border-border hover:border-red-400/30 rounded-lg transition-colors"
+                          title="Supprimer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -987,14 +997,28 @@ function CposTab({ networkId }: { networkId: string }) {
     },
   });
 
+  // Filter operators: only show those referenced by contracts in this network
+  const networkOperators = useMemo(() => {
+    const ops = cpoOperators ?? [];
+    const networkContracts = contracts ?? [];
+    if (networkContracts.length === 0) return [];
+    // Keep operators whose name or code appears in any contract name for this network
+    return ops.filter((op) =>
+      networkContracts.some((c) =>
+        c.name.toLowerCase().includes(op.name.toLowerCase()) ||
+        c.name.toLowerCase().includes(op.code.toLowerCase())
+      )
+    );
+  }, [cpoOperators, contracts]);
+
   const filtered = useMemo(() => {
-    let list = cpoOperators ?? [];
+    let list = networkOperators;
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter((c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q));
     }
     return list;
-  }, [cpoOperators, search]);
+  }, [networkOperators, search]);
 
   return (
     <div className="space-y-4">
@@ -1233,7 +1257,7 @@ function BillingTab({ networkId }: { networkId: string }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [openActions, setOpenActions] = useState<string | null>(null);
   const queryClient = useQueryClient();
-  const { success: toastSuccess, error: toastError } = useToast();
+  const { success: toastSuccess, error: toastError, info: toastInfo } = useToast();
 
   const { data: rules, isLoading } = useQuery<ReimbursementRule[]>({
     queryKey: ["billing-rules-for-network", networkId],
@@ -1324,10 +1348,9 @@ function BillingTab({ networkId }: { networkId: string }) {
           <Receipt className="w-4 h-4 text-foreground-muted" />
           <h3 className="text-sm font-semibold text-foreground">Regles de facturation</h3>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-xs font-semibold hover:bg-primary/90 transition-colors">
-          <Plus className="w-3.5 h-3.5" />
-          Ajouter une regle de facturation
-        </button>
+        <span className="text-xs text-foreground-muted italic">
+          Gerer les regles &rarr; page Roaming &amp; Contrats &gt; Remboursement
+        </span>
       </div>
 
       {/* Filter tabs */}
@@ -1402,6 +1425,7 @@ function BillingTab({ networkId }: { networkId: string }) {
                       openActions={openActions}
                       onOpenActions={setOpenActions}
                       onExpire={(id) => expireMutation.mutate(id)}
+                      onToastInfo={toastInfo}
                     />
                   );
                 })}
@@ -1425,6 +1449,7 @@ function BillingGroup({
   openActions,
   onOpenActions,
   onExpire,
+  onToastInfo,
 }: {
   tariffCode: string;
   currency: string;
@@ -1434,6 +1459,7 @@ function BillingGroup({
   openActions: string | null;
   onOpenActions: (id: string | null) => void;
   onExpire: (id: string) => void;
+  onToastInfo: (message: string, description?: string) => void;
 }) {
   return (
     <>
@@ -1491,19 +1517,19 @@ function BillingGroup({
                 <div className="absolute right-0 top-full mt-1 z-50 w-80 bg-surface border border-border rounded-xl shadow-xl py-1 text-left">
                   <button
                     className="w-full px-4 py-2.5 text-sm text-foreground hover:bg-surface-elevated transition-colors text-left"
-                    onClick={() => onOpenActions(null)}
+                    onClick={() => { onOpenActions(null); onToastInfo("Action disponible ailleurs", "Cette action est disponible depuis la page Roaming & Contrats > Remboursement"); }}
                   >
                     Programmer un changement de prix pour cette regle
                   </button>
                   <button
                     className="w-full px-4 py-2.5 text-sm text-foreground hover:bg-surface-elevated transition-colors text-left"
-                    onClick={() => onOpenActions(null)}
+                    onClick={() => { onOpenActions(null); onToastInfo("Action disponible ailleurs", "Cette action est disponible depuis la page Roaming & Contrats > Remboursement"); }}
                   >
                     Ajouter une version specifique au contrat CPO / accord de cette regle
                   </button>
                   <button
                     className="w-full px-4 py-2.5 text-sm text-foreground hover:bg-surface-elevated transition-colors text-left"
-                    onClick={() => onOpenActions(null)}
+                    onClick={() => { onOpenActions(null); onToastInfo("Action disponible ailleurs", "Cette action est disponible depuis la page Roaming & Contrats > Remboursement"); }}
                   >
                     Copier dans la nouvelle regle
                   </button>
@@ -2047,7 +2073,7 @@ function ContractBillingSubTab({ contractId }: { contractId: string }) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [openActions, setOpenActions] = useState<string | null>(null);
   const queryClient = useQueryClient();
-  const { success: toastSuccess, error: toastError } = useToast();
+  const { success: toastSuccess, error: toastError, info: toastInfo } = useToast();
 
   const { data: rules, isLoading } = useQuery<ReimbursementRule[]>({
     queryKey: ["billing-rules-for-contract", contractId],
@@ -2119,9 +2145,9 @@ function ContractBillingSubTab({ contractId }: { contractId: string }) {
           <Receipt className="w-4 h-4 text-foreground-muted" />
           <h3 className="text-sm font-semibold text-foreground">Regles de facturation</h3>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-xs font-semibold hover:bg-primary/90 transition-colors">
-          <Plus className="w-3.5 h-3.5" /> Ajouter une regle
-        </button>
+        <span className="text-xs text-foreground-muted italic">
+          Gerer les regles &rarr; page Roaming &amp; Contrats &gt; Remboursement
+        </span>
       </div>
 
       <div className="flex items-center gap-1 bg-surface border border-border rounded-xl p-1 w-fit">
@@ -2183,6 +2209,7 @@ function ContractBillingSubTab({ contractId }: { contractId: string }) {
                       openActions={openActions}
                       onOpenActions={setOpenActions}
                       onExpire={(id) => expireMutation.mutate(id)}
+                      onToastInfo={toastInfo}
                     />
                   );
                 })}
