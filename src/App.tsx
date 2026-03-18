@@ -28,8 +28,7 @@ import { RoamingContractsPage } from "@/components/roaming-contracts/RoamingCont
 import { OcpiPage } from "@/components/ocpi/OcpiPage";
 // ── eMSP > Network ───────────────────────────────────────
 import { EmspNetworksPage } from "@/components/emsp-networks/EmspNetworksPage";
-import { EmspContractsPage } from "@/components/emsp-contracts/EmspContractsPage";
-import { EmspsPage } from "@/components/emsps/EmspsPage";
+// EmspContracts et eMSPs fusionnés dans EmspNetworksPage (onglets Contrats eMSP / eMSPs)
 // ── eMSP > Customers ─────────────────────────────────────
 import { CustomersPage } from "@/components/customers/CustomersPage";
 import { DriversPage } from "@/components/drivers/DriversPage";
@@ -113,10 +112,10 @@ export default function App() {
                 {/* ── CPO > Roaming ── */}
                 <Route path="/ocpi" element={<OcpiPage />} />
 
-                {/* ── eMSP > Network ── */}
+                {/* ── eMSP > Network (fusionné) ── */}
                 <Route path="/emsp-networks" element={<EmspNetworksPage />} />
-                <Route path="/emsp-contracts" element={<EmspContractsPage />} />
-                <Route path="/emsps" element={<EmspsPage />} />
+                <Route path="/emsp-contracts" element={<Navigate to="/emsp-networks" replace />} />
+                <Route path="/emsps" element={<Navigate to="/emsp-networks" replace />} />
 
                 {/* ── eMSP > Customers ── */}
                 <Route path="/customers" element={<CustomersPage />} />

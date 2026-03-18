@@ -23,9 +23,7 @@ import {
   ShieldAlert,
   PieChart,
   Network,
-  FileSignature,
   Handshake,
-  Building2,
   UserCheck,
   ScanLine,
 } from "lucide-react";
@@ -112,9 +110,7 @@ const NAV_SECTIONS: NavSection[] = [
       {
         label: "Network",
         items: [
-          { to: "/emsp-networks", label: "Réseaux eMSP", icon: Network },
-          { to: "/emsp-contracts", label: "Contrats eMSP", icon: FileSignature },
-          { to: "/emsps", label: "eMSPs", icon: Building2 },
+          { to: "/emsp-networks", label: "EMSP Network", icon: Network },
         ],
       },
       {
