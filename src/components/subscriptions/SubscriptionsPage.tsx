@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { PageHelp } from "@/components/ui/PageHelp";
@@ -13,6 +13,12 @@ import {
   ChevronRight,
   Star,
   Check,
+  Plus,
+  X,
+  Loader2,
+  Link2,
+  Unlink,
+  Ban,
 } from "lucide-react";
 
 // ============================================================
@@ -29,7 +35,10 @@ interface SubscriptionOffer {
   discount_percent: number | null;
   is_active: boolean;
   features: string[] | null;
+  benefits: string[] | null;
   description: string | null;
+  stripe_price_id: string | null;
+  stripe_product_id: string | null;
 }
 
 interface UserSubscription {
@@ -146,9 +155,13 @@ function billingLabel(period: string): string {
 // ============================================================
 
 export function SubscriptionsPage() {
+  const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<SubscriptionStatus | "ALL">("ALL");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
+  const [showCreateOffer, setShowCreateOffer] = useState(false);
+  const [syncingOfferId, setSyncingOfferId] = useState<string | null>(null);
+  const [cancellingSubId, setCancellingSubId] = useState<string | null>(null);
 
   // --- Subscriptions query ---
   const {
@@ -240,14 +253,123 @@ export function SubscriptionsPage() {
   // Reset to page 0 when filters change
   useMemo(() => setPage(0), [statusFilter, search]);
 
+  // --- Stripe Sync: Create Product + Price in Stripe for an offer ---
+  async function syncOfferToStripe(offer: SubscriptionOffer) {
+    if (offer.stripe_price_id) return; // Already synced
+    setSyncingOfferId(offer.id);
+    try {
+      // Create Stripe Product
+      const productRes = await fetch("https://api.stripe.com/v1/products", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${import.meta.env.VITE_STRIPE_SECRET_KEY}`, "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ name: offer.name, description: offer.description || `Abonnement ${offer.name}`, "metadata[offer_id]": offer.id }),
+      });
+      // If no VITE_STRIPE_SECRET_KEY, use Supabase RPC instead
+      if (!import.meta.env.VITE_STRIPE_SECRET_KEY) {
+        // Fallback: just mark in DB that it needs manual Stripe sync
+        await supabase.from("subscription_offers").update({ stripe_product_id: "PENDING_SYNC" }).eq("id", offer.id);
+        queryClient.invalidateQueries({ queryKey: ["subscription-offers"] });
+        setSyncingOfferId(null);
+        return;
+      }
+      const product = await productRes.json();
+      if (product.error) throw new Error(product.error.message);
+
+      // Create Stripe Price
+      const interval = offer.billing_period === "yearly" ? "year" : offer.billing_period === "weekly" ? "week" : "month";
+      const priceRes = await fetch("https://api.stripe.com/v1/prices", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${import.meta.env.VITE_STRIPE_SECRET_KEY}`, "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          product: product.id,
+          "unit_amount": String(offer.price_cents),
+          currency: "eur",
+          "recurring[interval]": interval,
+        }),
+      });
+      const price = await priceRes.json();
+      if (price.error) throw new Error(price.error.message);
+
+      // Save Stripe IDs back to DB
+      await supabase.from("subscription_offers").update({
+        stripe_product_id: product.id,
+        stripe_price_id: price.id,
+      }).eq("id", offer.id);
+
+      queryClient.invalidateQueries({ queryKey: ["subscription-offers"] });
+    } catch (err) {
+      console.error("Stripe sync error:", err);
+      alert(`Erreur Stripe: ${err instanceof Error ? err.message : "Erreur inconnue"}`);
+    } finally {
+      setSyncingOfferId(null);
+    }
+  }
+
+  // --- Cancel subscription ---
+  async function cancelSubscription(subId: string, stripeSubId: string | null) {
+    setCancellingSubId(subId);
+    try {
+      // Cancel in Stripe if exists
+      if (stripeSubId && import.meta.env.VITE_STRIPE_SECRET_KEY) {
+        await fetch(`https://api.stripe.com/v1/subscriptions/${stripeSubId}`, {
+          method: "DELETE",
+          headers: { "Authorization": `Bearer ${import.meta.env.VITE_STRIPE_SECRET_KEY}` },
+        });
+      }
+      // Update in DB
+      await supabase.from("user_subscriptions").update({
+        status: "CANCELLED",
+        cancelled_at: new Date().toISOString(),
+      }).eq("id", subId);
+
+      queryClient.invalidateQueries({ queryKey: ["subscriptions"] });
+    } catch (err) {
+      console.error("Cancel error:", err);
+    } finally {
+      setCancellingSubId(null);
+    }
+  }
+
+  // --- Create offer mutation ---
+  const createOfferMutation = useMutation({
+    mutationFn: async (data: { name: string; description: string; price_cents: number; billing_period: string; discount_percent: number | null; features: string[] }) => {
+      const { error } = await supabase.from("subscription_offers").insert({
+        type: "subscription",
+        name: data.name,
+        description: data.description,
+        price_cents: data.price_cents,
+        currency: "EUR",
+        billing_period: data.billing_period,
+        discount_percent: data.discount_percent,
+        benefits: data.features,
+        is_active: true,
+        sort_order: (offers?.length ?? 0) + 1,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["subscription-offers"] });
+      setShowCreateOffer(false);
+    },
+  });
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="font-heading text-xl font-bold text-foreground">Abonnements</h1>
-        <p className="text-sm text-foreground-muted mt-1">
-          Gestion des abonnements clients
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-heading text-xl font-bold text-foreground">Abonnements</h1>
+          <p className="text-sm text-foreground-muted mt-1">
+            Gestion des abonnements clients
+          </p>
+        </div>
+        <button
+          onClick={() => setShowCreateOffer(true)}
+          className="flex items-center gap-1.5 px-4 py-2 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          Créer une offre
+        </button>
       </div>
 
       <PageHelp
@@ -379,6 +501,9 @@ export function SubscriptionsPage() {
                       <th className="text-left px-4 py-3 font-medium text-foreground-muted">
                         Fin
                       </th>
+                      <th className="text-left px-4 py-3 font-medium text-foreground-muted">
+                        Actions
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -426,6 +551,18 @@ export function SubscriptionsPage() {
                           </td>
                           <td className="px-4 py-3 text-xs text-foreground-muted">
                             {formatDate(sub.ends_at)}
+                          </td>
+                          <td className="px-4 py-3">
+                            {sub.status === "ACTIVE" && (
+                              <button
+                                onClick={() => cancelSubscription(sub.id, (sub as any).stripe_subscription_id)}
+                                disabled={cancellingSubId === sub.id}
+                                className="flex items-center gap-1 px-2 py-1 text-xs text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-lg transition-colors disabled:opacity-40"
+                              >
+                                {cancellingSubId === sub.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Ban className="w-3 h-3" />}
+                                Annuler
+                              </button>
+                            )}
                           </td>
                         </tr>
                       );
@@ -516,36 +653,52 @@ export function SubscriptionsPage() {
                 </ul>
               )}
 
-              {/* Subscriber count */}
-              {subscriptions && (
-                <div className="mt-3 pt-3 border-t border-border">
-                  <span className="text-[11px] text-foreground-muted">
-                    {subscriptions.filter(
-                      (s) => s.offer_id === offer.id && s.status === "ACTIVE"
-                    ).length}{" "}
-                    abonné{subscriptions.filter(
-                      (s) => s.offer_id === offer.id && s.status === "ACTIVE"
-                    ).length > 1
-                      ? "s"
-                      : ""}{" "}
-                    actif
-                    {subscriptions.filter(
-                      (s) => s.offer_id === offer.id && s.status === "ACTIVE"
-                    ).length > 1
-                      ? "s"
-                      : ""}
+              {/* Stripe sync + Subscriber count */}
+              <div className="mt-3 pt-3 border-t border-border space-y-2">
+                {offer.stripe_price_id ? (
+                  <div className="flex items-center gap-1.5">
+                    <Link2 className="w-3 h-3 text-emerald-400" />
+                    <span className="text-[10px] text-emerald-400 font-medium">Stripe sync</span>
+                    <span className="text-[9px] text-foreground-muted font-mono">{offer.stripe_price_id.slice(0, 20)}...</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => syncOfferToStripe(offer)}
+                    disabled={syncingOfferId === offer.id}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-foreground-muted hover:text-foreground bg-surface-elevated border border-border rounded-lg hover:border-primary/30 transition-colors disabled:opacity-40 w-full justify-center"
+                  >
+                    {syncingOfferId === offer.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Unlink className="w-3 h-3" />}
+                    Sync vers Stripe
+                  </button>
+                )}
+                {subscriptions && (
+                  <span className="text-[11px] text-foreground-muted block">
+                    {subscriptions.filter((s) => s.offer_id === offer.id && s.status === "ACTIVE").length} abonné(s) actif(s)
                   </span>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           ))}
           {(offers ?? []).length === 0 && (
             <div className="bg-surface border border-border rounded-2xl p-5 text-center">
               <p className="text-sm text-foreground-muted">Aucune offre active</p>
+              <button onClick={() => setShowCreateOffer(true)} className="mt-2 text-xs text-primary hover:underline">
+                + Créer une offre
+              </button>
             </div>
           )}
         </div>
       </div>
+
+      {/* Create Offer Modal */}
+      {showCreateOffer && (
+        <CreateOfferModal
+          onClose={() => setShowCreateOffer(false)}
+          onSubmit={(data) => createOfferMutation.mutate(data)}
+          isLoading={createOfferMutation.isPending}
+          error={(createOfferMutation.error as Error | null)?.message ?? null}
+        />
+      )}
     </div>
   );
 }
@@ -578,6 +731,95 @@ function KPIBox({
         <p className="text-xs text-foreground-muted mt-0.5">{label}</p>
       </div>
     </div>
+  );
+}
+
+function CreateOfferModal({ onClose, onSubmit, isLoading, error }: {
+  onClose: () => void;
+  onSubmit: (data: { name: string; description: string; price_cents: number; billing_period: string; discount_percent: number | null; features: string[] }) => void;
+  isLoading: boolean;
+  error: string | null;
+}) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [priceEur, setPriceEur] = useState("9.99");
+  const [billingPeriod, setBillingPeriod] = useState("monthly");
+  const [discount, setDiscount] = useState("");
+  const [featuresText, setFeaturesText] = useState("Accès réseau EZDrive\nSupport prioritaire\nHistorique de charge illimité");
+
+  const inputClass = "w-full px-3 py-2.5 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-primary/50 transition-colors";
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    onSubmit({
+      name: name.trim(),
+      description: description.trim(),
+      price_cents: Math.round(parseFloat(priceEur) * 100),
+      billing_period: billingPeriod,
+      discount_percent: discount ? parseFloat(discount) : null,
+      features: featuresText.split("\n").map((f) => f.trim()).filter(Boolean),
+    });
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+      <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+        <div className="bg-surface border border-border rounded-2xl w-full max-w-lg shadow-2xl">
+          <div className="flex items-center justify-between p-5 border-b border-border">
+            <h2 className="font-heading font-bold text-lg">Créer une offre d'abonnement</h2>
+            <button onClick={onClose} className="p-1.5 hover:bg-surface-elevated rounded-lg transition-colors">
+              <X className="w-5 h-5 text-foreground-muted" />
+            </button>
+          </div>
+          <form onSubmit={handleSubmit} className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1.5">Nom de l'offre *</label>
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Premium Mensuel" className={inputClass} />
+            </div>
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1.5">Description</label>
+              <input type="text" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Abonnement premium avec accès illimité" className={inputClass} />
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Prix (€) *</label>
+                <input type="number" step="0.01" min="0" value={priceEur} onChange={(e) => setPriceEur(e.target.value)} className={inputClass} />
+              </div>
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Période</label>
+                <select value={billingPeriod} onChange={(e) => setBillingPeriod(e.target.value)} className={inputClass}>
+                  <option value="monthly">Mensuel</option>
+                  <option value="yearly">Annuel</option>
+                  <option value="weekly">Hebdomadaire</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1.5">Remise (%)</label>
+                <input type="number" step="1" min="0" max="100" value={discount} onChange={(e) => setDiscount(e.target.value)} placeholder="0" className={inputClass} />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1.5">Avantages (un par ligne)</label>
+              <textarea value={featuresText} onChange={(e) => setFeaturesText(e.target.value)} rows={4} className={cn(inputClass, "resize-none")} />
+            </div>
+            {error && (
+              <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>
+            )}
+            <div className="flex gap-3 pt-2">
+              <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-xl text-sm text-foreground-muted hover:text-foreground transition-colors">
+                Annuler
+              </button>
+              <button type="submit" disabled={isLoading || !name.trim()} className="flex-1 py-2.5 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
+                {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                Créer l'offre
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </>
   );
 }
 
