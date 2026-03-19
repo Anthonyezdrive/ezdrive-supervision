@@ -48,6 +48,7 @@ import { OCPP_STATUS_CONFIG } from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
 import { apiPost, apiDelete } from "@/lib/api";
 import type { Station, OCPPStatus } from "@/types/station";
+import QRCode from "qrcode";
 
 type DetailTab = "details" | "diagnostic" | "billing" | "configuration" | "authorization" | "scheduling";
 
@@ -74,6 +75,100 @@ function parseConnectors(station: Station): Array<{
     try { return JSON.parse(station.connectors); } catch { return []; }
   }
   return [];
+}
+
+// -- QR Code Generation ----------------------------------------
+
+const QR_BASE_URL = "https://app.ezdrive.fr/charge";
+
+function buildQrUrl(station: Station, evseUid?: string): string {
+  const id = station.ocpp_identity || station.id;
+  if (evseUid) return `${QR_BASE_URL}/${id}/${evseUid}`;
+  return `${QR_BASE_URL}/${id}`;
+}
+
+async function generateQrStickersPdf(station: Station) {
+  const connectors = parseConnectors(station);
+  const evses = connectors.length > 0
+    ? connectors.map((c, i) => ({ uid: c.evse_uid || `EVSE-${i + 1}`, type: c.type, power: c.max_power_kw }))
+    : [{ uid: "EVSE-1", type: "Type2", power: station.max_power_kw || 22 }];
+
+  // Generate QR codes as data URLs
+  const qrImages: { url: string; dataUrl: string; uid: string; type: string; power: number }[] = [];
+  for (const evse of evses) {
+    const url = buildQrUrl(station, evse.uid);
+    const dataUrl = await QRCode.toDataURL(url, { width: 300, margin: 1, color: { dark: "#0F1B2D", light: "#FFFFFF" } });
+    qrImages.push({ url, dataUrl, uid: evse.uid, type: evse.type, power: evse.power });
+  }
+
+  // Build HTML for print-friendly stickers
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>QR Codes - ${station.name}</title>
+<style>
+  @page { size: A4; margin: 15mm; }
+  body { font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+  .sticker { display: inline-block; width: 200px; margin: 15px; padding: 20px; border: 2px solid #0F1B2D; border-radius: 16px; text-align: center; page-break-inside: avoid; }
+  .sticker img { width: 160px; height: 160px; }
+  .sticker h3 { margin: 8px 0 2px; font-size: 14px; color: #0F1B2D; }
+  .sticker .station { font-size: 11px; color: #64748B; margin: 2px 0; }
+  .sticker .evse { font-size: 12px; font-weight: bold; color: #0F1B2D; margin: 4px 0; }
+  .sticker .power { font-size: 11px; color: #10B981; font-weight: bold; }
+  .sticker .url { font-size: 8px; color: #94A3B8; word-break: break-all; margin-top: 6px; }
+  .sticker .brand { font-size: 10px; color: #0F1B2D; font-weight: bold; margin-top: 8px; letter-spacing: 1px; }
+  .header { text-align: center; margin-bottom: 20px; }
+  .header h1 { font-size: 18px; color: #0F1B2D; }
+  .header p { font-size: 12px; color: #64748B; }
+</style></head><body>
+<div class="header">
+  <h1>QR Codes — ${station.name}</h1>
+  <p>${station.address || ""} ${station.city || ""} ${station.postal_code || ""}</p>
+  <p>${evses.length} point(s) de charge</p>
+</div>
+${qrImages.map((qr) => `
+<div class="sticker">
+  <img src="${qr.dataUrl}" alt="QR ${qr.uid}" />
+  <h3>Scannez pour charger</h3>
+  <div class="station">${station.name}</div>
+  <div class="evse">${qr.uid} — ${qr.type}</div>
+  <div class="power">${qr.power} kW</div>
+  <div class="url">${qr.url}</div>
+  <div class="brand">⚡ EZDRIVE</div>
+</div>`).join("")}
+<script>window.onload = () => window.print();</script>
+</body></html>`;
+
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank");
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+function downloadQrDataCsv(station: Station) {
+  const connectors = parseConnectors(station);
+  const evses = connectors.length > 0
+    ? connectors.map((c, i) => ({ uid: c.evse_uid || `EVSE-${i + 1}`, type: c.type, power: c.max_power_kw }))
+    : [{ uid: "EVSE-1", type: "Type2", power: station.max_power_kw || 22 }];
+
+  const rows = [
+    ["Station", "EVSE UID", "Type connecteur", "Puissance (kW)", "URL QR Code", "OCPP Identity"],
+    ...evses.map((e) => [
+      station.name,
+      e.uid,
+      e.type,
+      String(e.power),
+      buildQrUrl(station, e.uid),
+      station.ocpp_identity || station.id,
+    ]),
+  ];
+
+  const csv = rows.map((r) => r.map((c) => `"${c}"`).join(",")).join("\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `qr-codes-${station.name.replace(/\s+/g, "-").toLowerCase()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 // -- Tags for station -----------------------------------------
@@ -187,8 +282,8 @@ export function StationDetailView({ station, onBack, onEdit, onDeleted }: Props)
     { label: "Obtenir un diagnostic", icon: Wrench, action: () => { setDropdownOpen(false); sendCommand("GetDiagnostics"); } },
     { label: "Liste locale", icon: ListChecks, action: () => { setDropdownOpen(false); sendCommand("GetLocalListVersion"); }, separator: true },
     { label: "Ajouter tous les EVSE a un groupe de charge intelligente", icon: Zap, action: () => { setDropdownOpen(false); /* future */ }, separator: true },
-    { label: "Telecharger les autocollants code QR (PDF)", icon: QrCode, action: () => { setDropdownOpen(false); /* future */ } },
-    { label: "Telecharger les donnees du code QR (CSV)", icon: Download, action: () => { setDropdownOpen(false); /* future */ } },
+    { label: "Telecharger les autocollants code QR (PDF)", icon: QrCode, action: () => { setDropdownOpen(false); generateQrStickersPdf(station); } },
+    { label: "Telecharger les donnees du code QR (CSV)", icon: Download, action: () => { setDropdownOpen(false); downloadQrDataCsv(station); } },
     { label: "Exporter des CDR", icon: FileText, action: () => { setDropdownOpen(false); /* future - export CDRs */ }, separator: true },
   ];
 
