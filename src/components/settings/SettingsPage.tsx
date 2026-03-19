@@ -30,7 +30,7 @@ const THRESHOLD_OPTIONS = [
 ];
 
 export function SettingsPage() {
-  const { selectedCpoId } = useCpo();
+  const { selectedCpoId: _selectedCpoId } = useCpo();
   const { data: config, isLoading } = useAlertConfig();
   const { data: history = [] } = useAlertHistory();
   const updateConfig = useUpdateAlertConfig();

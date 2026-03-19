@@ -35,7 +35,7 @@ function generatePassword(): string {
 }
 
 export function B2BAdminPage() {
-  const { selectedCpoId } = useCpo();
+  const { selectedCpoId: _selectedCpoId } = useCpo();
   const { success: toastSuccess, error: toastError } = useToast();
   const { data: clients, isLoading: loadingClients } = useB2BClientsAdmin();
   const { data: users, isLoading: loadingUsers } = useB2BUsersAdmin();
