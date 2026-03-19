@@ -1,3 +1,4 @@
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
@@ -12,7 +13,25 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Clock,
+  Calendar,
+  Gauge,
+  BarChart3,
+  Trophy,
+  ThumbsDown,
+  MapPin,
 } from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
+import { MapContainer, TileLayer, CircleMarker, Tooltip as LeafletTooltip, useMap } from "react-leaflet";
+import type { LatLngBoundsExpression } from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { supabase } from "@/lib/supabase";
 import { useStationKPIs } from "@/hooks/useStationKPIs";
 import { useStations } from "@/hooks/useStations";
@@ -23,9 +42,73 @@ import { KPISkeleton, Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { cn } from "@/lib/utils";
 import { PageHelp } from "@/components/ui/PageHelp";
+import { OCPP_STATUS_CONFIG } from "@/lib/constants";
+import type { Station } from "@/types/station";
 
 // ============================================================
-// Business Overview Dashboard — GreenFlux-style
+// Business Overview Dashboard — Enhanced CPO Overview
+// ============================================================
+
+type TimeFilter = "last_month" | "current_year" | "custom";
+
+interface TimeRange {
+  filter: TimeFilter;
+  from: string;
+  to: string;
+}
+
+function getDefaultTimeRange(): TimeRange {
+  const now = new Date();
+  const yearStart = new Date(now.getFullYear(), 0, 1);
+  return {
+    filter: "current_year",
+    from: yearStart.toISOString().slice(0, 10),
+    to: now.toISOString().slice(0, 10),
+  };
+}
+
+function getTimeRangeForFilter(filter: TimeFilter, customFrom?: string, customTo?: string): TimeRange {
+  const now = new Date();
+  if (filter === "last_month") {
+    const from = new Date(now);
+    from.setDate(from.getDate() - 30);
+    return { filter, from: from.toISOString().slice(0, 10), to: now.toISOString().slice(0, 10) };
+  }
+  if (filter === "custom" && customFrom && customTo) {
+    return { filter, from: customFrom, to: customTo };
+  }
+  // current_year
+  const yearStart = new Date(now.getFullYear(), 0, 1);
+  return { filter, from: yearStart.toISOString().slice(0, 10), to: now.toISOString().slice(0, 10) };
+}
+
+// ── Map helpers ───────────────────────────────────────────
+function AutoFitBounds({ bounds }: { bounds: LatLngBoundsExpression | null }) {
+  const map = useMap();
+  const fitted = useRef(false);
+  useEffect(() => {
+    if (!fitted.current && bounds) {
+      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
+      fitted.current = true;
+    }
+  }, [map, bounds]);
+  return null;
+}
+
+function getMarkerColor(station: Station): string {
+  if (!station.is_online) return "#95A5A6"; // gray — offline
+  switch (station.ocpp_status) {
+    case "Available": return "#00D4AA"; // green
+    case "Charging": case "Preparing": case "Finishing": return "#3498DB"; // blue
+    case "SuspendedEV": case "SuspendedEVSE": return "#E67E22"; // orange
+    case "Faulted": return "#FF6B6B"; // red
+    case "Unavailable": return "#95A5A6"; // gray
+    default: return "#95A5A6";
+  }
+}
+
+// ============================================================
+// Main Component
 // ============================================================
 
 export function DashboardPage() {
@@ -33,38 +116,62 @@ export function DashboardPage() {
   const { data: kpis, isLoading, isError, refetch } = useStationKPIs(selectedCpoId);
   const { data: stations } = useStations(selectedCpoId);
 
-  // Extra metrics for business overview — scoped by CPO when a CPO is selected
+  // ── Time filter state ─────────────────────────────────
+  const [timeRange, setTimeRange] = useState<TimeRange>(getDefaultTimeRange);
+  const [customFrom, setCustomFrom] = useState(timeRange.from);
+  const [customTo, setCustomTo] = useState(timeRange.to);
+
+  const handleFilterChange = (filter: TimeFilter) => {
+    if (filter === "custom") {
+      setTimeRange(getTimeRangeForFilter("custom", customFrom, customTo));
+    } else {
+      const range = getTimeRangeForFilter(filter);
+      setTimeRange(range);
+      setCustomFrom(range.from);
+      setCustomTo(range.to);
+    }
+  };
+
+  const handleCustomApply = () => {
+    setTimeRange(getTimeRangeForFilter("custom", customFrom, customTo));
+  };
+
+  // ── Resolve CPO station names for CDR filtering ───────
+  const { data: cpoStationNames } = useQuery({
+    queryKey: ["cpo-station-names", selectedCpoId ?? "all"],
+    queryFn: async () => {
+      if (!selectedCpoId) return null;
+      const { data } = await supabase.from("stations").select("name").eq("cpo_id", selectedCpoId);
+      return (data ?? []).map((s) => s.name).filter(Boolean);
+    },
+    staleTime: 60000,
+  });
+
+  // ── Business Metrics (scoped by CPO + time range) ─────
   const { data: businessMetrics } = useQuery({
-    queryKey: ["dashboard-business-metrics", selectedCpoId ?? "all"],
+    queryKey: ["dashboard-business-metrics", selectedCpoId ?? "all", timeRange.from, timeRange.to],
     retry: false,
     queryFn: async () => {
       const safe = async <T,>(fn: () => Promise<T>, fallback: T): Promise<T> => {
         try { return await fn(); } catch { return fallback; }
       };
 
-      // When a CPO is selected, resolve the chargepoint IDs belonging to its stations
+      // Resolve chargepoint IDs for OCPP queries
       let cpChargepointIds: string[] | null = null;
       if (selectedCpoId) {
-        const { data: cpStations } = await supabase
-          .from("stations")
-          .select("id")
-          .eq("cpo_id", selectedCpoId);
+        const { data: cpStations } = await supabase.from("stations").select("id").eq("cpo_id", selectedCpoId);
         const stationIds = (cpStations ?? []).map((s) => s.id);
         if (stationIds.length > 0) {
-          const { data: cps } = await supabase
-            .from("ocpp_chargepoints")
-            .select("id")
-            .in("station_id", stationIds);
+          const { data: cps } = await supabase.from("ocpp_chargepoints").select("id").in("station_id", stationIds);
           cpChargepointIds = (cps ?? []).map((c) => c.id);
         } else {
           cpChargepointIds = [];
         }
       }
 
-      // Helper: apply chargepoint filter to a transaction query
       const withCpoFilter = (query: ReturnType<typeof supabase.from>) => {
         if (cpChargepointIds !== null) {
-          if (cpChargepointIds.length === 0) return null; // no chargepoints → skip query
+          if (cpChargepointIds.length === 0) return null;
           return query.in("chargepoint_id", cpChargepointIds);
         }
         return query;
@@ -82,27 +189,19 @@ export function DashboardPage() {
         supabase.from("ocpp_transactions").select("energy_kwh").not("energy_kwh", "is", null)
       );
 
-      // Also query OCPI CDRs (from GreenFlux/Road sync — 132K+ records)
-      // When CPO is selected, filter CDRs by matching station names belonging to that CPO
-      let cdrStationNames: string[] | null = null;
-      if (selectedCpoId) {
-        const { data: cpoStations } = await supabase
-          .from("stations")
-          .select("name")
-          .eq("cpo_id", selectedCpoId);
-        cdrStationNames = (cpoStations ?? []).map((s) => s.name).filter(Boolean);
-      }
+      // CDR queries with time range filter
+      const nameFilter = cpoStationNames?.slice(0, 50);
+      let cdrQuery = supabase.from("ocpi_cdrs").select("*", { count: "exact", head: true })
+        .gte("start_date_time", timeRange.from)
+        .lte("start_date_time", timeRange.to + "T23:59:59");
+      let cdrEnergyQuery = supabase.from("ocpi_cdrs").select("total_energy, total_cost")
+        .gte("start_date_time", timeRange.from)
+        .lte("start_date_time", timeRange.to + "T23:59:59");
 
-      let cdrQuery = supabase.from("ocpi_cdrs").select("*", { count: "exact", head: true });
-      let cdrEnergyQuery = supabase.from("ocpi_cdrs").select("total_energy, total_cost");
-      if (cdrStationNames && cdrStationNames.length > 0) {
-        // Filter CDRs where cdr_location->>'name' matches a station of this CPO
-        // Use textSearch on first 50 station names to avoid query too long
-        const nameFilter = cdrStationNames.slice(0, 50);
+      if (nameFilter && nameFilter.length > 0) {
         cdrQuery = cdrQuery.in("cdr_location->>name", nameFilter);
         cdrEnergyQuery = cdrEnergyQuery.in("cdr_location->>name", nameFilter);
       } else if (selectedCpoId) {
-        // CPO selected but no stations found — return empty
         cdrQuery = cdrQuery.eq("id", "00000000-0000-0000-0000-000000000000");
         cdrEnergyQuery = cdrEnergyQuery.eq("id", "00000000-0000-0000-0000-000000000000");
       }
@@ -124,7 +223,6 @@ export function DashboardPage() {
       const totalEnergyOcpp = (energyRes.data as { energy_kwh?: number }[] | null)?.reduce(
         (sum, r) => sum + (r.energy_kwh ?? 0), 0
       ) ?? 0;
-      // OCPI CDR energy + revenue
       const cdrData = (cdrEnergyRes.data as { total_energy?: number; total_cost?: number }[] | null) ?? [];
       const totalEnergyCdr = cdrData.reduce((sum, r) => sum + (r.total_energy ?? 0), 0);
       const totalRevenueCdr = cdrData.reduce((sum, r) => sum + (r.total_cost ?? 0), 0);
@@ -137,7 +235,7 @@ export function DashboardPage() {
         totalSessions: ocppSessions + cdrSessions,
         activeSessions: activeRes.count ?? 0,
         totalCustomers: customersRes.count ?? 0,
-        totalRevenue: totalRevenue > 0 ? totalRevenue : Math.round(totalRevenueCdr * 100), // cents
+        totalRevenue: totalRevenue > 0 ? totalRevenue : Math.round(totalRevenueCdr * 100),
         totalEnergy,
         activeSubscriptions: subsRes.count ?? 0,
       };
@@ -145,7 +243,212 @@ export function DashboardPage() {
     staleTime: 30000,
   });
 
-  // Monthly registrations
+  // ── CDR-based metrics (occupation, avg kWh, kWh by territory) ─
+  const { data: cdrMetrics } = useQuery({
+    queryKey: ["dashboard-cdr-metrics", selectedCpoId ?? "all", timeRange.from, timeRange.to],
+    retry: false,
+    queryFn: async () => {
+      const nameFilter = cpoStationNames?.slice(0, 50);
+
+      let query = supabase.from("ocpi_cdrs")
+        .select("total_energy, total_time, total_cost, cdr_location, start_date_time, end_date_time")
+        .gte("start_date_time", timeRange.from)
+        .lte("start_date_time", timeRange.to + "T23:59:59");
+
+      if (nameFilter && nameFilter.length > 0) {
+        query = query.in("cdr_location->>name", nameFilter);
+      } else if (selectedCpoId) {
+        query = query.eq("id", "00000000-0000-0000-0000-000000000000");
+      }
+
+      const { data, error } = await query.limit(50000);
+      if (error) { console.warn("[Dashboard] cdr metrics:", error.message); return null; }
+
+      const cdrs = (data ?? []) as Array<{
+        total_energy?: number;
+        total_time?: number;
+        total_cost?: number;
+        cdr_location?: { name?: string; city?: string } | null;
+        start_date_time?: string;
+        end_date_time?: string;
+      }>;
+
+      const sessionCount = cdrs.length;
+      const totalEnergy = cdrs.reduce((s, c) => s + (c.total_energy ?? 0), 0);
+      const avgKwhPerSession = sessionCount > 0 ? totalEnergy / sessionCount : 0;
+
+      // Total session duration in hours (from total_time in seconds or from timestamps)
+      let totalSessionHours = 0;
+      for (const c of cdrs) {
+        if (c.total_time && c.total_time > 0) {
+          totalSessionHours += c.total_time / 3600;
+        } else if (c.start_date_time && c.end_date_time) {
+          const diff = new Date(c.end_date_time).getTime() - new Date(c.start_date_time).getTime();
+          if (diff > 0) totalSessionHours += diff / 3600000;
+        }
+      }
+
+      // Occupation rate: total session hours / (EVSE count * total hours in period)
+      const stationCount = stations?.length ?? 1;
+      const periodMs = new Date(timeRange.to + "T23:59:59").getTime() - new Date(timeRange.from).getTime();
+      const totalAvailableHours = stationCount * Math.max(periodMs / 3600000, 1);
+      const occupationRate = totalAvailableHours > 0
+        ? Math.min((totalSessionHours / totalAvailableHours) * 100, 100)
+        : 0;
+
+      // kWh by territory
+      const kwhByTerritory: Record<string, number> = {};
+      // Build a station name -> territory map from our stations data
+      const stationTerritoryMap: Record<string, string> = {};
+      for (const st of stations ?? []) {
+        if (st.name && st.territory_name) {
+          stationTerritoryMap[st.name] = st.territory_name;
+        }
+      }
+      for (const c of cdrs) {
+        const locationName = c.cdr_location?.name ?? "";
+        const territory = stationTerritoryMap[locationName] ?? "Autre";
+        kwhByTerritory[territory] = (kwhByTerritory[territory] ?? 0) + (c.total_energy ?? 0);
+      }
+
+      const kwhByTerritoryArray = Object.entries(kwhByTerritory)
+        .map(([name, kwh]) => ({ name, kwh: Math.round(kwh) }))
+        .sort((a, b) => b.kwh - a.kwh)
+        .slice(0, 6);
+
+      return { occupationRate, avgKwhPerSession, kwhByTerritoryArray, sessionCount };
+    },
+    staleTime: 30000,
+    enabled: !!stations,
+  });
+
+  // ── Top/Flop 5 stations ──────────────────────────────
+  const { data: topFlopData } = useQuery({
+    queryKey: ["dashboard-top-flop", selectedCpoId ?? "all", timeRange.from, timeRange.to],
+    retry: false,
+    queryFn: async () => {
+      const nameFilter = cpoStationNames?.slice(0, 50);
+
+      let query = supabase.from("ocpi_cdrs")
+        .select("total_energy, total_cost, total_time, cdr_location, start_date_time, end_date_time")
+        .gte("start_date_time", timeRange.from)
+        .lte("start_date_time", timeRange.to + "T23:59:59");
+
+      if (nameFilter && nameFilter.length > 0) {
+        query = query.in("cdr_location->>name", nameFilter);
+      } else if (selectedCpoId) {
+        query = query.eq("id", "00000000-0000-0000-0000-000000000000");
+      }
+
+      const { data, error } = await query.limit(50000);
+      if (error) return null;
+
+      const cdrs = (data ?? []) as Array<{
+        total_energy?: number;
+        total_cost?: number;
+        total_time?: number;
+        cdr_location?: { name?: string; city?: string } | null;
+        start_date_time?: string;
+        end_date_time?: string;
+      }>;
+
+      // Build station name -> territory map
+      const stationTerritoryMap: Record<string, string> = {};
+      for (const st of stations ?? []) {
+        if (st.name && st.territory_name) stationTerritoryMap[st.name] = st.territory_name;
+      }
+
+      // Group by station name
+      const grouped: Record<string, {
+        name: string;
+        territory: string;
+        sessions: number;
+        totalKwh: number;
+        totalRevenue: number;
+        totalSessionHours: number;
+        lastSessionDate: string;
+      }> = {};
+
+      for (const c of cdrs) {
+        const name = c.cdr_location?.name ?? "Inconnu";
+        if (!grouped[name]) {
+          grouped[name] = {
+            name,
+            territory: stationTerritoryMap[name] ?? "—",
+            sessions: 0,
+            totalKwh: 0,
+            totalRevenue: 0,
+            totalSessionHours: 0,
+            lastSessionDate: "",
+          };
+        }
+        const g = grouped[name];
+        g.sessions++;
+        g.totalKwh += c.total_energy ?? 0;
+        g.totalRevenue += c.total_cost ?? 0;
+        if (c.total_time) g.totalSessionHours += c.total_time / 3600;
+        const dt = c.start_date_time ?? "";
+        if (dt > g.lastSessionDate) g.lastSessionDate = dt;
+      }
+
+      const allStations = Object.values(grouped);
+
+      // Compute occupation rate per station
+      const periodMs = new Date(timeRange.to + "T23:59:59").getTime() - new Date(timeRange.from).getTime();
+      const periodHours = Math.max(periodMs / 3600000, 1);
+
+      const withOccupation = allStations.map((s) => ({
+        ...s,
+        occupationRate: Math.min((s.totalSessionHours / periodHours) * 100, 100),
+      }));
+
+      // Top 5: most sessions
+      const top5 = [...withOccupation].sort((a, b) => b.sessions - a.sessions).slice(0, 5);
+
+      // Flop 5: least sessions (exclude very new stations < 30 days in network)
+      // We consider all stations from our stations list
+      const stationNames = new Set((stations ?? []).map((s) => s.name));
+      const allStationEntries = [...stationNames].map((name) => {
+        if (grouped[name]) {
+          return { ...grouped[name], occupationRate: Math.min(((grouped[name].totalSessionHours) / periodHours) * 100, 100) };
+        }
+        // Station with 0 sessions
+        const st = (stations ?? []).find((s) => s.name === name);
+        return {
+          name,
+          territory: st?.territory_name ?? "—",
+          sessions: 0,
+          totalKwh: 0,
+          totalRevenue: 0,
+          totalSessionHours: 0,
+          lastSessionDate: "",
+          occupationRate: 0,
+        };
+      });
+
+      // Compute days offline using station data
+      const stationOfflineMap: Record<string, number> = {};
+      for (const st of stations ?? []) {
+        if (!st.is_online && st.hours_in_status) {
+          stationOfflineMap[st.name] = Math.round(st.hours_in_status / 24);
+        }
+      }
+
+      const flop5 = [...allStationEntries]
+        .sort((a, b) => a.sessions - b.sessions)
+        .slice(0, 5)
+        .map((s) => ({
+          ...s,
+          daysOffline: stationOfflineMap[s.name] ?? 0,
+        }));
+
+      return { top5, flop5 };
+    },
+    staleTime: 30000,
+    enabled: !!stations,
+  });
+
+  // ── Monthly registrations ─────────────────────────────
   const { data: monthlyRegs } = useQuery({
     queryKey: ["dashboard-monthly-regs", selectedCpoId ?? "all"],
     retry: false,
@@ -159,55 +462,41 @@ export function DashboardPage() {
     staleTime: 60000,
   });
 
-  // Recent sessions — scoped by CPO via chargepoint → station chain
-  // Fallback: if ocpp_transactions is empty, query ocpi_cdrs instead
+  // ── Recent sessions ───────────────────────────────────
   const { data: recentSessions } = useQuery({
     queryKey: ["dashboard-recent-sessions", selectedCpoId ?? "all"],
     retry: false,
     queryFn: async () => {
       try {
-        // When CPO is selected, get relevant chargepoint IDs first
         let chargepointIds: string[] | null = null;
         if (selectedCpoId) {
-          const { data: cpStations } = await supabase
-            .from("stations")
-            .select("id")
-            .eq("cpo_id", selectedCpoId);
+          const { data: cpStations } = await supabase.from("stations").select("id").eq("cpo_id", selectedCpoId);
           const stationIds = (cpStations ?? []).map((s) => s.id);
           if (stationIds.length === 0) return [];
-          const { data: cps } = await supabase
-            .from("ocpp_chargepoints")
-            .select("id")
-            .in("station_id", stationIds);
+          const { data: cps } = await supabase.from("ocpp_chargepoints").select("id").in("station_id", stationIds);
           chargepointIds = (cps ?? []).map((c) => c.id);
           if (chargepointIds.length === 0) return [];
         }
 
-        // 1) Try ocpp_transactions first
         let query = supabase
           .from("ocpp_transactions")
           .select("id, chargepoint_id, connector_id, status, started_at, stopped_at, energy_kwh, ocpp_chargepoints(station_id, stations(name, city, cpo_id))");
         if (chargepointIds) {
           query = query.in("chargepoint_id", chargepointIds);
         }
-        const { data, error } = await query
-          .order("started_at", { ascending: false })
-          .limit(5);
+        const { data, error } = await query.order("started_at", { ascending: false }).limit(5);
         if (error) { console.warn("[Dashboard] recent sessions:", error.message); }
 
-        // 2) If ocpp_transactions returned data, use it
         if (data && data.length > 0) return data;
 
-        // 3) Fallback: query ocpi_cdrs (CDRs from GreenFlux/Road sync)
-        console.info("[Dashboard] ocpp_transactions empty, falling back to ocpi_cdrs");
+        // Fallback to ocpi_cdrs
         const { data: cdrs, error: cdrError } = await supabase
           .from("ocpi_cdrs")
           .select("id, start_date_time, end_date_time, total_energy, total_cost, cdr_location, cdr_token, status")
           .order("start_date_time", { ascending: false })
           .limit(5);
-        if (cdrError) { console.warn("[Dashboard] CDR fallback:", cdrError.message); return []; }
+        if (cdrError) { return []; }
 
-        // Map CDR fields to match the session display format
         return (cdrs ?? []).map((cdr: Record<string, unknown>) => {
           const location = cdr.cdr_location as Record<string, unknown> | null;
           const stationName = location?.name as string ?? "Borne CDR";
@@ -217,7 +506,6 @@ export function DashboardPage() {
             status: "Completed" as const,
             started_at: cdr.start_date_time,
             energy_kwh: cdr.total_energy,
-            // Provide a stations-like structure for the renderer
             ocpp_chargepoints: {
               stations: { name: stationName, city: stationCity },
             },
@@ -228,11 +516,34 @@ export function DashboardPage() {
     refetchInterval: 15000,
   });
 
-  // Faulted stations (for alerts panel)
+  // ── Faulted stations ──────────────────────────────────
   const faultedStations = stations?.filter(
     (s) => s.ocpp_status === "Faulted" || !s.is_online
   ) ?? [];
 
+  // ── Map data ──────────────────────────────────────────
+  const mappableStations = useMemo(
+    () => (stations ?? []).filter((s) => s.latitude != null && s.longitude != null),
+    [stations]
+  );
+  const mapBounds: LatLngBoundsExpression | null = useMemo(
+    () => mappableStations.length > 0
+      ? (mappableStations.map((s) => [s.latitude!, s.longitude!]) as LatLngBoundsExpression)
+      : null,
+    [mappableStations]
+  );
+
+  // ── Territory kWh chart colors ────────────────────────
+  const TERRITORY_COLORS: Record<string, string> = {
+    Guadeloupe: "#00D4AA",
+    Martinique: "#4ECDC4",
+    Guyane: "#F39C12",
+    "Reunion": "#3498DB",
+    "Réunion": "#3498DB",
+    Autre: "#8892B0",
+  };
+
+  // ── Loading / Error ───────────────────────────────────
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -274,7 +585,7 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="font-heading text-xl font-bold text-foreground">
             Vue d'ensemble
@@ -297,76 +608,263 @@ export function DashboardPage() {
           { label: "Carte des statuts", description: "Vue rapide du nombre de bornes par statut OCPP (Available, Charging, Faulted, etc.)." },
           { label: "Métriques business", description: "Sessions totales, énergie distribuée, revenus et abonnements actifs." },
           { label: "Répartition géographique", description: "Les graphiques montrent la distribution par territoire et par CPO." },
+          { label: "Top / Flop stations", description: "Identifiez les bornes les plus actives et celles nécessitant une attention." },
         ]}
-        tips={["Cliquez sur une section du menu latéral pour accéder aux détails de chaque rubrique."]}
+        tips={["Utilisez le filtre de période pour cibler vos analyses sur une plage de dates spécifique."]}
       />
 
-      {/* Station Status KPIs */}
+      {/* ── Global Time Filter ──────────────────────────── */}
+      <div className="bg-surface border border-border rounded-xl p-4">
+        <div className="flex items-center gap-3 flex-wrap">
+          <Calendar className="w-4 h-4 text-foreground-muted shrink-0" />
+          <span className="text-xs font-medium text-foreground-muted shrink-0">Période :</span>
+
+          <button
+            onClick={() => handleFilterChange("last_month")}
+            className={cn(
+              "px-3 py-1.5 rounded-lg text-xs font-medium border transition-all",
+              timeRange.filter === "last_month"
+                ? "bg-primary/15 text-primary border-primary/30"
+                : "text-foreground-muted border-border hover:border-foreground-muted"
+            )}
+          >
+            Mois dernier
+          </button>
+          <button
+            onClick={() => handleFilterChange("current_year")}
+            className={cn(
+              "px-3 py-1.5 rounded-lg text-xs font-medium border transition-all",
+              timeRange.filter === "current_year"
+                ? "bg-primary/15 text-primary border-primary/30"
+                : "text-foreground-muted border-border hover:border-foreground-muted"
+            )}
+          >
+            Année en cours
+          </button>
+          <button
+            onClick={() => handleFilterChange("custom")}
+            className={cn(
+              "px-3 py-1.5 rounded-lg text-xs font-medium border transition-all",
+              timeRange.filter === "custom"
+                ? "bg-primary/15 text-primary border-primary/30"
+                : "text-foreground-muted border-border hover:border-foreground-muted"
+            )}
+          >
+            Personnalisé
+          </button>
+
+          {timeRange.filter === "custom" && (
+            <div className="flex items-center gap-2 ml-2">
+              <input
+                type="date"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="bg-surface-elevated border border-border rounded-lg px-2 py-1 text-xs text-foreground"
+              />
+              <span className="text-xs text-foreground-muted">au</span>
+              <input
+                type="date"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="bg-surface-elevated border border-border rounded-lg px-2 py-1 text-xs text-foreground"
+              />
+              <button
+                onClick={handleCustomApply}
+                className="px-3 py-1 rounded-lg text-xs font-medium bg-primary text-white hover:bg-primary/90 transition-all"
+              >
+                Appliquer
+              </button>
+            </div>
+          )}
+
+          <span className="text-[10px] text-foreground-muted ml-auto">
+            {new Date(timeRange.from).toLocaleDateString("fr-FR")} — {new Date(timeRange.to).toLocaleDateString("fr-FR")}
+          </span>
+        </div>
+      </div>
+
+      {/* ── Station Status KPIs ─────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        <StatusKPI
-          label="Total Bornes"
-          value={kpis.total_stations}
-          icon={Activity}
-          color="#8892B0"
-        />
-        <StatusKPI
-          label="Disponibles"
-          value={kpis.available}
-          icon={CheckCircle}
-          color="#00D4AA"
-          trend={`${availRate}%`}
-          trendUp
-        />
-        <StatusKPI
-          label="En charge"
-          value={kpis.charging}
-          icon={BatteryCharging}
-          color="#4ECDC4"
-        />
-        <StatusKPI
-          label="En panne"
-          value={kpis.faulted}
-          icon={AlertTriangle}
-          color="#FF6B6B"
-          highlight={kpis.faulted > 0}
-        />
-        <StatusKPI
-          label="Hors ligne"
-          value={kpis.offline}
-          icon={WifiOff}
-          color="#95A5A6"
-        />
+        <StatusKPI label="Total Bornes" value={kpis.total_stations} icon={Activity} color="#8892B0" />
+        <StatusKPI label="Disponibles" value={kpis.available} icon={CheckCircle} color="#00D4AA" trend={`${availRate}%`} trendUp />
+        <StatusKPI label="En charge" value={kpis.charging} icon={BatteryCharging} color="#4ECDC4" />
+        <StatusKPI label="En panne" value={kpis.faulted} icon={AlertTriangle} color="#FF6B6B" highlight={kpis.faulted > 0} />
+        <StatusKPI label="Hors ligne" value={kpis.offline} icon={WifiOff} color="#95A5A6" />
       </div>
 
-      {/* Business Metrics */}
+      {/* ── Business Metrics ────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <MetricCard
-          icon={Users}
-          label="Clients inscrits"
-          value={businessMetrics?.totalCustomers ?? 0}
-          color="#9B59B6"
-        />
-        <MetricCard
-          icon={CreditCard}
-          label="Abonnements actifs"
-          value={businessMetrics?.activeSubscriptions ?? 0}
-          color="#3498DB"
-        />
-        <MetricCard
-          icon={Zap}
-          label="Énergie totale"
-          value={`${((businessMetrics?.totalEnergy ?? 0) / 1000).toFixed(1)} MWh`}
-          color="#F39C12"
-        />
-        <MetricCard
-          icon={TrendingUp}
-          label="Revenu total"
-          value={`${((businessMetrics?.totalRevenue ?? 0) / 100).toLocaleString("fr-FR")} €`}
-          color="#00D4AA"
-        />
+        <MetricCard icon={Users} label="Clients inscrits" value={businessMetrics?.totalCustomers ?? 0} color="#9B59B6" />
+        <MetricCard icon={CreditCard} label="Abonnements actifs" value={businessMetrics?.activeSubscriptions ?? 0} color="#3498DB" />
+        <MetricCard icon={Zap} label="Énergie totale" value={`${((businessMetrics?.totalEnergy ?? 0) / 1000).toFixed(1)} MWh`} color="#F39C12" />
+        <MetricCard icon={TrendingUp} label="Revenu total" value={`${((businessMetrics?.totalRevenue ?? 0) / 100).toLocaleString("fr-FR")} €`} color="#00D4AA" />
       </div>
 
-      {/* Monthly Registrations Mini Chart */}
+      {/* ── New KPIs: Occupation, Avg kWh, kWh by Territory ── */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        {/* Taux d'occupation */}
+        <div className="bg-surface border border-border rounded-xl p-4">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "#E67E2215" }}>
+              <Gauge className="w-4.5 h-4.5" style={{ color: "#E67E22" }} />
+            </div>
+            <div>
+              <p className="text-lg font-heading font-bold text-foreground">
+                {(cdrMetrics?.occupationRate ?? 0).toFixed(1)}%
+              </p>
+              <p className="text-[11px] text-foreground-muted">Taux d'occupation</p>
+            </div>
+          </div>
+          <div className="w-full bg-border/30 rounded-full h-2">
+            <div
+              className="h-2 rounded-full transition-all"
+              style={{
+                width: `${Math.min(cdrMetrics?.occupationRate ?? 0, 100)}%`,
+                backgroundColor: "#E67E22",
+              }}
+            />
+          </div>
+          <p className="text-[10px] text-foreground-muted mt-1.5">
+            Temps de charge / temps total disponible
+          </p>
+        </div>
+
+        {/* kWh moyen / session */}
+        <div className="bg-surface border border-border rounded-xl p-4 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: "#3498DB15" }}>
+            <Zap className="w-4.5 h-4.5" style={{ color: "#3498DB" }} />
+          </div>
+          <div>
+            <p className="text-lg font-heading font-bold text-foreground">
+              {(cdrMetrics?.avgKwhPerSession ?? 0).toFixed(1)} kWh
+            </p>
+            <p className="text-[11px] text-foreground-muted">kWh moyen / session</p>
+            <p className="text-[10px] text-foreground-muted">
+              {cdrMetrics?.sessionCount ?? 0} sessions sur la période
+            </p>
+          </div>
+        </div>
+
+        {/* Volume kWh par territoire */}
+        <div className="bg-surface border border-border rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <BarChart3 className="w-4 h-4 text-foreground-muted" />
+            <p className="text-[11px] font-semibold text-foreground-muted">Volume kWh par territoire</p>
+          </div>
+          {cdrMetrics?.kwhByTerritoryArray && cdrMetrics.kwhByTerritoryArray.length > 0 ? (
+            <ResponsiveContainer width="100%" height={100}>
+              <BarChart data={cdrMetrics.kwhByTerritoryArray} margin={{ top: 5, right: 5, bottom: 0, left: -15 }}>
+                <XAxis dataKey="name" tick={{ fill: "#8892B0", fontSize: 9 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: "#8892B0", fontSize: 9 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <RechartsTooltip
+                  contentStyle={{ backgroundColor: "#111638", border: "1px solid #2A2F5A", borderRadius: "8px", color: "#F7F9FC", fontSize: "11px" }}
+                  formatter={(value: number) => [`${value.toLocaleString("fr-FR")} kWh`, "Volume"]}
+                />
+                <Bar dataKey="kwh" radius={[4, 4, 0, 0]} maxBarSize={30}>
+                  {cdrMetrics.kwhByTerritoryArray.map((entry) => (
+                    <Cell key={entry.name} fill={TERRITORY_COLORS[entry.name] ?? "#8892B0"} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="text-xs text-foreground-muted text-center py-6">Aucune donnée</p>
+          )}
+        </div>
+      </div>
+
+      {/* ── Interactive Map ──────────────────────────────── */}
+      <div className="bg-surface border border-border rounded-xl p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <MapPin className="w-4 h-4 text-foreground-muted" />
+          <h2 className="font-heading text-sm font-semibold text-foreground-muted">
+            Carte des bornes — Statut OCPP en temps réel
+          </h2>
+          <span className="text-[10px] text-foreground-muted ml-auto">
+            {mappableStations.length} bornes géolocalisées
+          </span>
+        </div>
+
+        {/* Legend */}
+        <div className="flex items-center gap-4 mb-3 flex-wrap">
+          {[
+            { label: "Disponible", color: "#00D4AA" },
+            { label: "En charge", color: "#3498DB" },
+            { label: "Suspendu", color: "#E67E22" },
+            { label: "En panne", color: "#FF6B6B" },
+            { label: "Hors ligne", color: "#95A5A6" },
+          ].map((item) => (
+            <div key={item.label} className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+              <span className="text-[10px] text-foreground-muted">{item.label}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="rounded-lg overflow-hidden" style={{ height: 350 }}>
+          {mappableStations.length > 0 ? (
+            <MapContainer
+              center={[14.6, -61]}
+              zoom={9}
+              className="h-full w-full"
+              style={{ background: "#0D1117" }}
+            >
+              <TileLayer
+                url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>'
+              />
+              <AutoFitBounds bounds={mapBounds} />
+              {mappableStations.map((station) => {
+                const markerColor = getMarkerColor(station);
+                const cfg = OCPP_STATUS_CONFIG[station.ocpp_status];
+                const statusLabel = !station.is_online ? "Hors ligne" : cfg.label;
+                return (
+                  <CircleMarker
+                    key={station.id}
+                    center={[station.latitude!, station.longitude!]}
+                    radius={6}
+                    pathOptions={{
+                      fillColor: markerColor,
+                      fillOpacity: 0.9,
+                      color: "#fff",
+                      weight: 1.5,
+                      opacity: 0.5,
+                    }}
+                  >
+                    <LeafletTooltip
+                      direction="top"
+                      offset={[0, -8]}
+                      opacity={0.95}
+                    >
+                      <div style={{ fontFamily: "system-ui, sans-serif", minWidth: 160 }}>
+                        <p style={{ fontWeight: 700, fontSize: 12, margin: "0 0 2px" }}>{station.name}</p>
+                        <p style={{ fontSize: 11, margin: "0 0 4px", display: "flex", alignItems: "center", gap: 4 }}>
+                          <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", backgroundColor: markerColor }} />
+                          <span style={{ color: markerColor, fontWeight: 600 }}>{statusLabel}</span>
+                        </p>
+                        {station.max_power_kw && station.ocpp_status === "Charging" && (
+                          <p style={{ fontSize: 10, color: "#888", margin: "0 0 2px" }}>
+                            Puissance : {station.max_power_kw} kW
+                          </p>
+                        )}
+                        <p style={{ fontSize: 10, color: "#888", margin: 0 }}>
+                          Dernier signal : {timeAgo(station.last_synced_at)}
+                        </p>
+                      </div>
+                    </LeafletTooltip>
+                  </CircleMarker>
+                );
+              })}
+            </MapContainer>
+          ) : (
+            <div className="flex items-center justify-center h-full bg-surface-elevated rounded-lg">
+              <p className="text-xs text-foreground-muted">Aucune borne géolocalisée</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Monthly Registrations ────────────────────────── */}
       {monthlyRegs && monthlyRegs.length > 0 && (
         <div className="bg-surface border border-border rounded-xl p-5">
           <h2 className="font-heading text-sm font-semibold mb-3 text-foreground-muted">
@@ -391,9 +889,8 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* Charts + Activity */}
+      {/* ── Charts + Activity ────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Territory Chart */}
         <div className="bg-surface border border-border rounded-xl p-5">
           <h2 className="font-heading text-sm font-semibold mb-4 text-foreground-muted">
             Répartition par territoire
@@ -401,7 +898,6 @@ export function DashboardPage() {
           <TerritoryChart stations={stations ?? []} />
         </div>
 
-        {/* CPO Chart */}
         <div className="bg-surface border border-border rounded-xl p-5">
           <h2 className="font-heading text-sm font-semibold mb-4 text-foreground-muted">
             Répartition par CPO
@@ -409,7 +905,6 @@ export function DashboardPage() {
           <CPOChart stations={stations ?? []} />
         </div>
 
-        {/* Recent Activity */}
         <div className="bg-surface border border-border rounded-xl p-5">
           <h2 className="font-heading text-sm font-semibold mb-4 text-foreground-muted">
             Activité récente
@@ -431,13 +926,11 @@ export function DashboardPage() {
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium text-foreground truncate">
                     {(() => {
-                      // Navigate: ocpp_chargepoints → stations
                       const cp = session.ocpp_chargepoints;
                       if (cp && typeof cp === "object") {
                         const st = (cp as Record<string, unknown>).stations;
                         if (st && typeof st === "object" && "name" in (st as object)) return (st as { name: string }).name;
                       }
-                      // Fallback: direct stations relation (legacy)
                       const st = session.stations;
                       if (Array.isArray(st) && st[0]) return st[0].name;
                       if (st && typeof st === "object" && "name" in (st as object)) return (st as { name: string }).name;
@@ -470,7 +963,114 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* Alerts Panel */}
+      {/* ── Top 5 / Flop 5 Stations ─────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Top 5 */}
+        <div className="bg-surface border border-border rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Trophy className="w-4 h-4 text-yellow-500" />
+            <h2 className="font-heading text-sm font-semibold text-foreground-muted">
+              Top 5 — Bornes les plus utilisées
+            </h2>
+          </div>
+          {topFlopData?.top5 && topFlopData.top5.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border/50">
+                    <th className="text-left py-2 px-1 text-foreground-muted font-medium">#</th>
+                    <th className="text-left py-2 px-1 text-foreground-muted font-medium">Station</th>
+                    <th className="text-left py-2 px-1 text-foreground-muted font-medium">Territoire</th>
+                    <th className="text-right py-2 px-1 text-foreground-muted font-medium">Sessions</th>
+                    <th className="text-right py-2 px-1 text-foreground-muted font-medium">kWh</th>
+                    <th className="text-right py-2 px-1 text-foreground-muted font-medium">Revenu</th>
+                    <th className="text-right py-2 px-1 text-foreground-muted font-medium">Occup.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topFlopData.top5.map((s, i) => (
+                    <tr key={s.name} className="border-b border-border/30 last:border-0">
+                      <td className="py-2 px-1 text-foreground-muted">{i + 1}</td>
+                      <td className="py-2 px-1 text-foreground font-medium max-w-[140px] truncate">{s.name}</td>
+                      <td className="py-2 px-1 text-foreground-muted">{s.territory}</td>
+                      <td className="py-2 px-1 text-right text-foreground tabular-nums">{s.sessions}</td>
+                      <td className="py-2 px-1 text-right text-foreground tabular-nums">{Math.round(s.totalKwh).toLocaleString("fr-FR")}</td>
+                      <td className="py-2 px-1 text-right text-foreground tabular-nums">{s.totalRevenue.toFixed(0)} &euro;</td>
+                      <td className="py-2 px-1 text-right text-primary font-medium tabular-nums">{s.occupationRate.toFixed(1)}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-xs text-foreground-muted text-center py-8">Aucune donnée sur la période</p>
+          )}
+        </div>
+
+        {/* Flop 5 */}
+        <div className="bg-surface border border-border rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <ThumbsDown className="w-4 h-4 text-danger" />
+            <h2 className="font-heading text-sm font-semibold text-foreground-muted">
+              Flop 5 — Bornes les moins performantes
+            </h2>
+          </div>
+          {topFlopData?.flop5 && topFlopData.flop5.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-border/50">
+                    <th className="text-left py-2 px-1 text-foreground-muted font-medium">#</th>
+                    <th className="text-left py-2 px-1 text-foreground-muted font-medium">Station</th>
+                    <th className="text-left py-2 px-1 text-foreground-muted font-medium">Territoire</th>
+                    <th className="text-right py-2 px-1 text-foreground-muted font-medium">Sessions</th>
+                    <th className="text-right py-2 px-1 text-foreground-muted font-medium">kWh</th>
+                    <th className="text-right py-2 px-1 text-foreground-muted font-medium">Jours offline</th>
+                    <th className="text-right py-2 px-1 text-foreground-muted font-medium">Dern. session</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topFlopData.flop5.map((s, i) => (
+                    <tr
+                      key={s.name}
+                      className={cn(
+                        "border-b border-border/30 last:border-0",
+                        s.daysOffline > 7 && "bg-danger/5"
+                      )}
+                    >
+                      <td className="py-2 px-1 text-foreground-muted">{i + 1}</td>
+                      <td className={cn(
+                        "py-2 px-1 font-medium max-w-[140px] truncate",
+                        s.daysOffline > 7 ? "text-danger" : "text-foreground"
+                      )}>
+                        {s.name}
+                      </td>
+                      <td className="py-2 px-1 text-foreground-muted">{s.territory}</td>
+                      <td className="py-2 px-1 text-right text-foreground tabular-nums">{s.sessions}</td>
+                      <td className="py-2 px-1 text-right text-foreground tabular-nums">{Math.round(s.totalKwh).toLocaleString("fr-FR")}</td>
+                      <td className={cn(
+                        "py-2 px-1 text-right tabular-nums font-medium",
+                        s.daysOffline > 7 ? "text-danger" : "text-foreground-muted"
+                      )}>
+                        {s.daysOffline > 0 ? `${s.daysOffline}j` : "—"}
+                      </td>
+                      <td className="py-2 px-1 text-right text-foreground-muted tabular-nums">
+                        {s.lastSessionDate
+                          ? new Date(s.lastSessionDate).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })
+                          : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-xs text-foreground-muted text-center py-8">Aucune donnée sur la période</p>
+          )}
+        </div>
+      </div>
+
+      {/* ── Alerts Panel ─────────────────────────────────── */}
       {faultedStations.length > 0 && (
         <div className="bg-surface border border-danger/20 rounded-xl p-5">
           <div className="flex items-center gap-2 mb-4">
