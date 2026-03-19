@@ -8,10 +8,17 @@ import { supabase } from "./supabase";
 const API_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/api`;
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session?.access_token) throw new Error("Not authenticated");
+  // Use getUser() which forces token refresh if expired, unlike getSession() which can return stale cache
+  const { data: { session }, error } = await supabase.auth.refreshSession();
+  if (error || !session?.access_token) {
+    // Fallback to getSession if refreshSession fails
+    const { data: { session: fallbackSession } } = await supabase.auth.getSession();
+    if (!fallbackSession?.access_token) throw new Error("Not authenticated");
+    return {
+      Authorization: `Bearer ${fallbackSession.access_token}`,
+      "Content-Type": "application/json",
+    };
+  }
   return {
     Authorization: `Bearer ${session.access_token}`,
     "Content-Type": "application/json",
