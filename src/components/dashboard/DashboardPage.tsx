@@ -145,6 +145,20 @@ export function DashboardPage() {
     staleTime: 30000,
   });
 
+  // Monthly registrations
+  const { data: monthlyRegs } = useQuery({
+    queryKey: ["dashboard-monthly-regs", selectedCpoId ?? "all"],
+    retry: false,
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase.from("monthly_registrations").select("*").limit(12);
+        if (error) return [];
+        return (data ?? []).reverse() as Array<{ month: string; registrations: number }>;
+      } catch { return []; }
+    },
+    staleTime: 60000,
+  });
+
   // Recent sessions — scoped by CPO via chargepoint → station chain
   // Fallback: if ocpp_transactions is empty, query ocpi_cdrs instead
   const { data: recentSessions } = useQuery({
@@ -351,6 +365,31 @@ export function DashboardPage() {
           color="#00D4AA"
         />
       </div>
+
+      {/* Monthly Registrations Mini Chart */}
+      {monthlyRegs && monthlyRegs.length > 0 && (
+        <div className="bg-surface border border-border rounded-xl p-5">
+          <h2 className="font-heading text-sm font-semibold mb-3 text-foreground-muted">
+            Inscriptions conducteurs par mois
+          </h2>
+          <div className="flex items-end gap-1 h-20">
+            {monthlyRegs.map((m, i) => {
+              const max = Math.max(...monthlyRegs.map((r) => r.registrations), 1);
+              const h = Math.max(4, (m.registrations / max) * 80);
+              const monthLabel = new Date(m.month).toLocaleDateString("fr-FR", { month: "short" });
+              return (
+                <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                  <span className="text-[9px] text-foreground-muted tabular-nums">{m.registrations > 0 ? m.registrations : ""}</span>
+                  <div className="w-full bg-primary/20 rounded-t" style={{ height: `${h}px` }}>
+                    <div className="w-full bg-primary rounded-t transition-all" style={{ height: `${h}px` }} />
+                  </div>
+                  <span className="text-[8px] text-foreground-muted">{monthLabel}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Charts + Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

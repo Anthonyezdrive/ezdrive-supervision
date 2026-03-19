@@ -238,13 +238,38 @@ async function handlePaymentIntentSucceeded(paymentIntent: Record<string, unknow
 
   if (error) {
     console.error("[Stripe] Failed to update invoice:", error);
-    return;
   }
 
   if (invoice) {
     console.log(`[Stripe] Invoice ${invoice.invoice_number} marked as paid`);
-  } else {
-    console.warn(`[Stripe] No invoice found for PaymentIntent ${piId}`);
+  }
+
+  // Update payment_status in CDRs and OCPP transactions
+  if (transactionId) {
+    await db.from("ocpp_transactions").update({
+      payment_status: "paid",
+      payment_intent_id: piId,
+      paid_at: new Date().toISOString(),
+    }).eq("id", transactionId);
+
+    await db.from("ocpi_cdrs").update({
+      payment_status: "paid",
+      payment_intent_id: piId,
+      paid_at: new Date().toISOString(),
+    }).eq("id", transactionId);
+
+    console.log(`[Stripe] CDR/Transaction ${transactionId} marked as paid`);
+  }
+
+  // Also try matching by metadata session_id (for spot payments)
+  const sessionId = metadata?.session_id;
+  if (sessionId) {
+    await db.from("ocpi_cdrs").update({
+      payment_status: "paid",
+      payment_intent_id: piId,
+      paid_at: new Date().toISOString(),
+      payment_method: "stripe",
+    }).eq("gfx_cdr_id", sessionId);
   }
 }
 
@@ -263,15 +288,27 @@ async function handlePaymentIntentFailed(paymentIntent: Record<string, unknown>)
     .maybeSingle();
 
   if (invoice) {
-    // Update notes with failure reason
-    await db
-      .from("invoices")
-      .update({
-        notes: `Paiement échoué: ${failureMessage ?? "Erreur inconnue"} (${new Date().toISOString()})`,
-      })
-      .eq("id", invoice.id);
-
+    await db.from("invoices").update({
+      notes: `Paiement échoué: ${failureMessage ?? "Erreur inconnue"} (${new Date().toISOString()})`,
+    }).eq("id", invoice.id);
     console.log(`[Stripe] Invoice ${invoice.invoice_number} payment failed, user: ${invoice.user_id}`);
+  }
+
+  // Update payment_status in CDRs and OCPP transactions
+  const metadata = paymentIntent.metadata as Record<string, string> | undefined;
+  const transactionId = metadata?.transaction_id;
+  if (transactionId) {
+    await db.from("ocpp_transactions").update({
+      payment_status: "failed",
+      payment_intent_id: piId,
+    }).eq("id", transactionId);
+
+    await db.from("ocpi_cdrs").update({
+      payment_status: "failed",
+      payment_intent_id: piId,
+    }).eq("id", transactionId);
+
+    console.log(`[Stripe] CDR/Transaction ${transactionId} marked as failed`);
   }
 }
 
