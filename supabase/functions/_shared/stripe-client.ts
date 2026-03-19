@@ -186,6 +186,94 @@ export async function getInvoice(invoiceId: string): Promise<Stripe.Invoice> {
   return stripe.invoices.retrieve(invoiceId);
 }
 
+// ─── SEPA Mandate Operations ────────────────────────────────
+
+/**
+ * Check if a customer has a valid SEPA mandate
+ * Returns the default SEPA payment method if available
+ */
+export async function getCustomerSepaPaymentMethod(
+  customerId: string,
+  connectedAccountId?: string,
+): Promise<Stripe.PaymentMethod | null> {
+  const stripe = getStripe();
+  const options: Stripe.RequestOptions = {};
+  if (connectedAccountId) {
+    options.stripeAccount = connectedAccountId;
+  }
+  const paymentMethods = await stripe.paymentMethods.list(
+    { customer: customerId, type: "sepa_debit", limit: 1 },
+    options,
+  );
+  return paymentMethods.data.length > 0 ? paymentMethods.data[0] : null;
+}
+
+/**
+ * Create a confirmed PaymentIntent with SEPA debit (post-session charge)
+ * Unlike card pre-auth, SEPA debits are confirmed immediately but take 3-5 days to settle
+ */
+export async function createSepaPaymentIntent(params: {
+  amountCents: number;
+  currency?: string;
+  customerId: string;
+  paymentMethodId: string;
+  description?: string;
+  metadata?: Record<string, string>;
+  connectedAccountId?: string;
+  applicationFeeAmount?: number;
+}): Promise<Stripe.PaymentIntent> {
+  const stripe = getStripe();
+  const createParams: Stripe.PaymentIntentCreateParams = {
+    amount: params.amountCents,
+    currency: params.currency ?? "eur",
+    customer: params.customerId,
+    payment_method: params.paymentMethodId,
+    payment_method_types: ["sepa_debit"],
+    confirm: true,
+    description: params.description,
+    metadata: params.metadata ?? {},
+    mandate_data: {
+      customer_acceptance: {
+        type: "online",
+        online: {
+          ip_address: "0.0.0.0",
+          user_agent: "EZDrive-OCPP-Server",
+        },
+      },
+    },
+  };
+  if (params.applicationFeeAmount) {
+    createParams.application_fee_amount = params.applicationFeeAmount;
+  }
+  const options: Stripe.RequestOptions = {};
+  if (params.connectedAccountId) {
+    options.stripeAccount = params.connectedAccountId;
+  }
+  return stripe.paymentIntents.create(createParams, options);
+}
+
+/**
+ * Create a SetupIntent for SEPA mandate collection (one-time setup)
+ */
+export async function createSepaSetupIntent(params: {
+  customerId: string;
+  connectedAccountId?: string;
+}): Promise<Stripe.SetupIntent> {
+  const stripe = getStripe();
+  const options: Stripe.RequestOptions = {};
+  if (params.connectedAccountId) {
+    options.stripeAccount = params.connectedAccountId;
+  }
+  return stripe.setupIntents.create(
+    {
+      customer: params.customerId,
+      payment_method_types: ["sepa_debit"],
+      usage: "off_session",
+    },
+    options,
+  );
+}
+
 // ─── Webhook Operations ────────────────────────────────────
 
 /**

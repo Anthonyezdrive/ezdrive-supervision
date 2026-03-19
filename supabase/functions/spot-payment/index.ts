@@ -1,17 +1,29 @@
 // ============================================================
 // EZDrive — Spot Payment Edge Function
-// Pre-authorization by 20€ tiers with automatic capture
+// Supports 2 payment modes:
 //
-// Flow:
-// 1. User scans QR / launches charge via app
-// 2. POST /spot-payment/authorize → creates PaymentIntent (manual capture) for 20€
-// 3. Charge starts (RemoteStartTransaction)
-// 4. During charge, MeterValues tracked. When cost hits ~18€:
-//    POST /spot-payment/extend → creates NEW PaymentIntent for next 20€
-//    If Stripe rejects → RemoteStopTransaction → finishing
-// 5. On charge complete:
-//    POST /spot-payment/capture → captures actual amount on all PIs
-//    POST /spot-payment/finalize → generates invoice
+// MODE 1: CARD PRE-AUTH (CB — pré-autorisation par paliers de 20€)
+// 1. POST /spot-payment/authorize → crée PaymentIntent 20€ (manual capture)
+// 2. Charge démarre (RemoteStartTransaction)
+// 3. Quand coût atteint ~18€:
+//    POST /spot-payment/extend → nouvelle autorisation 20€
+//    Si Stripe refuse → RemoteStopTransaction → finishing
+// 4. Charge terminée:
+//    POST /spot-payment/capture → capture montant réel
+//    POST /spot-payment/finalize → génère facture
+//
+// MODE 2: SEPA POST-SESSION (prélèvement SEPA en fin de session)
+// 1. POST /spot-payment/authorize-sepa → vérifie mandat SEPA actif
+// 2. Charge démarre (token RFID + Authorize OCPP)
+// 3. Charge terminée:
+//    POST /spot-payment/charge-sepa → crée PaymentIntent SEPA confirmé
+//    POST /spot-payment/finalize → génère facture
+//
+// SETUP SEPA:
+// POST /spot-payment/setup-sepa → crée SetupIntent pour collecter IBAN
+//
+// STATUS:
+// POST /spot-payment/status → état de la session
 // ============================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -19,6 +31,9 @@ import {
   createPaymentIntent,
   capturePaymentIntent,
   cancelPaymentIntent,
+  getCustomerSepaPaymentMethod,
+  createSepaPaymentIntent,
+  createSepaSetupIntent,
 } from "../_shared/stripe-client.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -43,6 +58,8 @@ interface SpotSession {
   payment_intents: SpotPaymentIntent[];
   total_authorized_cents: number;
   total_consumed_cents: number;
+  payment_mode: "card_preauth" | "sepa_post_session";
+  sepa_payment_method_id: string | null;
   status: "pending" | "charging" | "finishing" | "completed" | "failed";
   coupon_code: string | null;
   coupon_discount_cents: number;
@@ -82,6 +99,12 @@ Deno.serve(async (req) => {
     switch (path) {
       case "authorize":
         return await handleAuthorize(sb, body);
+      case "authorize-sepa":
+        return await handleAuthorizeSepa(sb, body);
+      case "charge-sepa":
+        return await handleChargeSepa(sb, body);
+      case "setup-sepa":
+        return await handleSetupSepa(sb, body);
       case "extend":
         return await handleExtend(sb, body);
       case "capture":
@@ -91,7 +114,7 @@ Deno.serve(async (req) => {
       case "status":
         return await handleStatus(sb, body);
       default:
-        return json({ error: "Unknown action. Use: authorize, extend, capture, finalize, status" }, 400);
+        return json({ error: "Unknown action. Use: authorize, authorize-sepa, charge-sepa, setup-sepa, extend, capture, finalize, status" }, 400);
     }
   } catch (err) {
     console.error("[spot-payment] Error:", err);
@@ -220,6 +243,284 @@ async function handleAuthorize(
     coupon_discount_cents: couponDiscountCents,
     message: `Autorisation de ${(authAmount / 100).toFixed(2)}€ créée. Confirmez le paiement pour démarrer la charge.`,
   });
+}
+
+// ─── 1b. AUTHORIZE-SEPA — Verify SEPA mandate, authorize charge ─
+
+async function handleAuthorizeSepa(
+  sb: ReturnType<typeof createClient>,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  const {
+    station_id,
+    connector_id = 1,
+    stripe_customer_id,
+    consumer_id = null,
+    connected_account_id = null,
+    application_fee_pct = 0,
+    token_uid = null,
+    coupon_code = null,
+  } = body as {
+    station_id: string;
+    connector_id?: number;
+    stripe_customer_id: string;
+    consumer_id?: string;
+    connected_account_id?: string;
+    application_fee_pct?: number;
+    token_uid?: string;
+    coupon_code?: string;
+  };
+
+  if (!station_id || !stripe_customer_id) {
+    return json({ error: "station_id and stripe_customer_id required" }, 400);
+  }
+
+  // Verify customer has a valid SEPA mandate
+  const sepaMethod = await getCustomerSepaPaymentMethod(
+    stripe_customer_id,
+    connected_account_id ?? undefined,
+  );
+
+  if (!sepaMethod) {
+    return json({
+      success: false,
+      error: "no_sepa_mandate",
+      message: "Aucun mandat SEPA actif trouvé pour ce client. Veuillez d'abord configurer un prélèvement SEPA.",
+      action: "SETUP_SEPA_REQUIRED",
+    }, 400);
+  }
+
+  // Get station name
+  const { data: station } = await sb
+    .from("stations")
+    .select("name, city")
+    .eq("id", station_id)
+    .single();
+  const stationName = station?.name ?? "Borne EZDrive";
+
+  // Validate coupon
+  let couponDiscountCents = 0;
+  if (coupon_code) {
+    const { data: couponResult } = await sb.rpc("validate_and_apply_coupon", {
+      p_coupon_code: coupon_code,
+      p_amount_cents: TIER_AMOUNT_CENTS,
+      p_driver_id: consumer_id,
+    });
+    if (couponResult?.valid) {
+      couponDiscountCents = couponResult.discount_cents ?? 0;
+    }
+  }
+
+  // Create session (no PI yet — SEPA is charged post-session)
+  const sessionData = {
+    station_id,
+    station_name: stationName,
+    connector_id,
+    consumer_id,
+    stripe_customer_id,
+    connected_account_id,
+    application_fee_pct,
+    total_authorized_cents: 0, // No pre-auth for SEPA
+    total_consumed_cents: 0,
+    payment_mode: "sepa_post_session",
+    sepa_payment_method_id: sepaMethod.id,
+    status: "pending",
+    coupon_code,
+    coupon_discount_cents: couponDiscountCents,
+  };
+
+  const { data: session, error: sessionError } = await sb
+    .from("spot_sessions")
+    .insert(sessionData)
+    .select()
+    .single();
+
+  if (sessionError) {
+    console.error("[spot-payment] SEPA session create error:", sessionError);
+    return json({ error: "Session creation failed" }, 500);
+  }
+
+  return json({
+    success: true,
+    session_id: session.id,
+    payment_mode: "sepa_post_session",
+    sepa_last4: sepaMethod.sepa_debit?.last4 ?? "****",
+    sepa_bank: sepaMethod.sepa_debit?.bank_code ?? "",
+    token_uid,
+    coupon_applied: couponDiscountCents > 0,
+    coupon_discount_cents: couponDiscountCents,
+    message: `Mandat SEPA vérifié (****${sepaMethod.sepa_debit?.last4}). La charge peut démarrer. Le prélèvement sera effectué en fin de session.`,
+  });
+}
+
+// ─── 1c. CHARGE-SEPA — Debit SEPA after session ends ────
+
+async function handleChargeSepa(
+  sb: ReturnType<typeof createClient>,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  const {
+    session_id,
+    final_amount_cents,
+    energy_kwh = 0,
+    duration_min = 0,
+    finishing_min = 0,
+    finishing_cost_cents = 0,
+  } = body as {
+    session_id: string;
+    final_amount_cents: number;
+    energy_kwh?: number;
+    duration_min?: number;
+    finishing_min?: number;
+    finishing_cost_cents?: number;
+  };
+
+  if (!session_id || final_amount_cents === undefined) {
+    return json({ error: "session_id and final_amount_cents required" }, 400);
+  }
+
+  // Get session
+  const { data: session } = await sb
+    .from("spot_sessions")
+    .select("*")
+    .eq("id", session_id)
+    .single();
+
+  if (!session) {
+    return json({ error: "Session not found" }, 404);
+  }
+
+  if (session.payment_mode !== "sepa_post_session") {
+    return json({ error: "This session is not in SEPA mode. Use /capture for card pre-auth sessions." }, 400);
+  }
+
+  if (!session.sepa_payment_method_id) {
+    return json({ error: "No SEPA payment method on this session" }, 400);
+  }
+
+  // Calculate final amount after coupon
+  const chargeAmount = Math.max(0, final_amount_cents - session.coupon_discount_cents);
+
+  if (chargeAmount === 0) {
+    // Fully covered by coupon
+    await sb
+      .from("spot_sessions")
+      .update({ status: "completed", total_consumed_cents: final_amount_cents })
+      .eq("id", session_id);
+
+    return json({
+      success: true,
+      charged_cents: 0,
+      coupon_discount_cents: session.coupon_discount_cents,
+      message: "Session entièrement couverte par le coupon. Aucun prélèvement SEPA.",
+    });
+  }
+
+  // Create and confirm SEPA PaymentIntent
+  try {
+    const applicationFee = session.connected_account_id
+      ? Math.round(chargeAmount * session.application_fee_pct / 100)
+      : undefined;
+
+    const pi = await createSepaPaymentIntent({
+      amountCents: chargeAmount,
+      currency: DEFAULT_CURRENCY,
+      customerId: session.stripe_customer_id,
+      paymentMethodId: session.sepa_payment_method_id,
+      description: `Recharge SPOT SEPA — ${session.station_name} — ${energy_kwh.toFixed(2)} kWh`,
+      connectedAccountId: session.connected_account_id ?? undefined,
+      applicationFeeAmount: applicationFee,
+      metadata: {
+        type: "spot_charging_sepa",
+        station_id: session.station_id,
+        session_id,
+        energy_kwh: String(energy_kwh),
+        duration_min: String(duration_min),
+      },
+    });
+
+    // Track PI
+    await sb.from("spot_payment_intents").insert({
+      session_id,
+      stripe_pi_id: pi.id,
+      amount_cents: chargeAmount,
+      captured_cents: chargeAmount,
+      tier_number: 1,
+      status: "captured",
+    });
+
+    // Update session
+    await sb
+      .from("spot_sessions")
+      .update({
+        status: "completed",
+        total_consumed_cents: final_amount_cents,
+        total_authorized_cents: chargeAmount,
+      })
+      .eq("id", session_id);
+
+    return json({
+      success: true,
+      payment_intent_id: pi.id,
+      payment_intent_status: pi.status, // "processing" for SEPA (takes 3-5 days)
+      charged_cents: chargeAmount,
+      coupon_discount_cents: session.coupon_discount_cents,
+      total_session_cents: final_amount_cents,
+      message: `Prélèvement SEPA de ${(chargeAmount / 100).toFixed(2)}€ initié. Confirmation sous 3-5 jours ouvrables.`,
+    });
+  } catch (err) {
+    console.error("[spot-payment] SEPA charge failed:", (err as Error).message);
+
+    await sb
+      .from("spot_sessions")
+      .update({ status: "failed", total_consumed_cents: final_amount_cents })
+      .eq("id", session_id);
+
+    return json({
+      success: false,
+      error: "sepa_charge_failed",
+      message: `Échec du prélèvement SEPA: ${(err as Error).message}`,
+    }, 402);
+  }
+}
+
+// ─── 1d. SETUP-SEPA — Create SetupIntent for SEPA mandate ─
+
+async function handleSetupSepa(
+  sb: ReturnType<typeof createClient>,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  const {
+    stripe_customer_id,
+    connected_account_id = null,
+  } = body as {
+    stripe_customer_id: string;
+    connected_account_id?: string;
+  };
+
+  if (!stripe_customer_id) {
+    return json({ error: "stripe_customer_id required" }, 400);
+  }
+
+  try {
+    const setupIntent = await createSepaSetupIntent({
+      customerId: stripe_customer_id,
+      connectedAccountId: connected_account_id ?? undefined,
+    });
+
+    return json({
+      success: true,
+      setup_intent_id: setupIntent.id,
+      client_secret: setupIntent.client_secret,
+      message: "SetupIntent SEPA créé. Utilisez le client_secret côté app pour collecter l'IBAN du client.",
+    });
+  } catch (err) {
+    return json({
+      success: false,
+      error: (err as Error).message,
+      message: "Erreur lors de la création du SetupIntent SEPA.",
+    }, 500);
+  }
 }
 
 // ─── 2. EXTEND — Next 20€ tier when threshold reached ────
