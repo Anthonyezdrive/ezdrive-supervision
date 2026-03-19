@@ -83,11 +83,28 @@ export function DashboardPage() {
       );
 
       // Also query OCPI CDRs (from GreenFlux/Road sync — 132K+ records)
+      // When CPO is selected, filter CDRs by matching station names belonging to that CPO
+      let cdrStationNames: string[] | null = null;
+      if (selectedCpoId) {
+        const { data: cpoStations } = await supabase
+          .from("stations")
+          .select("name")
+          .eq("cpo_id", selectedCpoId);
+        cdrStationNames = (cpoStations ?? []).map((s) => s.name).filter(Boolean);
+      }
+
       let cdrQuery = supabase.from("ocpi_cdrs").select("*", { count: "exact", head: true });
       let cdrEnergyQuery = supabase.from("ocpi_cdrs").select("total_energy, total_cost");
-      if (selectedCpoId) {
-        // Filter CDRs by CPO using cdr_location->>'operator_id' or cpo-based filtering
-        // For now, we rely on the global count — CPO filtering on CDRs is already done in B2B pages
+      if (cdrStationNames && cdrStationNames.length > 0) {
+        // Filter CDRs where cdr_location->>'name' matches a station of this CPO
+        // Use textSearch on first 50 station names to avoid query too long
+        const nameFilter = cdrStationNames.slice(0, 50);
+        cdrQuery = cdrQuery.in("cdr_location->>name", nameFilter);
+        cdrEnergyQuery = cdrEnergyQuery.in("cdr_location->>name", nameFilter);
+      } else if (selectedCpoId) {
+        // CPO selected but no stations found — return empty
+        cdrQuery = cdrQuery.eq("id", "00000000-0000-0000-0000-000000000000");
+        cdrEnergyQuery = cdrEnergyQuery.eq("id", "00000000-0000-0000-0000-000000000000");
       }
 
       const [sessionsRes, activeRes, customersRes, invoicesRes, energyRes, subsRes, cdrCountRes, cdrEnergyRes] = await Promise.all([
