@@ -5,12 +5,14 @@ import { useStations } from "@/hooks/useStations";
 import { useCPOs } from "@/hooks/useCPOs";
 import { useTerritories } from "@/hooks/useTerritories";
 import { useUpdateStationCPO } from "@/hooks/useUpdateStationCPO";
+import { useCpo } from "@/contexts/CpoContext";
 import type { Station } from "@/types/station";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
 export function AdminPage() {
-  const { data: stations = [], isLoading } = useStations();
+  const { selectedCpoId } = useCpo();
+  const { data: stations = [], isLoading } = useStations(selectedCpoId);
   const { data: cpos = [] } = useCPOs();
   const { data: territories = [] } = useTerritories();
   const updateCPO = useUpdateStationCPO();

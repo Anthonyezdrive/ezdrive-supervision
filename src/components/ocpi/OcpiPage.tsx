@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/contexts/ToastContext";
+import { useCpo } from "@/contexts/CpoContext";
 import { Skeleton } from "@/components/ui/Skeleton";
 
 // ── Types ─────────────────────────────────────────────────────
@@ -115,6 +116,7 @@ const formatDate = (d: string | null) =>
 // ── Main Component ────────────────────────────────────────────
 
 export function OcpiPage() {
+  const { selectedCpoId } = useCpo();
   const queryClient = useQueryClient();
   const { success: toastSuccess, error: toastError } = useToast();
 
@@ -132,9 +134,13 @@ export function OcpiPage() {
 
   // ── Data ──
   const { data: credentials, isLoading, isError, refetch, dataUpdatedAt } = useQuery<OcpiCredential[]>({
-    queryKey: ["ocpi-credentials"],
+    queryKey: ["ocpi-credentials", selectedCpoId ?? "all"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("ocpi_credentials").select("*").order("role");
+      let query = supabase.from("ocpi_credentials").select("*");
+      if (selectedCpoId) {
+        query = query.eq("cpo_id", selectedCpoId);
+      }
+      const { data, error } = await query.order("role");
       if (error) return [];
       return (data ?? []) as OcpiCredential[];
     },

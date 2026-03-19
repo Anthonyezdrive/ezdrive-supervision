@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
+import { useCpo } from "@/contexts/CpoContext";
 import { PageHelp } from "@/components/ui/PageHelp";
 
 // ── Types ─────────────────────────────────────────────────────
@@ -54,6 +55,7 @@ const MODES: { key: SearchMode; label: string; icon: React.ComponentType<{ class
 // ── Component ─────────────────────────────────────────────────
 
 export function ValidateTokenPage() {
+  const { selectedCpoId } = useCpo();
   const [mode, setMode] = useState<SearchMode>("auth_id");
   const [tokenInput, setTokenInput] = useState("");
   const [result, setResult] = useState<TokenResult | null>(null);
@@ -68,6 +70,7 @@ export function ValidateTokenPage() {
       if (searchMode === "auth_id") query = query.eq("uid", trimmed);
       else if (searchMode === "chip_id") query = query.eq("uid", trimmed);
       else query = query.eq("visual_number", trimmed);
+      if (selectedCpoId) query = query.eq("cpo_id", selectedCpoId);
 
       const { data: cards, error: cardError } = await query.limit(1);
       if (cardError) {
@@ -82,6 +85,7 @@ export function ValidateTokenPage() {
         if (searchMode === "auth_id") tokenQuery = tokenQuery.eq("uid", trimmed);
         else if (searchMode === "visual_id") tokenQuery = tokenQuery.eq("visual_number", trimmed);
         else tokenQuery = tokenQuery.eq("uid", trimmed);
+        if (selectedCpoId) tokenQuery = tokenQuery.eq("cpo_id", selectedCpoId);
 
         const { data: tokens } = await tokenQuery.limit(1);
         const token = tokens?.[0];

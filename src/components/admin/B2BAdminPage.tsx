@@ -8,6 +8,7 @@ import { KPICard } from "@/components/ui/KPICard";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/contexts/ToastContext";
+import { useCpo } from "@/contexts/CpoContext";
 import {
   useB2BClientsAdmin,
   useB2BUsersAdmin,
@@ -34,6 +35,7 @@ function generatePassword(): string {
 }
 
 export function B2BAdminPage() {
+  const { selectedCpoId } = useCpo();
   const { success: toastSuccess, error: toastError } = useToast();
   const { data: clients, isLoading: loadingClients } = useB2BClientsAdmin();
   const { data: users, isLoading: loadingUsers } = useB2BUsersAdmin();

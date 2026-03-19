@@ -17,6 +17,7 @@ import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/contexts/ToastContext";
+import { useCpo } from "@/contexts/CpoContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 // ── Types ─────────────────────────────────────────────────────
@@ -284,6 +285,7 @@ function RuleDetailModal({
 // ── Main Page ─────────────────────────────────────────────────
 
 export function ReimbursementPage() {
+  const { selectedCpoId } = useCpo();
   const queryClient = useQueryClient();
   const { success: toastSuccess, error: toastError } = useToast();
   const [modalOpen, setModalOpen] = useState(false);
@@ -325,8 +327,12 @@ export function ReimbursementPage() {
 
   // ── Data fetching ──
   const { data: rules, isLoading, isError, refetch, dataUpdatedAt } = useQuery<ReimbursementRule[]>({
-    queryKey: ["reimbursement-rules"], retry: false,
-    queryFn: async () => { try { const { data, error } = await supabase.from("reimbursement_rules").select("*").order("created_at", { ascending: false }); if (error) return []; return (data ?? []) as ReimbursementRule[]; } catch { return []; } },
+    queryKey: ["reimbursement-rules", selectedCpoId ?? "all"], retry: false,
+    queryFn: async () => { try {
+      let query = supabase.from("reimbursement_rules").select("*");
+      if (selectedCpoId) { query = query.eq("cpo_network_id", selectedCpoId); }
+      const { data, error } = await query.order("created_at", { ascending: false }); if (error) return []; return (data ?? []) as ReimbursementRule[];
+    } catch { return []; } },
   });
 
   // ── Mutations ──

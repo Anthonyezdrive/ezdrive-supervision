@@ -19,6 +19,7 @@ import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/contexts/ToastContext";
+import { useCpo } from "@/contexts/CpoContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 // ── Types ─────────────────────────────────────────────────────
@@ -89,6 +90,7 @@ const formatDateFull = (d: string | null) =>
 // ── Main Page ─────────────────────────────────────────────────
 
 export function AgreementsPage() {
+  const { selectedCpoId } = useCpo();
   const queryClient = useQueryClient();
   const { success: toastSuccess, error: toastError } = useToast();
 
@@ -196,11 +198,16 @@ export function AgreementsPage() {
 
   // ── Data fetching ──
   const { data: agreements, isLoading, isError, refetch, dataUpdatedAt } = useQuery<Agreement[]>({
-    queryKey: ["roaming-agreements"],
+    queryKey: ["roaming-agreements", selectedCpoId ?? "all"],
     retry: false,
     queryFn: async () => {
       try {
-        const { data, error } = await supabase.from("roaming_agreements").select("*").order("created_at", { ascending: false });
+        let query = supabase.from("roaming_agreements").select("*");
+        if (selectedCpoId) {
+          // Filter agreements linked to CPO networks belonging to the selected CPO
+          query = query.eq("cpo_network_id", selectedCpoId);
+        }
+        const { data, error } = await query.order("created_at", { ascending: false });
         if (error) return [];
         return (data ?? []) as Agreement[];
       } catch { return []; }

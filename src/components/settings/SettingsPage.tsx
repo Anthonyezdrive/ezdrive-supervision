@@ -18,6 +18,7 @@ import {
   useTriggerAlertCheck,
   useAlertHistory,
 } from "@/hooks/useAlertConfig";
+import { useCpo } from "@/contexts/CpoContext";
 import { formatRelativeTime } from "@/lib/utils";
 
 const THRESHOLD_OPTIONS = [
@@ -29,6 +30,7 @@ const THRESHOLD_OPTIONS = [
 ];
 
 export function SettingsPage() {
+  const { selectedCpoId } = useCpo();
   const { data: config, isLoading } = useAlertConfig();
   const { data: history = [] } = useAlertHistory();
   const updateConfig = useUpdateAlertConfig();

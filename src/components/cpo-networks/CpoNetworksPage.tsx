@@ -29,6 +29,7 @@ import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/contexts/ToastContext";
+import { useCpo } from "@/contexts/CpoContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { PageHelp } from "@/components/ui/PageHelp";
@@ -226,6 +227,7 @@ export function CpoNetworksPage() {
 // ══════════════════════════════════════════════════════════════
 
 function NetworkListView({ onSelect }: { onSelect: (n: CpoNetwork) => void }) {
+  const { selectedCpoId } = useCpo();
   const queryClient = useQueryClient();
   const { success: toastSuccess, error: toastError } = useToast();
   const [modalOpen, setModalOpen] = useState(false);
@@ -240,14 +242,17 @@ function NetworkListView({ onSelect }: { onSelect: (n: CpoNetwork) => void }) {
 
   // ── Fetch networks ──
   const { data: networks, isLoading, isError, refetch, dataUpdatedAt: _dataUpdatedAt } = useQuery<CpoNetwork[]>({
-    queryKey: ["cpo-networks"],
+    queryKey: ["cpo-networks", selectedCpoId ?? "all"],
     retry: false,
     queryFn: async () => {
       try {
-        const { data, error } = await supabase
+        let query = supabase
           .from("cpo_networks")
-          .select("*")
-          .order("created_at", { ascending: false });
+          .select("*");
+        if (selectedCpoId) {
+          query = query.eq("cpo_id", selectedCpoId);
+        }
+        const { data, error } = await query.order("created_at", { ascending: false });
         if (error) return [];
         return (data ?? []) as CpoNetwork[];
       } catch {
