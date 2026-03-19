@@ -3,22 +3,33 @@ import { LayoutDashboard, FileText, Radio, UserCheck, Building2 } from "lucide-r
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useB2BRole } from "@/hooks/useB2BRole";
 import { B2BFilterProvider, useB2BFilters } from "@/contexts/B2BFilterContext";
 import { useB2BClients, useB2BCdrs, useB2BFilterOptions, useMyB2BClients } from "@/hooks/useB2BCdrs";
 import { B2BFilterBar } from "./B2BFilterBar";
 import type { B2BClient } from "@/types/b2b";
 
-const B2B_TABS = [
-  { to: "/b2b/overview", label: "Vue d'ensemble", icon: LayoutDashboard },
-  { to: "/b2b/monthly", label: "Rapport mensuel", icon: FileText },
-  { to: "/b2b/chargepoints", label: "Par borne", icon: Radio },
-  { to: "/b2b/drivers", label: "Par conducteur", icon: UserCheck },
-  { to: "/b2b/company", label: "Mon Entreprise", icon: Building2 },
+interface B2BTab {
+  to: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  minRole?: "admin" | "manager" | "employee";
+}
+
+const B2B_TABS: B2BTab[] = [
+  { to: "/b2b/overview", label: "Vue d'ensemble", icon: LayoutDashboard }, // all roles
+  { to: "/b2b/monthly", label: "Rapport mensuel", icon: FileText, minRole: "manager" },
+  { to: "/b2b/chargepoints", label: "Par borne", icon: Radio, minRole: "manager" },
+  { to: "/b2b/drivers", label: "Par conducteur", icon: UserCheck, minRole: "manager" },
+  { to: "/b2b/company", label: "Mon Entreprise", icon: Building2, minRole: "admin" },
 ];
+
+const ROLE_LEVEL: Record<string, number> = { employee: 1, manager: 2, admin: 3 };
 
 function B2BLayoutInner() {
   const { profile } = useAuth();
   const { isAdmin } = usePermissions();
+  const { b2bRole, isEmployee, driverExternalId, tokenUids } = useB2BRole();
   const { selectedClientId, setSelectedClientId } = useB2BFilters();
   const location = useLocation();
   const isCompanyPage = location.pathname.includes("/b2b/company");
@@ -110,9 +121,12 @@ function B2BLayoutInner() {
         />
       )}
 
-      {/* Tab navigation */}
+      {/* Tab navigation — filtered by role */}
       <div className="flex items-center gap-1 border-b border-border overflow-x-auto">
-        {B2B_TABS.map((tab) => (
+        {B2B_TABS.filter((tab) => {
+          if (!tab.minRole) return true;
+          return (ROLE_LEVEL[b2bRole] ?? 3) >= (ROLE_LEVEL[tab.minRole] ?? 1);
+        }).map((tab) => (
           <NavLink
             key={tab.to}
             to={tab.to}
@@ -132,8 +146,8 @@ function B2BLayoutInner() {
         ))}
       </div>
 
-      {/* Page content — pass activeClient via context */}
-      <Outlet context={{ activeClient, customerExternalIds }} />
+      {/* Page content — pass activeClient + role via context */}
+      <Outlet context={{ activeClient, customerExternalIds, b2bRole, isEmployee, driverExternalId, tokenUids }} />
 
       {/* EZDrive footer branding */}
       <div className="flex items-center justify-center gap-2 pt-6 pb-2">
