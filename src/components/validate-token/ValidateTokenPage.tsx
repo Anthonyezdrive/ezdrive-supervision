@@ -16,6 +16,10 @@ import {
   Fingerprint,
   Eye,
   KeyRound,
+  ShieldAlert,
+  ShieldCheck,
+  Wrench,
+  Crown,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -25,6 +29,15 @@ import { PageHelp } from "@/components/ui/PageHelp";
 // ── Types ─────────────────────────────────────────────────────
 
 type SearchMode = "auth_id" | "chip_id" | "visual_id";
+
+interface ExceptionResult {
+  allowed: boolean;
+  free_charging: boolean;
+  reason: string;
+  group_name: string | null;
+  rule_type: string | null;
+  rule_name: string | null;
+}
 
 interface TokenResult {
   found: boolean;
@@ -44,6 +57,7 @@ interface TokenResult {
     phone: string | null;
     status: string | null;
   };
+  exception?: ExceptionResult;
 }
 
 const MODES: { key: SearchMode; label: string; icon: React.ComponentType<{ className?: string }>; placeholder: string }[] = [
@@ -105,6 +119,10 @@ export function ValidateTokenPage() {
           if (profile) user = { ...profile, full_name: [profile.first_name, profile.last_name].filter(Boolean).join(" ") || null };
         }
 
+        // Check exception rules
+        const { data: exData } = await supabase.rpc("check_token_exceptions", { p_token_uid: token.uid });
+        const exception = exData as ExceptionResult | null;
+
         return {
           found: true,
           token: {
@@ -117,6 +135,7 @@ export function ValidateTokenPage() {
             created_at: token.created_at,
           },
           user,
+          exception: exception ?? undefined,
         } as TokenResult;
       }
 
@@ -131,6 +150,10 @@ export function ValidateTokenPage() {
         if (profile) user = { ...profile, full_name: [profile.first_name, profile.last_name].filter(Boolean).join(" ") || null };
       }
 
+      // Check exception rules
+      const { data: exData2 } = await supabase.rpc("check_token_exceptions", { p_token_uid: card.uid });
+      const exception2 = exData2 as ExceptionResult | null;
+
       return {
         found: true,
         token: {
@@ -143,6 +166,7 @@ export function ValidateTokenPage() {
           created_at: card.created_at,
         },
         user,
+        exception: exception2 ?? undefined,
       } as TokenResult;
     },
     onSuccess: (data) => setResult(data),
@@ -279,6 +303,74 @@ export function ValidateTokenPage() {
                   <InfoRow icon={KeyRound} label="Émetteur" value={result.token?.issuer ?? "—"} />
                 </div>
               </div>
+
+              {/* Exception Status */}
+              {result.exception?.rule_type && (
+                <div
+                  className={cn(
+                    "border rounded-2xl p-6",
+                    result.exception.rule_type === "blacklist"
+                      ? "bg-surface border-red-500/20"
+                      : result.exception.free_charging
+                      ? "bg-surface border-amber-500/20"
+                      : "bg-surface border-blue-500/20"
+                  )}
+                >
+                  <div className="flex items-center gap-3 mb-4">
+                    <div
+                      className={cn(
+                        "w-10 h-10 rounded-xl flex items-center justify-center",
+                        result.exception.rule_type === "blacklist"
+                          ? "bg-red-500/10"
+                          : result.exception.free_charging
+                          ? "bg-amber-500/10"
+                          : "bg-blue-500/10"
+                      )}
+                    >
+                      {result.exception.rule_type === "blacklist" ? (
+                        <ShieldAlert className="w-5 h-5 text-red-400" />
+                      ) : result.exception.free_charging ? (
+                        <Crown className="w-5 h-5 text-amber-400" />
+                      ) : result.exception.reason?.includes("maintenance") ? (
+                        <Wrench className="w-5 h-5 text-blue-400" />
+                      ) : (
+                        <ShieldCheck className="w-5 h-5 text-blue-400" />
+                      )}
+                    </div>
+                    <div>
+                      <h3 className="text-base font-semibold text-foreground">
+                        {result.exception.rule_type === "blacklist"
+                          ? "Token bloque par exception"
+                          : result.exception.free_charging
+                          ? "Token VIP — charge gratuite"
+                          : "Exception active"}
+                      </h3>
+                      <p className="text-xs text-foreground-muted">
+                        {result.exception.reason}
+                      </p>
+                    </div>
+                    <span
+                      className={cn(
+                        "ml-auto px-2.5 py-1 rounded-full text-xs font-semibold",
+                        result.exception.rule_type === "blacklist"
+                          ? "bg-red-500/10 text-red-400"
+                          : result.exception.free_charging
+                          ? "bg-amber-500/10 text-amber-400"
+                          : "bg-blue-500/10 text-blue-400"
+                      )}
+                    >
+                      {result.exception.rule_type}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <InfoRow icon={ShieldCheck} label="Groupe" value={result.exception.group_name ?? "—"} />
+                    <InfoRow icon={KeyRound} label="Regle" value={result.exception.rule_name ?? "—"} />
+                    <InfoRow icon={CreditCard} label="Charge gratuite" value={result.exception.free_charging ? "Oui" : "Non"} />
+                    <InfoRow icon={CheckCircle2} label="Autorise" value={result.exception.allowed ? "Oui" : "Non"} />
+                  </div>
+                </div>
+              )}
 
               {/* User Info */}
               {result.user ? (

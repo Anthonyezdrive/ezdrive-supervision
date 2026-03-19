@@ -1,6 +1,7 @@
 // ============================================
 // OCPP Handler: Authorize (Enhanced)
 // Validates an RFID token with full checks:
+//   0. Exception rules (blacklist/whitelist/maintenance)
 //   1. Token existence (ocpi_tokens)
 //   2. Token validity
 //   3. Whitelist policy
@@ -39,10 +40,55 @@ interface TokenRecord {
   card_status: string | null;
 }
 
+// Exception check result from RPC
+interface ExceptionResult {
+  allowed: boolean;
+  free_charging: boolean;
+  reason: string;
+  group_name: string | null;
+  rule_type: string | null;
+  rule_name: string | null;
+}
+
 export async function handleAuthorize(params: AuthorizeParams): Promise<AuthorizeResponse> {
   const { idTag } = params;
 
   try {
+    // ── Check 0: Exception rules (blacklist/whitelist/maintenance) ──
+    // Runs BEFORE token lookup — a blacklisted token is blocked even if valid
+    const exceptionRow = await queryOne<{ check_token_exceptions: ExceptionResult }>(
+      `SELECT check_token_exceptions($1)`,
+      [idTag]
+    );
+    const exception = exceptionRow?.check_token_exceptions;
+
+    if (exception && exception.rule_type) {
+      // A rule matched this token
+      if (!exception.allowed) {
+        // BLACKLIST → block immediately
+        logger.info(
+          { idTag, rule: exception.rule_name, group: exception.group_name, reason: exception.reason },
+          'Authorize: blocked by exception rule'
+        );
+        return { idTagInfo: { status: 'Blocked' } };
+      }
+
+      if (exception.rule_type === 'whitelist') {
+        // WHITELIST / MAINTENANCE → accept immediately (skip other checks)
+        logger.info(
+          { idTag, rule: exception.rule_name, group: exception.group_name, freeCharging: exception.free_charging },
+          'Authorize: accepted by exception whitelist'
+        );
+        return { idTagInfo: { status: 'Accepted' } };
+      }
+
+      // OVERRIDE rules → log but continue normal checks
+      logger.info(
+        { idTag, rule: exception.rule_name, group: exception.group_name },
+        'Authorize: override rule applied, continuing checks'
+      );
+    }
+
     // ── Enriched query: token + RFID card data ──
     const token = await queryOne<TokenRecord>(
       `SELECT t.id, t.uid, t.valid, t.whitelist, t.type, t.contract_id,
