@@ -1,0 +1,909 @@
+openapi: 3.0.3
+info:
+  title: EZDrive 3.0 API
+  description: |
+    API de la plateforme EZDrive Supervision — Gestion des bornes de recharge,
+    conducteurs, tokens, sessions, facturation et paiement SPOT.
+
+    **Base URL**: `https://phnqtqvwofzrhpuydoom.supabase.co/functions/v1`
+
+    **Authentification**: Bearer token JWT Supabase dans le header `Authorization`.
+  version: 3.0.0
+  contact:
+    name: EZDrive by Suraya
+    email: anthony@ezdrive.fr
+    url: https://pro.ezdrive.fr
+
+servers:
+  - url: https://phnqtqvwofzrhpuydoom.supabase.co/functions/v1
+    description: Production
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token JWT Supabase obtenu via `supabase.auth.signIn()`
+
+  schemas:
+    Station:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "ADEME JARRY"
+        address:
+          type: string
+        city:
+          type: string
+        postal_code:
+          type: string
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        max_power_kw:
+          type: number
+        ocpp_status:
+          type: string
+          enum: [Available, Preparing, Charging, SuspendedEVSE, SuspendedEV, Finishing, Reserved, Unavailable, Faulted, Unknown]
+        is_online:
+          type: boolean
+        ocpp_identity:
+          type: string
+        cpo_id:
+          type: string
+          format: uuid
+        territory_id:
+          type: string
+          format: uuid
+        source:
+          type: string
+          enum: [gfx, road, manual, ocpp_direct]
+
+    Consumer:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        driver_external_id:
+          type: string
+        full_name:
+          type: string
+        first_name:
+          type: string
+        last_name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        country:
+          type: string
+        status:
+          type: string
+          enum: [active, inactive]
+
+    Token:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        token_uid:
+          type: string
+        visual_number:
+          type: string
+        token_type:
+          type: string
+          enum: [RFID, APP, OTHER]
+        driver_external_id:
+          type: string
+        driver_name:
+          type: string
+        status:
+          type: string
+          enum: [active, inactive]
+
+    OcpiTariff:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tariff_id:
+          type: string
+          example: "STANDARD-AC"
+        currency:
+          type: string
+          example: "EUR"
+        type:
+          type: string
+          enum: [REGULAR, AD_HOC_PAYMENT, PROFILE_GREEN, PROFILE_CHEAP]
+        elements:
+          type: array
+          items:
+            type: object
+            properties:
+              price_components:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                      enum: [ENERGY, TIME, FLAT, PARKING_TIME, RESERVATION, RESERVATION_FLAT, NO_SHOW]
+                    price:
+                      type: number
+                    step_size:
+                      type: integer
+                    vat:
+                      type: number
+
+    Invoice:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        invoice_number:
+          type: string
+        customer_name:
+          type: string
+        total_amount:
+          type: number
+        currency:
+          type: string
+        status:
+          type: string
+          enum: [draft, sent, paid, overdue, cancelled]
+
+    SupportTicket:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+          enum: [general, borne, facturation, ocpp, ocpi, app, api, autre]
+        priority:
+          type: string
+          enum: [low, medium, high, critical]
+        status:
+          type: string
+          enum: [open, in_progress, resolved, closed]
+
+    SubscriptionOffer:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        price_cents:
+          type: integer
+        billing_period:
+          type: string
+          enum: [monthly, yearly, weekly]
+        stripe_price_id:
+          type: string
+        is_active:
+          type: boolean
+
+    Coupon:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        code:
+          type: string
+        discount_type:
+          type: string
+          enum: [percentage, fixed_amount]
+        discount_value:
+          type: number
+        is_active:
+          type: boolean
+
+    SpotPaymentAuthorize:
+      type: object
+      required: [session_id, amount, currency]
+      properties:
+        session_id:
+          type: string
+        amount:
+          type: integer
+          description: Montant en centimes (ex 2000 = 20€)
+        currency:
+          type: string
+          default: eur
+        customer_id:
+          type: string
+          description: Stripe Customer ID
+        connected_account_id:
+          type: string
+          description: Stripe Connect account ID (ex acct_1TCeTjL4IOusGgnX)
+
+    RegistrationStart:
+      type: object
+      required: [email, phone]
+      properties:
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+          example: "+590690123456"
+        first_name:
+          type: string
+        last_name:
+          type: string
+        country:
+          type: string
+          default: FR
+
+    PaginatedResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: {}
+        pagination:
+          type: object
+          properties:
+            total:
+              type: integer
+            offset:
+              type: integer
+            limit:
+              type: integer
+
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+
+paths:
+  # ═══════════════════════════════════════════════════
+  # ADMIN STATIONS
+  # ═══════════════════════════════════════════════════
+  /api/admin-stations:
+    get:
+      tags: [Stations]
+      summary: Lister les stations
+      description: Liste paginée des stations avec filtres (CPO, territoire, statut, recherche)
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string, enum: [Available, Charging, Faulted, Unavailable, Unknown] }
+        - name: cpo_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: territory_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: is_online
+          in: query
+          schema: { type: boolean }
+        - name: offset
+          in: query
+          schema: { type: integer, default: 0 }
+        - name: limit
+          in: query
+          schema: { type: integer, default: 50 }
+      responses:
+        '200':
+          description: Liste des stations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
+        '401':
+          description: Non authentifié
+        '403':
+          description: Rôle insuffisant (admin/operator requis)
+    post:
+      tags: [Stations]
+      summary: Créer une station
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, city]
+              properties:
+                name: { type: string }
+                address: { type: string }
+                city: { type: string }
+                postal_code: { type: string }
+                latitude: { type: number }
+                longitude: { type: number }
+                max_power_kw: { type: number }
+                cpo_id: { type: string, format: uuid }
+                territory_id: { type: string, format: uuid }
+                ocpp_identity: { type: string }
+      responses:
+        '201':
+          description: Station créée
+        '400':
+          description: Données invalides
+
+  /api/admin-stations/stats:
+    get:
+      tags: [Stations]
+      summary: KPIs stations
+      description: Statistiques globales (total, online, par statut, par CPO)
+      responses:
+        '200':
+          description: KPIs
+
+  /api/admin-stations/{id}:
+    get:
+      tags: [Stations]
+      summary: Détail station
+      description: Station avec chargepoints, status log et tarifs
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Détail de la station
+        '404':
+          description: Station non trouvée
+    put:
+      tags: [Stations]
+      summary: Modifier une station
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Station'
+      responses:
+        '200':
+          description: Station mise à jour
+    delete:
+      tags: [Stations]
+      summary: Supprimer une station (soft delete)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Station marquée comme Unavailable/Offline
+
+  /api/admin-stations/{id}/link-chargepoint:
+    post:
+      tags: [Stations]
+      summary: Lier un chargepoint à une station
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [chargepoint_id]
+              properties:
+                chargepoint_id: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Chargepoint lié
+
+  /api/admin-stations/{id}/status-log:
+    get:
+      tags: [Stations]
+      summary: Historique des changements de statut
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: offset
+          in: query
+          schema: { type: integer }
+        - name: limit
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Historique paginé
+
+  # ═══════════════════════════════════════════════════
+  # ADMIN USERS
+  # ═══════════════════════════════════════════════════
+  /api/admin-users:
+    get:
+      tags: [Utilisateurs]
+      summary: Lister les utilisateurs
+      responses:
+        '200':
+          description: Liste des utilisateurs
+    post:
+      tags: [Utilisateurs]
+      summary: Créer un utilisateur
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, role]
+              properties:
+                email: { type: string, format: email }
+                full_name: { type: string }
+                role: { type: string, enum: [admin, operator, tech, b2b_client] }
+                cpo_id: { type: string, format: uuid }
+                territory: { type: string }
+      responses:
+        '201':
+          description: Utilisateur créé
+
+  /api/admin-users/{id}:
+    put:
+      tags: [Utilisateurs]
+      summary: Modifier un utilisateur
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Utilisateur mis à jour
+
+  # ═══════════════════════════════════════════════════
+  # INVOICES
+  # ═══════════════════════════════════════════════════
+  /api/invoices:
+    get:
+      tags: [Facturation]
+      summary: Lister les factures
+      responses:
+        '200':
+          description: Liste des factures
+
+  /api/invoices/generate:
+    post:
+      tags: [Facturation]
+      summary: Générer des factures depuis les CDRs
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                limit: { type: integer, default: 100 }
+      responses:
+        '200':
+          description: Factures générées
+
+  # ═══════════════════════════════════════════════════
+  # ROLES & RBAC
+  # ═══════════════════════════════════════════════════
+  /api/roles:
+    get:
+      tags: [RBAC]
+      summary: Lister les rôles
+      responses:
+        '200':
+          description: Liste des rôles avec permissions
+    post:
+      tags: [RBAC]
+      summary: Créer un rôle
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, permissions]
+              properties:
+                name: { type: string }
+                permissions: { type: array, items: { type: string } }
+                color: { type: string }
+      responses:
+        '201':
+          description: Rôle créé
+
+  # ═══════════════════════════════════════════════════
+  # COUPONS
+  # ═══════════════════════════════════════════════════
+  /api/coupons:
+    get:
+      tags: [Coupons]
+      summary: Lister les coupons
+      responses:
+        '200':
+          description: Liste des coupons
+
+  /api/coupons/validate:
+    post:
+      tags: [Coupons]
+      summary: Valider et appliquer un coupon
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+                user_id: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Coupon valide et appliqué
+        '400':
+          description: Coupon invalide ou expiré
+
+  # ═══════════════════════════════════════════════════
+  # ENERGY MIX
+  # ═══════════════════════════════════════════════════
+  /api/energy-mix:
+    get:
+      tags: [Energy Mix]
+      summary: Lister les profils de mix énergétique
+      responses:
+        '200':
+          description: Liste des profils
+
+  # ═══════════════════════════════════════════════════
+  # EXCEPTIONS (WHITELIST/BLACKLIST)
+  # ═══════════════════════════════════════════════════
+  /api/exceptions:
+    get:
+      tags: [Exceptions]
+      summary: Lister les groupes d'exceptions et règles
+      responses:
+        '200':
+          description: Groupes avec règles
+
+  # ═══════════════════════════════════════════════════
+  # CONSUMER REGISTRATION
+  # ═══════════════════════════════════════════════════
+  /register-consumer/start:
+    post:
+      tags: [Registration]
+      summary: Démarrer l'inscription d'un conducteur
+      description: Valide email + téléphone, envoie un code de vérification à 6 chiffres
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationStart'
+      responses:
+        '200':
+          description: Code envoyé
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id: { type: string, format: uuid }
+                  phone_last4: { type: string }
+
+  /register-consumer/verify-phone:
+    post:
+      tags: [Registration]
+      summary: Vérifier le code téléphone
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, code]
+              properties:
+                session_id: { type: string, format: uuid }
+                code: { type: string, example: "123456" }
+      responses:
+        '200':
+          description: Téléphone vérifié
+
+  /register-consumer/complete:
+    post:
+      tags: [Registration]
+      summary: Finaliser l'inscription
+      description: Crée le compte Supabase Auth + consumer_profiles + gfx_consumers + Stripe Customer
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, terms_accepted]
+              properties:
+                session_id: { type: string, format: uuid }
+                terms_accepted: { type: boolean }
+                offer_id: { type: string, format: uuid }
+                qr_station_id: { type: string }
+      responses:
+        '201':
+          description: Compte créé
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user_id: { type: string, format: uuid }
+                  stripe_customer_id: { type: string }
+
+  /register-consumer/setup-payment:
+    post:
+      tags: [Registration]
+      summary: Configurer moyen de paiement (CB ou SEPA)
+      description: Crée un Stripe SetupIntent pour enregistrer une carte ou un mandat SEPA
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, payment_type]
+              properties:
+                user_id: { type: string, format: uuid }
+                payment_type: { type: string, enum: [card, sepa] }
+      responses:
+        '200':
+          description: SetupIntent créé
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  setup_intent_client_secret: { type: string }
+                  ephemeral_key: { type: string }
+                  customer_id: { type: string }
+
+  # ═══════════════════════════════════════════════════
+  # SPOT PAYMENT
+  # ═══════════════════════════════════════════════════
+  /spot-payment/authorize:
+    post:
+      tags: [Paiement SPOT]
+      summary: Pré-autorisation CB (palier 20€)
+      description: Crée un PaymentIntent avec capture manuelle pour bloquer 20€ sur la carte
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpotPaymentAuthorize'
+      responses:
+        '200':
+          description: PaymentIntent créé
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  payment_intent_id: { type: string }
+                  client_secret: { type: string }
+                  status: { type: string }
+
+  /spot-payment/capture:
+    post:
+      tags: [Paiement SPOT]
+      summary: Capturer le montant réel après charge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [payment_intent_id, amount]
+              properties:
+                payment_intent_id: { type: string }
+                amount: { type: integer, description: Montant réel en centimes }
+      responses:
+        '200':
+          description: Paiement capturé
+
+  /spot-payment/authorize-sepa:
+    post:
+      tags: [Paiement SPOT]
+      summary: Débit SEPA post-session
+      description: Crée un PaymentIntent SEPA confirmé immédiatement après la session de charge
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, amount, currency, customer_id, payment_method_id]
+              properties:
+                session_id: { type: string }
+                amount: { type: integer }
+                currency: { type: string, default: eur }
+                customer_id: { type: string }
+                payment_method_id: { type: string }
+      responses:
+        '200':
+          description: Paiement SEPA initié
+
+  # ═══════════════════════════════════════════════════
+  # OCPP COMMANDS
+  # ═══════════════════════════════════════════════════
+  /api/ocpp/remote-start:
+    post:
+      tags: [OCPP]
+      summary: Démarrer une charge à distance
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [chargepoint_identity, id_tag]
+              properties:
+                chargepoint_identity: { type: string }
+                id_tag: { type: string }
+                connector_id: { type: integer }
+      responses:
+        '200':
+          description: RemoteStartTransaction envoyé
+
+  /api/ocpp/remote-stop:
+    post:
+      tags: [OCPP]
+      summary: Arrêter une charge à distance
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [transaction_id]
+              properties:
+                transaction_id: { type: integer }
+      responses:
+        '200':
+          description: RemoteStopTransaction envoyé
+
+  /api/ocpp/reset:
+    post:
+      tags: [OCPP]
+      summary: Réinitialiser une borne
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [chargepoint_identity, type]
+              properties:
+                chargepoint_identity: { type: string }
+                type: { type: string, enum: [Soft, Hard] }
+      responses:
+        '200':
+          description: Reset envoyé
+
+  # ═══════════════════════════════════════════════════
+  # STRIPE WEBHOOK
+  # ═══════════════════════════════════════════════════
+  /stripe-webhook:
+    post:
+      tags: [Webhooks]
+      summary: Webhook Stripe
+      description: Reçoit les événements Stripe (paiements, abonnements, comptes connectés)
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Événement traité
+
+  # ═══════════════════════════════════════════════════
+  # DATA SYNC
+  # ═══════════════════════════════════════════════════
+  /gfx-sync:
+    post:
+      tags: [Sync]
+      summary: Synchroniser les CDRs depuis GreenFlux
+      security: []
+      responses:
+        '200':
+          description: CDRs synchronisés
+
+  /gfx-stations:
+    post:
+      tags: [Sync]
+      summary: Synchroniser les stations depuis GreenFlux
+      security: []
+      responses:
+        '200':
+          description: Stations synchronisées
+
+  /road-sync:
+    post:
+      tags: [Sync]
+      summary: Synchroniser les données depuis Road/E-Flux
+      security: []
+      responses:
+        '200':
+          description: Données Road synchronisées
+
+  /gfx-driver-sync:
+    post:
+      tags: [Sync]
+      summary: Synchroniser les conducteurs depuis GreenFlux CRM
+      security: []
+      responses:
+        '200':
+          description: Conducteurs synchronisés
+
+  /alert-check:
+    post:
+      tags: [Monitoring]
+      summary: Vérifier les alertes (cron)
+      security: []
+      responses:
+        '200':
+          description: Alertes vérifiées
+
+tags:
+  - name: Stations
+    description: Gestion des stations de charge (CRUD, statut, chargepoints)
+  - name: Utilisateurs
+    description: Gestion des utilisateurs de la plateforme
+  - name: Facturation
+    description: Factures et CDRs
+  - name: RBAC
+    description: Rôles et permissions
+  - name: Coupons
+    description: Gestion des codes promo
+  - name: Energy Mix
+    description: Profils de mix énergétique et calcul CO2
+  - name: Exceptions
+    description: Whitelist et blacklist de tokens
+  - name: Registration
+    description: Inscription conducteur (onboarding mobile)
+  - name: Paiement SPOT
+    description: Paiement par paliers CB et SEPA post-session
+  - name: OCPP
+    description: Commandes OCPP (RemoteStart, RemoteStop, Reset)
+  - name: Webhooks
+    description: Webhooks Stripe
+  - name: Sync
+    description: Synchronisation données (GreenFlux, Road)
+  - name: Monitoring
+    description: Alertes et surveillance
