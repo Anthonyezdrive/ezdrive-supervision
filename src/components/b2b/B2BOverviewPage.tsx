@@ -3,7 +3,7 @@ import { useOutletContext } from "react-router-dom";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList, Legend,
 } from "recharts";
-import { Clock, Zap, Euro, Gauge, AlertTriangle, CheckCircle, GitCompareArrows, CreditCard, Tag } from "lucide-react";
+import { Clock, Zap, Euro, Gauge, AlertTriangle, CheckCircle, GitCompareArrows, CreditCard, Tag, FileDown, X } from "lucide-react";
 import { KPICard } from "@/components/ui/KPICard";
 import { PageHelp } from "@/components/ui/PageHelp";
 import { ExportButtons } from "./ExportButtons";
@@ -145,7 +145,17 @@ export function B2BOverviewPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div />
-        <ExportButtons onCSV={handleExportCSV} onPDF={handleExportPDF} />
+        <div className="flex items-center gap-3">
+          {/* Story 78: Download monthly invoice PDF */}
+          <button
+            onClick={handleExportPDF}
+            className="flex items-center gap-2 px-3 py-1.5 bg-surface-elevated border border-border rounded-lg text-xs font-medium text-foreground-muted hover:text-foreground hover:bg-surface transition-colors"
+          >
+            <FileDown className="w-3.5 h-3.5" />
+            Télécharger facture
+          </button>
+          <ExportButtons onCSV={handleExportCSV} onPDF={handleExportPDF} />
+        </div>
       </div>
 
       <PageHelp

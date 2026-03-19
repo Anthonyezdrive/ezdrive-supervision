@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from "react-leaflet";
+import { useEffect, useRef, useState, useMemo } from "react";
+import { MapContainer, TileLayer, CircleMarker, Popup, useMap, useMapEvents } from "react-leaflet";
 import type { LatLngBoundsExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useStations } from "@/hooks/useStations";
@@ -22,6 +22,61 @@ function AutoFitBounds({ bounds }: { bounds: LatLngBoundsExpression | null }) {
   return null;
 }
 
+// Simple clustering: group nearby stations when zoomed out
+interface Cluster {
+  lat: number;
+  lng: number;
+  stations: Station[];
+  mainStatus: OCPPStatus;
+}
+
+function clusterStations(stations: Station[], zoom: number): Cluster[] {
+  if (zoom >= 11) {
+    // No clustering at high zoom
+    return stations.map((s) => ({
+      lat: s.latitude!,
+      lng: s.longitude!,
+      stations: [s],
+      mainStatus: s.ocpp_status,
+    }));
+  }
+  const gridSize = zoom <= 7 ? 2 : zoom <= 9 ? 1 : 0.5;
+  const clusters: Map<string, Cluster> = new Map();
+
+  for (const s of stations) {
+    const gLat = Math.floor(s.latitude! / gridSize) * gridSize;
+    const gLng = Math.floor(s.longitude! / gridSize) * gridSize;
+    const key = `${gLat},${gLng}`;
+    const existing = clusters.get(key);
+    if (existing) {
+      existing.stations.push(s);
+      existing.lat = (existing.lat * (existing.stations.length - 1) + s.latitude!) / existing.stations.length;
+      existing.lng = (existing.lng * (existing.stations.length - 1) + s.longitude!) / existing.stations.length;
+    } else {
+      clusters.set(key, { lat: s.latitude!, lng: s.longitude!, stations: [s], mainStatus: s.ocpp_status });
+    }
+  }
+
+  // Set main status as the most frequent
+  for (const c of clusters.values()) {
+    const counts: Record<string, number> = {};
+    for (const s of c.stations) {
+      counts[s.ocpp_status] = (counts[s.ocpp_status] || 0) + 1;
+    }
+    c.mainStatus = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]?.[0] as OCPPStatus ?? "Unknown";
+  }
+
+  return Array.from(clusters.values());
+}
+
+function ZoomTracker({ onZoom }: { onZoom: (z: number) => void }) {
+  const map = useMapEvents({
+    zoomend: () => onZoom(map.getZoom()),
+  });
+  useEffect(() => { onZoom(map.getZoom()); }, []);
+  return null;
+}
+
 const STATUS_FILTERS: OCPPStatus[] = ["Available", "Charging", "Faulted", "Unknown"];
 
 export function MapPage() {
@@ -29,6 +84,7 @@ export function MapPage() {
   const { data: stations = [], isLoading } = useStations(selectedCpoId);
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [statusFilter, setStatusFilter] = useState<OCPPStatus | null>(null);
+  const [zoom, setZoom] = useState(9);
 
   const mappableStations = stations.filter(
     (s) => s.latitude != null && s.longitude != null
@@ -122,87 +178,69 @@ export function MapPage() {
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
             />
             <AutoFitBounds bounds={bounds} />
+            <ZoomTracker onZoom={setZoom} />
 
-            {filteredStations.map((station) => {
-              const cfg = OCPP_STATUS_CONFIG[station.ocpp_status];
+            {clusterStations(filteredStations, zoom).map((cluster, idx) => {
+              const isCluster = cluster.stations.length > 1;
+              const cfg = OCPP_STATUS_CONFIG[cluster.mainStatus];
+              const station = cluster.stations[0];
+
               return (
                 <CircleMarker
-                  key={station.id}
-                  center={[station.latitude!, station.longitude!]}
-                  radius={7}
+                  key={isCluster ? `cluster-${idx}` : station.id}
+                  center={[cluster.lat, cluster.lng]}
+                  radius={isCluster ? Math.min(12 + cluster.stations.length, 25) : 7}
                   pathOptions={{
                     fillColor: cfg.color,
-                    fillOpacity: 0.9,
+                    fillOpacity: isCluster ? 0.7 : 0.9,
                     color: "#fff",
-                    weight: 1.5,
+                    weight: isCluster ? 2.5 : 1.5,
                     opacity: 0.6,
                   }}
                 >
                   <Popup minWidth={200}>
-                    <div style={{ fontFamily: "system-ui, sans-serif", padding: "2px 0" }}>
-                      <p style={{ fontWeight: 700, fontSize: 13, margin: "0 0 3px" }}>
-                        {station.name}
-                      </p>
-                      <p style={{ color: "#888", fontSize: 11, margin: "0 0 8px" }}>
-                        {[station.city, station.territory_name]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </p>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                          marginBottom: 10,
-                        }}
-                      >
-                        <span
-                          style={{
-                            display: "inline-block",
-                            width: 8,
-                            height: 8,
-                            borderRadius: "50%",
-                            backgroundColor: cfg.color,
-                            flexShrink: 0,
-                          }}
-                        />
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: cfg.color,
-                            fontWeight: 600,
-                          }}
-                        >
-                          {cfg.label}
-                        </span>
-                        {station.cpo_name && (
-                          <span style={{ fontSize: 10, color: "#999" }}>
-                            · {station.cpo_name}
-                          </span>
-                        )}
-                      </div>
-                      {station.max_power_kw && (
-                        <p style={{ fontSize: 10, color: "#888", margin: "0 0 8px" }}>
-                          Puissance max : {station.max_power_kw} kW
+                    {isCluster ? (
+                      <div style={{ fontFamily: "system-ui, sans-serif", padding: "2px 0" }}>
+                        <p style={{ fontWeight: 700, fontSize: 13, margin: "0 0 6px" }}>
+                          {cluster.stations.length} bornes
                         </p>
-                      )}
-                      <button
-                        onClick={() => setSelectedStation(station)}
-                        style={{
-                          width: "100%",
-                          padding: "5px 10px",
-                          borderRadius: 6,
-                          backgroundColor: "#00D4AA",
-                          color: "#fff",
-                          fontSize: 11,
-                          fontWeight: 600,
-                          border: "none",
-                          cursor: "pointer",
-                        }}
-                      >
-                        Voir le détail →
-                      </button>
-                    </div>
+                        <div style={{ fontSize: 11, color: "#888", maxHeight: 150, overflowY: "auto" }}>
+                          {cluster.stations.slice(0, 10).map((s) => (
+                            <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 4 }}>
+                              <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: OCPP_STATUS_CONFIG[s.ocpp_status].color, flexShrink: 0 }} />
+                              <span style={{ cursor: "pointer", color: "#ccc" }} onClick={() => setSelectedStation(s)}>{s.name}</span>
+                            </div>
+                          ))}
+                          {cluster.stations.length > 10 && <p style={{ color: "#666", marginTop: 4 }}>+{cluster.stations.length - 10} autres...</p>}
+                        </div>
+                        <p style={{ fontSize: 10, color: "#666", marginTop: 6 }}>Zoomez pour detailler</p>
+                      </div>
+                    ) : (
+                      <div style={{ fontFamily: "system-ui, sans-serif", padding: "2px 0" }}>
+                        <p style={{ fontWeight: 700, fontSize: 13, margin: "0 0 3px" }}>
+                          {station.name}
+                        </p>
+                        <p style={{ color: "#888", fontSize: 11, margin: "0 0 8px" }}>
+                          {[station.city, station.territory_name]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+                          <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", backgroundColor: cfg.color, flexShrink: 0 }} />
+                          <span style={{ fontSize: 11, color: cfg.color, fontWeight: 600 }}>{cfg.label}</span>
+                          {station.cpo_name && <span style={{ fontSize: 10, color: "#999" }}>· {station.cpo_name}</span>}
+                        </div>
+                        {station.max_power_kw && (
+                          <p style={{ fontSize: 10, color: "#888", margin: "0 0 8px" }}>Puissance max : {station.max_power_kw} kW</p>
+                        )}
+                        <button
+                          onClick={() => setSelectedStation(station)}
+                          style={{ width: "100%", padding: "5px 10px", borderRadius: 6, backgroundColor: "#00D4AA", color: "#fff", fontSize: 11, fontWeight: 600, border: "none", cursor: "pointer" }}
+                        >
+                          Voir le detail →
+                        </button>
+                      </div>
+                    )}
                   </Popup>
                 </CircleMarker>
               );

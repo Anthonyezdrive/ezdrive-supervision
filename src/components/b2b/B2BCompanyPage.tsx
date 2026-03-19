@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { useOutletContext } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import {
   Building2,
   Upload,
@@ -12,8 +13,14 @@ import {
   Users,
   Loader2,
   ImageIcon,
+  Lock,
+  CreditCard,
+  ShoppingCart,
+  Bell,
+  Nfc,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/lib/supabase";
 import { useB2BClientUsers, useUpdateB2BClientSelf, useUploadB2BLogo } from "@/hooks/useB2BCompany";
 import { PageHelp } from "@/components/ui/PageHelp";
 import type { B2BClient } from "@/types/b2b";
@@ -326,6 +333,217 @@ export function B2BCompanyPage() {
           </div>
         )}
       </div>
+
+      {/* Story 81: Change Password */}
+      <B2BPasswordSection />
+
+      {/* Story 82: Active Tokens */}
+      <B2BTokensSection clientName={activeClient.name} />
+
+      {/* Story 83: Order RFID Token */}
+      <B2BOrderTokenSection clientName={activeClient.name} />
+
+      {/* Story 84: Notifications */}
+      <B2BNotificationsSection clientName={activeClient.name} />
+    </div>
+  );
+}
+
+// ── Story 81: Password Change Section ──────────────────────────
+
+function B2BPasswordSection() {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
+
+  async function handleSubmit() {
+    if (newPassword !== confirmPassword) { setErrorMsg("Les mots de passe ne correspondent pas"); setStatus("error"); return; }
+    if (newPassword.length < 8) { setErrorMsg("Le mot de passe doit contenir au moins 8 caractères"); setStatus("error"); return; }
+    setStatus("loading");
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) { setErrorMsg(error.message); setStatus("error"); }
+    else { setStatus("success"); setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); }
+  }
+
+  const inputClass = "w-full px-3 py-2.5 bg-surface-elevated border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-border-focus transition-colors";
+
+  return (
+    <div className="bg-surface border border-border rounded-2xl p-6 space-y-4">
+      <div className="flex items-center gap-3 mb-2">
+        <Lock className="w-5 h-5" style={{ color: "#E74C3C" }} />
+        <h3 className="text-base font-heading font-bold text-foreground">Sécurité</h3>
+      </div>
+      <div className="space-y-3 max-w-sm">
+        <div>
+          <label className="text-xs text-foreground-muted mb-1 block">Mot de passe actuel</label>
+          <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className={inputClass} />
+        </div>
+        <div>
+          <label className="text-xs text-foreground-muted mb-1 block">Nouveau mot de passe</label>
+          <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className={inputClass} />
+        </div>
+        <div>
+          <label className="text-xs text-foreground-muted mb-1 block">Confirmer</label>
+          <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={inputClass} />
+        </div>
+        <button
+          onClick={handleSubmit}
+          disabled={status === "loading" || !newPassword}
+          className="flex items-center gap-2 px-4 py-2.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl text-sm font-medium hover:bg-red-500/20 transition-colors disabled:opacity-50"
+        >
+          {status === "loading" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+          Changer le mot de passe
+        </button>
+        {status === "success" && <p className="text-xs text-emerald-400">Mot de passe modifié avec succès</p>}
+        {status === "error" && <p className="text-xs text-red-400">{errorMsg}</p>}
+      </div>
+    </div>
+  );
+}
+
+// ── Story 82: Active Tokens Section ────────────────────────────
+
+function B2BTokensSection({ clientName }: { clientName: string }) {
+  const { data: tokens, isLoading } = useQuery({
+    queryKey: ["b2b-tokens", clientName],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("gfx_tokens")
+        .select("id, token_uid, driver_name, status, total_sessions, last_used_at")
+        .eq("customer_group", clientName)
+        .order("total_sessions", { ascending: false })
+        .limit(20);
+      return data ?? [];
+    },
+  });
+
+  return (
+    <div className="bg-surface border border-border rounded-2xl p-6 space-y-4">
+      <div className="flex items-center gap-3 mb-2">
+        <Nfc className="w-5 h-5" style={{ color: "#6366F1" }} />
+        <h3 className="text-base font-heading font-bold text-foreground">Mes tokens</h3>
+        {tokens && <span className="text-xs text-foreground-muted bg-foreground-muted/10 rounded-full px-2.5 py-1">{tokens.length}</span>}
+      </div>
+      {isLoading ? (
+        <div className="space-y-2">{[1, 2, 3].map((i) => <div key={i} className="h-10 bg-surface-elevated rounded-xl animate-pulse" />)}</div>
+      ) : tokens && tokens.length > 0 ? (
+        <div className="space-y-1">
+          {tokens.map((t) => (
+            <div key={t.id as string} className="flex items-center justify-between px-4 py-2.5 rounded-xl hover:bg-surface-elevated/50 transition-colors">
+              <div>
+                <p className="text-sm font-mono text-foreground">{(t.token_uid as string).slice(-12)}</p>
+                <p className="text-xs text-foreground-muted">{(t.driver_name as string) ?? "—"}</p>
+              </div>
+              <span className="text-xs text-foreground-muted">{(t.total_sessions as number)} sessions</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-foreground-muted">Aucun token associé</p>
+      )}
+    </div>
+  );
+}
+
+// ── Story 83: Order RFID Token Section ─────────────────────────
+
+function B2BOrderTokenSection({ clientName }: { clientName: string }) {
+  const [quantity, setQuantity] = useState(1);
+  const [address, setAddress] = useState("");
+  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+
+  async function handleOrder() {
+    setStatus("loading");
+    const { error } = await supabase.from("token_orders").insert({
+      client_name: clientName,
+      quantity,
+      shipping_address: address,
+      status: "pending",
+    });
+    if (error) { setStatus("error"); console.warn(error.message); }
+    else { setStatus("success"); }
+  }
+
+  const inputClass = "w-full px-3 py-2.5 bg-surface-elevated border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-border-focus transition-colors";
+
+  return (
+    <div className="bg-surface border border-border rounded-2xl p-6 space-y-4">
+      <div className="flex items-center gap-3 mb-2">
+        <ShoppingCart className="w-5 h-5" style={{ color: "#2ECC71" }} />
+        <h3 className="text-base font-heading font-bold text-foreground">Commander des tokens RFID</h3>
+      </div>
+      <div className="space-y-3 max-w-sm">
+        <div>
+          <label className="text-xs text-foreground-muted mb-1 block">Quantité</label>
+          <input type="number" min={1} max={100} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} className={inputClass} />
+        </div>
+        <div>
+          <label className="text-xs text-foreground-muted mb-1 block">Adresse de livraison</label>
+          <textarea value={address} onChange={(e) => setAddress(e.target.value)} rows={3} className={`${inputClass} resize-none`} placeholder="Adresse complète..." />
+        </div>
+        <button
+          onClick={handleOrder}
+          disabled={status === "loading" || quantity < 1 || !address.trim()}
+          className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-xl text-sm font-medium hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
+        >
+          {status === "loading" ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShoppingCart className="w-4 h-4" />}
+          Commander {quantity} token{quantity > 1 ? "s" : ""}
+        </button>
+        {status === "success" && <p className="text-xs text-emerald-400">Commande envoyée avec succès</p>}
+        {status === "error" && <p className="text-xs text-red-400">Erreur lors de la commande</p>}
+      </div>
+    </div>
+  );
+}
+
+// ── Story 84: Notifications Section ────────────────────────────
+
+function B2BNotificationsSection({ clientName }: { clientName: string }) {
+  const { data: notifications, isLoading } = useQuery({
+    queryKey: ["b2b-notifications", clientName],
+    queryFn: async () => {
+      // Fetch recent CDRs as notification-like events
+      const { data } = await supabase
+        .from("ocpi_cdrs")
+        .select("id, start_date_time, location_name, total_energy, driver_name, status")
+        .eq("customer_name", clientName)
+        .order("start_date_time", { ascending: false })
+        .limit(15);
+      return data ?? [];
+    },
+  });
+
+  return (
+    <div className="bg-surface border border-border rounded-2xl p-6 space-y-4">
+      <div className="flex items-center gap-3 mb-2">
+        <Bell className="w-5 h-5" style={{ color: "#F39C12" }} />
+        <h3 className="text-base font-heading font-bold text-foreground">Notifications</h3>
+      </div>
+      {isLoading ? (
+        <div className="space-y-2">{[1, 2, 3].map((i) => <div key={i} className="h-10 bg-surface-elevated rounded-xl animate-pulse" />)}</div>
+      ) : notifications && notifications.length > 0 ? (
+        <div className="space-y-1 max-h-64 overflow-y-auto">
+          {notifications.map((n) => (
+            <div key={n.id as string} className="flex items-center justify-between px-4 py-2.5 rounded-xl hover:bg-surface-elevated/50 transition-colors">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm text-foreground truncate">
+                  Charge terminée - {(n.driver_name as string) ?? "Conducteur"}
+                </p>
+                <p className="text-xs text-foreground-muted">
+                  {(n.location_name as string) ?? "Station"} - {Number(n.total_energy).toFixed(1)} kWh
+                </p>
+              </div>
+              <span className="text-xs text-foreground-muted shrink-0 ml-3">
+                {new Date(n.start_date_time as string).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-sm text-foreground-muted">Aucune notification récente</p>
+      )}
     </div>
   );
 }

@@ -4,7 +4,7 @@
 // ============================================================
 
 import { useState, useMemo, useCallback } from "react";
-import { Download, Plus } from "lucide-react";
+import { Download, Plus, Upload } from "lucide-react";
 import { useStations } from "@/hooks/useStations";
 import { useCPOs } from "@/hooks/useCPOs";
 import { useTerritories } from "@/hooks/useTerritories";
@@ -20,6 +20,16 @@ import { DEFAULT_FILTERS, type StationFilters } from "@/types/filters";
 import type { Station } from "@/types/station";
 import { downloadCSV, todayISO } from "@/lib/export";
 import { PageHelp } from "@/components/ui/PageHelp";
+import { supabase } from "@/lib/supabase";
+import { cn } from "@/lib/utils";
+
+type PowerFilter = "all" | "ac_22" | "dc_60" | "dc_fast";
+const POWER_FILTERS: { key: PowerFilter; label: string }[] = [
+  { key: "all", label: "Tous" },
+  { key: "ac_22", label: "AC ≤22kW" },
+  { key: "dc_60", label: "DC 25-60kW" },
+  { key: "dc_fast", label: "DC >60kW" },
+];
 
 export function StationsPage() {
   const { selectedCpoId } = useCpo();
@@ -31,6 +41,9 @@ export function StationsPage() {
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editStation, setEditStation] = useState<Station | null>(null);
+  const [powerFilter, setPowerFilter] = useState<PowerFilter>("all");
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importStatus, setImportStatus] = useState<{ loading: boolean; message: string | null }>({ loading: false, message: null });
 
   const handleStationUpdated = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["stations"] });
@@ -70,6 +83,13 @@ export function StationsPage() {
       if (filters.cpo && s.cpo_code !== filters.cpo) return false;
       if (filters.territory && s.territory_code !== filters.territory) return false;
       if (filters.status && s.ocpp_status !== filters.status) return false;
+      // Power filter
+      if (powerFilter !== "all") {
+        const pw = s.max_power_kw ?? 0;
+        if (powerFilter === "ac_22" && pw > 22) return false;
+        if (powerFilter === "dc_60" && (pw < 25 || pw > 60)) return false;
+        if (powerFilter === "dc_fast" && pw <= 60) return false;
+      }
       if (filters.search) {
         const q = filters.search.toLowerCase();
         return (
@@ -82,7 +102,7 @@ export function StationsPage() {
       }
       return true;
     });
-  }, [stations, filters]);
+  }, [stations, filters, powerFilter]);
 
   // Level 2: Station detail (full page, GreenFlux-style)
   if (selectedStation) {
@@ -116,6 +136,13 @@ export function StationsPage() {
             Export CSV
           </button>
           <button
+            onClick={() => setShowImportModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-border rounded-xl text-xs text-foreground-muted hover:text-foreground hover:border-foreground-muted transition-colors"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            Importer CSV
+          </button>
+          <button
             onClick={() => setShowCreateModal(true)}
             className="flex items-center gap-1.5 px-4 py-2 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
           >
@@ -142,6 +169,25 @@ export function StationsPage() {
         territories={territories ?? []}
       />
 
+      {/* Power type filter */}
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-foreground-muted">Puissance :</span>
+        {POWER_FILTERS.map((pf) => (
+          <button
+            key={pf.key}
+            onClick={() => setPowerFilter(pf.key)}
+            className={cn(
+              "px-3 py-1 rounded-full text-xs font-medium border transition-all",
+              powerFilter === pf.key
+                ? "bg-primary/15 text-primary border-primary/30"
+                : "text-foreground-muted border-border hover:border-foreground-muted"
+            )}
+          >
+            {pf.label}
+          </button>
+        ))}
+      </div>
+
       {isLoading ? (
         <TableSkeleton rows={10} />
       ) : isError ? (
@@ -167,6 +213,66 @@ export function StationsPage() {
           onClose={() => { setShowCreateModal(false); setEditStation(null); }}
           onSaved={handleStationUpdated}
         />
+      )}
+
+      {/* Import CSV Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-lg shadow-2xl">
+            <h2 className="text-lg font-heading font-bold text-foreground mb-2">Importer des bornes (CSV)</h2>
+            <p className="text-sm text-foreground-muted mb-4">
+              Format attendu : name, address, city, postal_code, latitude, longitude, power_kw, cpo, ocpp_identity
+            </p>
+            <input
+              type="file"
+              accept=".csv"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setImportStatus({ loading: true, message: null });
+                try {
+                  const text = await file.text();
+                  const lines = text.split("\n").filter((l) => l.trim());
+                  if (lines.length < 2) { setImportStatus({ loading: false, message: "Fichier vide ou invalide." }); return; }
+                  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase().replace(/"/g, ""));
+                  const rows = lines.slice(1).map((line) => {
+                    const vals = line.split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
+                    const obj: Record<string, string> = {};
+                    headers.forEach((h, i) => { obj[h] = vals[i] ?? ""; });
+                    return obj;
+                  });
+                  const inserts = rows.map((r) => ({
+                    name: r.name || "Sans nom",
+                    address: r.address || null,
+                    city: r.city || null,
+                    postal_code: r.postal_code || null,
+                    latitude: r.latitude ? parseFloat(r.latitude) : null,
+                    longitude: r.longitude ? parseFloat(r.longitude) : null,
+                    max_power_kw: r.power_kw ? parseFloat(r.power_kw) : null,
+                    cpo_name: r.cpo || null,
+                    ocpp_identity: r.ocpp_identity || null,
+                  }));
+                  const { error } = await supabase.from("stations").insert(inserts);
+                  if (error) throw error;
+                  setImportStatus({ loading: false, message: `${inserts.length} borne(s) importee(s) avec succes.` });
+                  queryClient.invalidateQueries({ queryKey: ["stations"] });
+                } catch (err) {
+                  setImportStatus({ loading: false, message: `Erreur : ${err instanceof Error ? err.message : "Erreur inconnue"}` });
+                }
+              }}
+              className="w-full text-sm text-foreground file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+              disabled={importStatus.loading}
+            />
+            {importStatus.message && (
+              <p className={cn("text-sm mt-3", importStatus.message.startsWith("Erreur") ? "text-danger" : "text-status-available")}>{importStatus.message}</p>
+            )}
+            <div className="flex justify-end mt-4">
+              <button onClick={() => { setShowImportModal(false); setImportStatus({ loading: false, message: null }); }} className="px-4 py-2 text-sm text-foreground-muted hover:text-foreground transition-colors">
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

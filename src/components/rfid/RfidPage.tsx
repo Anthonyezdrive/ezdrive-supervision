@@ -33,8 +33,15 @@ import {
   Loader2,
   Wallet,
   RefreshCw,
+  Download,
+  Upload,
+  Ban,
+  ArrowRightLeft,
+  Clock,
 } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { downloadCSV, todayISO } from "@/lib/export";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -73,7 +80,7 @@ interface TokenBilling {
   auto_reactivated_at: string | null;
 }
 
-const TABS = ["Tous", "Actifs", "Inactifs"] as const;
+const TABS = ["Tous", "Actifs", "Inactifs", "Expirés"] as const;
 type Tab = (typeof TABS)[number];
 
 type SortKey = "token_uid" | "driver_name" | "total_sessions" | "total_energy_kwh" | "last_used_at";
@@ -149,6 +156,9 @@ export function RfidPage() {
   const [page, setPage] = useState(1);
   const [detail, setDetail] = useState<Token | null>(null);
   const [showCreate, setShowCreate] = useState(false);
+  const [showImportCsv, setShowImportCsv] = useState(false);
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
 
   // KPIs
   const kpis = useMemo(() => {
@@ -180,6 +190,8 @@ export function RfidPage() {
       list = list.filter((t) => t.last_used_at && Date.now() - new Date(t.last_used_at).getTime() < 90 * 86400000);
     } else if (activeTab === "Inactifs") {
       list = list.filter((t) => !t.last_used_at || Date.now() - new Date(t.last_used_at).getTime() >= 90 * 86400000);
+    } else if (activeTab === "Expirés") {
+      list = list.filter((t) => t.status === "expired" || t.status === "blocked");
     }
 
     if (search.trim()) {
@@ -282,6 +294,32 @@ export function RfidPage() {
               className="w-full pl-9 pr-3 py-2.5 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-border-focus transition-colors"
             />
           </div>
+          {/* Story 61: Export CSV */}
+          <button
+            onClick={() => {
+              const rows = filtered.map((t) => ({
+                token_uid: t.token_uid,
+                driver_name: t.driver_name ?? "",
+                status: t.status ?? "",
+                sessions: t.total_sessions,
+                energy_kwh: Number(t.total_energy_kwh).toFixed(1),
+                last_used: t.last_used_at ?? "",
+              }));
+              downloadCSV(rows, `tokens-rfid-${todayISO()}.csv`);
+            }}
+            disabled={filtered.length === 0}
+            className="flex items-center gap-2 px-4 py-2.5 bg-surface-elevated border border-border rounded-xl text-sm font-medium text-foreground-muted hover:text-foreground hover:bg-surface transition-colors whitespace-nowrap disabled:opacity-40"
+          >
+            <Download className="w-4 h-4" />
+            Exporter CSV
+          </button>
+          <button
+            onClick={() => setShowImportCsv(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-surface-elevated border border-border rounded-xl text-sm font-medium text-foreground-muted hover:text-foreground hover:bg-surface transition-colors whitespace-nowrap"
+          >
+            <Upload className="w-4 h-4" />
+            Importer CSV
+          </button>
           <button
             onClick={() => setShowCreate(true)}
             className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors whitespace-nowrap"
@@ -430,6 +468,83 @@ export function RfidPage() {
 
       {/* Create Token Modal */}
       {showCreate && <CreateTokenModal onClose={() => setShowCreate(false)} cpoId={selectedCpoId} onCreated={() => { setShowCreate(false); refetch(); }} />}
+
+      {/* Import CSV Modal */}
+      {showImportCsv && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-lg shadow-2xl">
+            <h2 className="text-lg font-heading font-bold text-foreground mb-2">Importer des tokens (CSV)</h2>
+            <p className="text-sm text-foreground-muted mb-4">
+              Format attendu : token_uid, driver_name, billing_type (prepaid/postpaid), prepaid_amount
+            </p>
+            <input
+              type="file"
+              accept=".csv"
+              disabled={importLoading}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setImportLoading(true);
+                setImportMsg(null);
+                try {
+                  const text = await file.text();
+                  const lines = text.split("\n").filter((l) => l.trim());
+                  if (lines.length < 2) { setImportMsg("Fichier vide ou invalide."); setImportLoading(false); return; }
+                  const headers = lines[0].split(",").map((h) => h.trim().toLowerCase().replace(/"/g, ""));
+                  const rows = lines.slice(1).map((line) => {
+                    const vals = line.split(",").map((v) => v.trim().replace(/^"|"$/g, ""));
+                    const obj: Record<string, string> = {};
+                    headers.forEach((h, i) => { obj[h] = vals[i] ?? ""; });
+                    return obj;
+                  });
+                  const inserts = rows.map((r) => ({
+                    token_uid: r.token_uid || r.uid || "",
+                    driver_name: r.driver_name || r.name || null,
+                    status: "VALID",
+                    total_sessions: 0,
+                    total_energy_kwh: 0,
+                    cpo_id: selectedCpoId || null,
+                    source: "csv_import",
+                  })).filter((r) => r.token_uid);
+
+                  // Also prepare billing inserts
+                  const billingInserts = rows
+                    .filter((r) => (r.billing_type || r.prepaid_amount))
+                    .map((r) => ({
+                      token_uid: r.token_uid || r.uid || "",
+                      billing_type: (r.billing_type || "postpaid") as "prepaid" | "postpaid",
+                      prepaid_amount: r.prepaid_amount ? parseFloat(r.prepaid_amount) : null,
+                      prepaid_balance: r.prepaid_amount ? parseFloat(r.prepaid_amount) : null,
+                      roaming_enabled: false,
+                    }))
+                    .filter((r) => r.token_uid);
+
+                  const { error } = await supabase.from("gfx_tokens").insert(inserts);
+                  if (error) throw error;
+                  if (billingInserts.length > 0) {
+                    await supabase.from("token_billing").insert(billingInserts);
+                  }
+                  setImportMsg(`${inserts.length} token(s) importe(s) avec succes.`);
+                  refetch();
+                } catch (err) {
+                  setImportMsg(`Erreur : ${err instanceof Error ? err.message : "Erreur inconnue"}`);
+                } finally {
+                  setImportLoading(false);
+                }
+              }}
+              className="w-full text-sm text-foreground file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+            />
+            {importMsg && (
+              <p className={`text-sm mt-3 ${importMsg.startsWith("Erreur") ? "text-red-400" : "text-emerald-400"}`}>{importMsg}</p>
+            )}
+            <div className="flex justify-end mt-4">
+              <button onClick={() => { setShowImportCsv(false); setImportMsg(null); }} className="px-4 py-2 text-sm text-foreground-muted hover:text-foreground transition-colors">
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -443,7 +558,98 @@ function TokenDetailDrawer({ token, onClose }: { token: Token; onClose: () => vo
 
   const [showRecharge, setShowRecharge] = useState(false);
   const [rechargeAmount, setRechargeAmount] = useState(50);
+  const [showBlockConfirm, setShowBlockConfirm] = useState(false);
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [transferSearch, setTransferSearch] = useState("");
+  const [selectedTransferDriver, setSelectedTransferDriver] = useState<{ id: string; driver_external_id: string; full_name: string | null; first_name: string | null; last_name: string | null } | null>(null);
   const queryClient = useQueryClient();
+
+  // Story 62: Token usage history
+  const { data: usageHistory } = useQuery<Array<{ id: string; start_date_time: string; location_name: string; total_energy: number; total_cost: number }>>({
+    queryKey: ["token-usage-history", token.token_uid],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("ocpi_cdrs")
+        .select("id, start_date_time, location_name, total_energy, total_cost")
+        .contains("cdr_token", { uid: token.token_uid })
+        .order("start_date_time", { ascending: false })
+        .limit(10);
+      return (data ?? []) as Array<{ id: string; start_date_time: string; location_name: string; total_energy: number; total_cost: number }>;
+    },
+  });
+
+  // Story 63: Block token mutation
+  const blockMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from("gfx_tokens")
+        .update({ status: "blocked" })
+        .eq("id", token.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gfx-tokens"] });
+      setShowBlockConfirm(false);
+      onClose();
+    },
+  });
+
+  // Story 64: Transfer token - driver search
+  const { data: transferDrivers } = useQuery<Array<{ id: string; driver_external_id: string; full_name: string | null; first_name: string | null; last_name: string | null }>>({
+    queryKey: ["transfer-driver-search", transferSearch],
+    enabled: transferSearch.length >= 2 && showTransfer,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("gfx_consumers")
+        .select("id, driver_external_id, full_name, first_name, last_name")
+        .or(`full_name.ilike.%${transferSearch}%,driver_external_id.ilike.%${transferSearch}%,first_name.ilike.%${transferSearch}%,last_name.ilike.%${transferSearch}%`)
+        .limit(10);
+      return (data ?? []) as Array<{ id: string; driver_external_id: string; full_name: string | null; first_name: string | null; last_name: string | null }>;
+    },
+  });
+
+  // Story 64: Transfer mutation
+  const transferMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedTransferDriver) throw new Error("Sélectionnez un conducteur");
+      const driverName = selectedTransferDriver.full_name ?? [selectedTransferDriver.first_name, selectedTransferDriver.last_name].filter(Boolean).join(" ") ?? selectedTransferDriver.driver_external_id;
+      const { error } = await supabase
+        .from("gfx_tokens")
+        .update({
+          driver_external_id: selectedTransferDriver.driver_external_id,
+          driver_name: driverName,
+        })
+        .eq("id", token.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gfx-tokens"] });
+      setShowTransfer(false);
+      onClose();
+    },
+  });
+
+  // Story 66: Renew expired token
+  const renewMutation = useMutation({
+    mutationFn: async () => {
+      const oneYearFromNow = new Date();
+      oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1);
+      // Update token_billing expires_at and reactivate token
+      await supabase
+        .from("token_billing")
+        .update({ expires_at: oneYearFromNow.toISOString() })
+        .eq("token_uid", token.token_uid);
+      const { error } = await supabase
+        .from("gfx_tokens")
+        .update({ status: "active" })
+        .eq("id", token.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gfx-tokens"] });
+      queryClient.invalidateQueries({ queryKey: ["token-billing", token.token_uid] });
+    },
+  });
 
   // Query billing info for this token
   const { data: billing, isLoading: billingLoading } = useQuery<TokenBilling | null>({
@@ -666,6 +872,107 @@ function TokenDetailDrawer({ token, onClose }: { token: Token; onClose: () => vo
             {token.last_used_at && <DetailItem label="Dernière utilisation" value={formatRelativeDate(token.last_used_at)} />}
           </div>
 
+          {/* Story 62: Usage History */}
+          {usageHistory && usageHistory.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">
+                <Clock className="w-3.5 h-3.5 inline mr-1" />
+                Dernières sessions
+              </p>
+              <div className="space-y-1.5">
+                {usageHistory.map((s) => (
+                  <div key={s.id} className="flex items-center justify-between text-xs py-2 px-3 bg-surface-elevated border border-border rounded-lg">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-foreground font-medium truncate">{s.location_name ?? "Station"}</p>
+                      <p className="text-foreground-muted">{new Date(s.start_date_time).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" })}</p>
+                    </div>
+                    <div className="text-right shrink-0 ml-3">
+                      <p className="text-foreground font-medium">{Number(s.total_energy).toFixed(1)} kWh</p>
+                      <p className="text-foreground-muted">{Number(s.total_cost).toFixed(2)} €</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Story 63/64/66: Action Buttons */}
+          <div className="space-y-2 pt-3 border-t border-border">
+            <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Actions</p>
+            <div className="flex flex-wrap gap-2">
+              {/* Story 63: Block token */}
+              {token.status !== "blocked" && (
+                <button
+                  onClick={() => setShowBlockConfirm(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg text-xs font-medium hover:bg-red-500/20 transition-colors"
+                >
+                  <Ban className="w-3.5 h-3.5" />
+                  Bloquer
+                </button>
+              )}
+              {/* Story 64: Transfer token */}
+              <button
+                onClick={() => setShowTransfer(true)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-lg text-xs font-medium hover:bg-blue-500/20 transition-colors"
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5" />
+                Transférer
+              </button>
+              {/* Story 66: Renew token */}
+              {(token.status === "expired" || token.status === "blocked") && (
+                <button
+                  onClick={() => renewMutation.mutate()}
+                  disabled={renewMutation.isPending}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-medium hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw className={cn("w-3.5 h-3.5", renewMutation.isPending && "animate-spin")} />
+                  Renouveler
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Story 64: Transfer panel */}
+          {showTransfer && (
+            <div className="p-3 bg-surface-elevated border border-border rounded-xl space-y-3">
+              <label className="block text-xs font-medium text-foreground-muted">Transférer vers un conducteur</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-foreground-muted" />
+                <input
+                  type="text"
+                  placeholder="Rechercher un conducteur..."
+                  value={selectedTransferDriver ? (selectedTransferDriver.full_name ?? selectedTransferDriver.driver_external_id) : transferSearch}
+                  onChange={(e) => { setTransferSearch(e.target.value); setSelectedTransferDriver(null); }}
+                  className="w-full pl-8 pr-3 py-2 bg-surface border border-border rounded-lg text-sm text-foreground focus:outline-none focus:border-border-focus"
+                />
+                {transferDrivers && transferDrivers.length > 0 && !selectedTransferDriver && (
+                  <div className="absolute z-10 mt-1 w-full bg-surface border border-border rounded-lg shadow-lg max-h-36 overflow-y-auto">
+                    {transferDrivers.map((d) => (
+                      <button
+                        key={d.id}
+                        onClick={() => { setSelectedTransferDriver(d); setTransferSearch(""); }}
+                        className="w-full px-3 py-2 text-left hover:bg-surface-elevated text-sm text-foreground"
+                      >
+                        {d.full_name ?? [d.first_name, d.last_name].filter(Boolean).join(" ") ?? d.driver_external_id}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setShowTransfer(false)} className="flex-1 px-3 py-2 text-sm text-foreground-muted hover:text-foreground transition-colors">Annuler</button>
+                <button
+                  onClick={() => transferMutation.mutate()}
+                  disabled={!selectedTransferDriver || transferMutation.isPending}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-500 disabled:opacity-40 transition-colors"
+                >
+                  {transferMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5" />}
+                  Transférer
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* ID technique */}
           <div className="pt-3 border-t border-border">
             <p className="text-xs text-foreground-muted">
@@ -679,6 +986,19 @@ function TokenDetailDrawer({ token, onClose }: { token: Token; onClose: () => vo
           </div>
         </div>
       </div>
+
+      {/* Story 63: Block confirmation dialog */}
+      <ConfirmDialog
+        open={showBlockConfirm}
+        onConfirm={() => blockMutation.mutate()}
+        onCancel={() => setShowBlockConfirm(false)}
+        title="Bloquer ce token"
+        description={`Êtes-vous sûr de vouloir bloquer le token ${formatTokenId(token.token_uid)} ? Il ne pourra plus être utilisé pour charger.`}
+        confirmLabel="Bloquer"
+        variant="danger"
+        loading={blockMutation.isPending}
+        loadingLabel="Blocage..."
+      />
     </>
   );
 }

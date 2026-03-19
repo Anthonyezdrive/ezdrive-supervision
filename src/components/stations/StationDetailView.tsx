@@ -50,7 +50,7 @@ import { apiPost, apiDelete } from "@/lib/api";
 import type { Station, OCPPStatus } from "@/types/station";
 import QRCode from "qrcode";
 
-type DetailTab = "details" | "diagnostic" | "billing" | "configuration" | "authorization" | "scheduling";
+type DetailTab = "details" | "diagnostic" | "billing" | "configuration" | "authorization" | "scheduling" | "ocpp_logs";
 
 interface Props {
   station: Station;
@@ -254,6 +254,7 @@ export function StationDetailView({ station, onBack, onEdit, onDeleted }: Props)
     { key: "configuration", label: "Configuration" },
     { key: "authorization", label: "Autorisation" },
     { key: "scheduling", label: "Planification d'etat" },
+    { key: "ocpp_logs", label: "OCPP Logs" },
   ];
 
   // Dropdown state
@@ -419,6 +420,149 @@ export function StationDetailView({ station, onBack, onEdit, onDeleted }: Props)
       {activeTab === "configuration" && <ConfigurationTab station={station} onCommand={sendCommand} cmdLoading={cmdLoading} />}
       {activeTab === "authorization" && <AuthorizationTab station={station} />}
       {activeTab === "scheduling" && <SchedulingTab station={station} />}
+      {activeTab === "ocpp_logs" && <OcppLogsTab station={station} />}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// OCPP LOGS TAB
+// ══════════════════════════════════════════════════════════════
+
+function OcppLogsTab({ station }: { station: Station }) {
+  const chargepointId = (station as any).ocpp_identity ?? station.gfx_id;
+  const [logTimeRange, setLogTimeRange] = useState("24h");
+
+  const logTimeFilter = useMemo(() => {
+    const now = new Date();
+    if (logTimeRange === "7d") return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    if (logTimeRange === "30d") return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    return new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+  }, [logTimeRange]);
+
+  // OCPP commands as "logs" — combines status changes + commands
+  const { data: statusLogs } = useQuery({
+    queryKey: ["ocpp-logs-status", station.id, logTimeFilter],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("station_status_log")
+        .select("*")
+        .eq("station_id", station.id)
+        .gte("changed_at", logTimeFilter)
+        .order("changed_at", { ascending: false })
+        .limit(100);
+      return (data ?? []) as Array<{ id: string; previous_status: string | null; new_status: string; changed_at: string; connector_id?: number }>;
+    },
+  });
+
+  const { data: commandLogs } = useQuery({
+    queryKey: ["ocpp-logs-cmds", chargepointId, logTimeFilter],
+    queryFn: async () => {
+      if (!chargepointId) return [];
+      const { data } = await supabase
+        .from("ocpp_command_queue")
+        .select("*")
+        .eq("chargepoint_id", chargepointId)
+        .gte("created_at", logTimeFilter)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      return (data ?? []) as Array<{ id: string; command: string; payload: unknown; status: string; created_at: string; response: unknown }>;
+    },
+    enabled: !!chargepointId,
+  });
+
+  // Merge and sort all logs
+  const allLogs = useMemo(() => {
+    const logs: Array<{ id: string; timestamp: string; type: string; direction: string; payload: string }> = [];
+    for (const s of statusLogs ?? []) {
+      logs.push({
+        id: s.id,
+        timestamp: s.changed_at,
+        type: "StatusNotification",
+        direction: "IN",
+        payload: `${s.previous_status ?? "?"} → ${s.new_status}${s.connector_id != null ? ` (connecteur ${s.connector_id})` : ""}`,
+      });
+    }
+    for (const c of commandLogs ?? []) {
+      logs.push({
+        id: c.id,
+        timestamp: c.created_at,
+        type: c.command,
+        direction: "OUT",
+        payload: typeof c.payload === "string" ? c.payload : JSON.stringify(c.payload ?? {}).slice(0, 120),
+      });
+      if (c.response) {
+        logs.push({
+          id: c.id + "-resp",
+          timestamp: c.created_at,
+          type: c.command + " Response",
+          direction: "IN",
+          payload: typeof c.response === "string" ? c.response : JSON.stringify(c.response).slice(0, 120),
+        });
+      }
+    }
+    return logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }, [statusLogs, commandLogs]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-heading font-bold text-foreground">Logs OCPP</h3>
+        <div className="flex gap-1">
+          {["24h", "7d", "30d"].map((r) => (
+            <button
+              key={r}
+              onClick={() => setLogTimeRange(r)}
+              className={cn(
+                "px-3 py-1 rounded-lg text-xs font-medium border transition-all",
+                logTimeRange === r ? "bg-primary/15 text-primary border-primary/30" : "text-foreground-muted border-border hover:border-foreground-muted"
+              )}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {allLogs.length === 0 ? (
+        <div className="bg-surface border border-border rounded-xl py-12 text-center">
+          <Terminal className="w-8 h-8 text-foreground-muted/30 mx-auto mb-2" />
+          <p className="text-sm text-foreground-muted">Aucun log OCPP sur cette periode</p>
+        </div>
+      ) : (
+        <div className="bg-surface border border-border rounded-xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-foreground-muted">Timestamp</th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-foreground-muted">Type</th>
+                <th className="text-center px-4 py-2.5 text-xs font-medium text-foreground-muted">Direction</th>
+                <th className="text-left px-4 py-2.5 text-xs font-medium text-foreground-muted">Payload</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/50">
+              {allLogs.map((log) => (
+                <tr key={log.id} className="hover:bg-surface-elevated/50 transition-colors">
+                  <td className="px-4 py-2 text-xs text-foreground-muted font-mono whitespace-nowrap">
+                    {new Date(log.timestamp).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                  </td>
+                  <td className="px-4 py-2">
+                    <span className="text-xs font-medium text-foreground">{log.type}</span>
+                  </td>
+                  <td className="px-4 py-2 text-center">
+                    <span className={cn("px-2 py-0.5 rounded text-[10px] font-semibold", log.direction === "IN" ? "bg-blue-500/10 text-blue-400" : "bg-orange-500/10 text-orange-400")}>
+                      {log.direction === "IN" ? "← IN" : "→ OUT"}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-xs text-foreground-muted font-mono truncate max-w-[300px]">
+                    {log.payload}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

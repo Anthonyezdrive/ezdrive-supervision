@@ -18,6 +18,10 @@ import {
   ChevronRight,
   ChevronLeft,
   AlertCircle,
+  CreditCard,
+  Filter,
+  Calculator,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/contexts/ToastContext";
@@ -475,6 +479,62 @@ export function OcpiPage() {
     );
   }
 
+  // ── Stories 86-89 state ──
+  const [listTab, setListTab] = useState<"normal" | "partner_tokens" | "retribution" | "errors">("normal");
+
+  // Story 86: Partner eMSP tokens
+  const { data: partnerTokens } = useQuery({
+    queryKey: ["ocpi-partner-tokens"],
+    enabled: listTab === "partner_tokens",
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("ocpi_tokens")
+        .select("*")
+        .neq("issuer", "EZdrive")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      return data ?? [];
+    },
+  });
+
+  // Story 88: Roaming retribution
+  const { data: retributionData } = useQuery({
+    queryKey: ["ocpi-retribution"],
+    enabled: listTab === "retribution",
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("ocpi_cdrs")
+        .select("emsp_name, total_cost, total_energy")
+        .not("emsp_name", "is", null);
+      if (!data) return [];
+      // Group by eMSP
+      const byEmsp: Record<string, { sessions: number; energy: number; cost: number }> = {};
+      for (const cdr of data) {
+        const emsp = (cdr.emsp_name as string) ?? "Inconnu";
+        if (!byEmsp[emsp]) byEmsp[emsp] = { sessions: 0, energy: 0, cost: 0 };
+        byEmsp[emsp].sessions++;
+        byEmsp[emsp].energy += Number(cdr.total_energy) || 0;
+        byEmsp[emsp].cost += Number(cdr.total_cost) || 0;
+      }
+      return Object.entries(byEmsp).map(([emsp, data]) => ({ emsp, ...data })).sort((a, b) => b.cost - a.cost);
+    },
+  });
+
+  // Story 89: Sync errors
+  const { data: syncErrors } = useQuery({
+    queryKey: ["ocpi-sync-errors"],
+    enabled: listTab === "errors",
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("ocpi_push_log")
+        .select("*")
+        .or("response_status.gte.400,response_status.is.null")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      return data ?? [];
+    },
+  });
+
   // ════════════════════════════════════════════════════════════
   // LIST VIEW
   // ════════════════════════════════════════════════════════════
@@ -488,16 +548,150 @@ export function OcpiPage() {
         </h1>
       </div>
 
-      {/* Tab */}
+      {/* Tabs: Stories 86, 88, 89 */}
       <div className="flex gap-1 border-b border-border">
-        <button className="px-4 py-2.5 text-sm font-medium text-primary relative">
-          Normal
-          <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
-        </button>
+        {([
+          { key: "normal" as const, label: "Abonnements" },
+          { key: "partner_tokens" as const, label: "Tokens partenaires" },
+          { key: "retribution" as const, label: "Rétribution roaming" },
+          { key: "errors" as const, label: "Erreurs sync" },
+        ]).map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setListTab(tab.key)}
+            className={cn(
+              "px-4 py-2.5 text-sm font-medium transition-colors relative",
+              listTab === tab.key ? "text-primary" : "text-foreground-muted hover:text-foreground"
+            )}
+          >
+            {tab.label}
+            {listTab === tab.key && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />}
+          </button>
+        ))}
       </div>
 
+      {/* Story 86: Partner Tokens Tab */}
+      {listTab === "partner_tokens" && (
+        <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-border">
+            <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-primary" />
+              Tokens eMSP partenaires
+            </h2>
+          </div>
+          {partnerTokens && partnerTokens.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-border">
+                  <th className={thClass}>UID</th>
+                  <th className={thClass}>Issuer</th>
+                  <th className={thClass}>Type</th>
+                  <th className={thClass}>Status</th>
+                  <th className={thClass}>Créé le</th>
+                </tr></thead>
+                <tbody className="divide-y divide-border">
+                  {partnerTokens.map((t) => (
+                    <tr key={t.id as string} className="hover:bg-surface-elevated/50 transition-colors">
+                      <td className="px-3 py-2.5 text-sm font-mono text-foreground truncate max-w-[200px]">{t.uid as string}</td>
+                      <td className="px-3 py-2.5 text-sm text-foreground-muted">{(t.issuer as string) ?? "—"}</td>
+                      <td className="px-3 py-2.5 text-sm text-foreground-muted">{(t.type as string) ?? "RFID"}</td>
+                      <td className="px-3 py-2.5"><span className="px-2 py-0.5 rounded text-xs font-medium bg-emerald-500/15 text-emerald-400">{(t.valid as boolean) ? "Valide" : "Invalide"}</span></td>
+                      <td className="px-3 py-2.5 text-sm text-foreground-muted">{t.created_at ? new Date(t.created_at as string).toLocaleDateString("fr-FR") : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="p-8 text-center text-foreground-muted">Aucun token partenaire</div>
+          )}
+        </div>
+      )}
+
+      {/* Story 88: Retribution Tab */}
+      {listTab === "retribution" && (
+        <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-border">
+            <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+              <Calculator className="w-4 h-4 text-primary" />
+              Rétribution par eMSP partenaire
+            </h2>
+          </div>
+          {retributionData && retributionData.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-border">
+                  <th className={thClass}>eMSP Partenaire</th>
+                  <th className={cn(thClass, "text-right")}>Sessions</th>
+                  <th className={cn(thClass, "text-right")}>Énergie (kWh)</th>
+                  <th className={cn(thClass, "text-right")}>Montant dû (€)</th>
+                </tr></thead>
+                <tbody className="divide-y divide-border">
+                  {retributionData.map((r) => (
+                    <tr key={r.emsp} className="hover:bg-surface-elevated/50 transition-colors">
+                      <td className="px-3 py-2.5 text-sm font-medium text-foreground">{r.emsp}</td>
+                      <td className="px-3 py-2.5 text-sm text-foreground-muted text-right tabular-nums">{r.sessions.toLocaleString("fr-FR")}</td>
+                      <td className="px-3 py-2.5 text-sm text-foreground-muted text-right tabular-nums">{r.energy.toFixed(1)}</td>
+                      <td className="px-3 py-2.5 text-sm text-foreground font-semibold text-right tabular-nums">{r.cost.toFixed(2)} €</td>
+                    </tr>
+                  ))}
+                  <tr className="bg-surface-elevated/30 font-bold">
+                    <td className="px-3 py-2.5 text-sm text-foreground">Total</td>
+                    <td className="px-3 py-2.5 text-sm text-foreground text-right tabular-nums">{retributionData.reduce((s, r) => s + r.sessions, 0).toLocaleString("fr-FR")}</td>
+                    <td className="px-3 py-2.5 text-sm text-foreground text-right tabular-nums">{retributionData.reduce((s, r) => s + r.energy, 0).toFixed(1)}</td>
+                    <td className="px-3 py-2.5 text-sm text-foreground text-right tabular-nums">{retributionData.reduce((s, r) => s + r.cost, 0).toFixed(2)} €</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="p-8 text-center text-foreground-muted">Aucune donnée de rétribution</div>
+          )}
+        </div>
+      )}
+
+      {/* Story 89: Sync Errors Tab */}
+      {listTab === "errors" && (
+        <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-border">
+            <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-400" />
+              Erreurs de synchronisation OCPI
+            </h2>
+          </div>
+          {syncErrors && syncErrors.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-border">
+                  <th className={thClass}>Date</th>
+                  <th className={thClass}>Module</th>
+                  <th className={thClass}>Action</th>
+                  <th className={thClass}>Path</th>
+                  <th className={thClass}>Status</th>
+                  <th className={thClass}>Erreur</th>
+                </tr></thead>
+                <tbody className="divide-y divide-border">
+                  {syncErrors.map((log) => (
+                    <tr key={log.id as string} className="hover:bg-surface-elevated/50 transition-colors">
+                      <td className="px-3 py-2.5 text-xs text-foreground-muted whitespace-nowrap">{new Date(log.created_at as string).toLocaleString("fr-FR")}</td>
+                      <td className="px-3 py-2.5 text-xs font-medium text-foreground">{log.module as string}</td>
+                      <td className="px-3 py-2.5"><span className="px-2 py-0.5 rounded bg-red-500/15 text-red-400 text-xs font-medium">{log.action as string}</span></td>
+                      <td className="px-3 py-2.5 font-mono text-xs text-foreground-muted truncate max-w-[200px]">{log.ocpi_path as string}</td>
+                      <td className="px-3 py-2.5"><span className="px-2 py-0.5 rounded bg-red-500/15 text-red-400 text-xs font-medium">{(log.response_status as number) ?? "N/A"}</span></td>
+                      <td className="px-3 py-2.5 text-xs text-red-400 truncate max-w-[200px]">{(log.error_message as string) ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="p-8 text-center text-foreground-muted">Aucune erreur de synchronisation</div>
+          )}
+        </div>
+      )}
+
       {/* Error banner */}
-      {isError && (
+      {listTab === "normal" && isError && (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 mx-6 mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2 text-red-700">
             <AlertCircle className="h-5 w-5" />
@@ -510,7 +704,7 @@ export function OcpiPage() {
       )}
 
       {/* Table */}
-      {isLoading ? (
+      {listTab === "normal" && isLoading ? (
         <div className="bg-surface border border-border rounded-2xl overflow-hidden divide-y divide-border">
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="px-4 py-3.5 flex items-center gap-6">
@@ -524,13 +718,13 @@ export function OcpiPage() {
             </div>
           ))}
         </div>
-      ) : processed.length === 0 ? (
+      ) : listTab === "normal" && processed.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-48 bg-surface border border-border rounded-2xl">
           <Globe className="w-10 h-10 text-foreground-muted mb-3" />
           <p className="text-foreground font-medium">Aucun abonnement OCPI</p>
           <p className="text-sm text-foreground-muted mt-1">Configurez vos credentials OCPI pour commencer.</p>
         </div>
-      ) : (
+      ) : listTab === "normal" ? (
         <div className="bg-surface border border-border rounded-2xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -653,7 +847,7 @@ export function OcpiPage() {
             </div>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

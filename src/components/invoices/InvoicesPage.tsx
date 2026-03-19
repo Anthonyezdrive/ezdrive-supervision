@@ -13,7 +13,19 @@ import {
   Receipt,
   Loader2,
   Calendar,
+  Send,
+  Ban,
+  BarChart3,
+  Upload,
 } from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip as RechartsTooltip,
+  ResponsiveContainer,
+} from "recharts";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
@@ -287,6 +299,73 @@ export function InvoicesPage() {
     };
   }, [invoices]);
 
+  // --- Revenue chart data by month ---
+  const revenueByMonth = useMemo(() => {
+    if (!invoices?.length) return [];
+    const grouped: Record<string, number> = {};
+    for (const inv of invoices) {
+      if (inv.status === "cancelled") continue;
+      const month = new Date(inv.period_start).toLocaleDateString("fr-FR", { month: "short", year: "2-digit" });
+      grouped[month] = (grouped[month] ?? 0) + inv.total_cents;
+    }
+    return Object.entries(grouped)
+      .map(([month, cents]) => ({ month, total: cents / 100 }))
+      .reverse()
+      .slice(-12);
+  }, [invoices]);
+
+  // --- Invoice action handlers ---
+  const handleMarkPaid = useCallback(async (invoiceId: string) => {
+    try {
+      await supabase.from("invoices").update({ status: "paid", paid_at: new Date().toISOString() }).eq("id", invoiceId);
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+    } catch (err) { console.error("[Invoice] mark paid error:", err); }
+  }, [queryClient]);
+
+  const handleSendInvoice = useCallback(async (invoiceId: string) => {
+    try {
+      await apiPost(`invoices/${invoiceId}/send`, {});
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      alert("Facture envoyee par email.");
+    } catch (err) {
+      console.error("[Invoice] send error:", err);
+      alert("Erreur lors de l'envoi.");
+    }
+  }, [queryClient]);
+
+  const handleCreditNote = useCallback(async (invoiceId: string) => {
+    try {
+      await supabase.from("invoices").update({ status: "cancelled" }).eq("id", invoiceId);
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      alert("Avoir cree (facture annulee).");
+    } catch (err) { console.error("[Invoice] credit note error:", err); }
+  }, [queryClient]);
+
+  const handleExportPennylane = useCallback(() => {
+    if (!invoices?.length) return;
+    const header = "Date,Numero,Client,Montant HT,TVA,Montant TTC,Compte,Journal\n";
+    const rows = invoices.map((inv) =>
+      [
+        inv.issued_at ?? inv.created_at,
+        inv.invoice_number,
+        [inv.all_consumers?.first_name, inv.all_consumers?.last_name].filter(Boolean).join(" ") || "",
+        (inv.subtotal_cents / 100).toFixed(2),
+        (inv.vat_cents / 100).toFixed(2),
+        (inv.total_cents / 100).toFixed(2),
+        "706100",
+        "VE",
+      ].join(",")
+    );
+    const csv = header + rows.join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "export-pennylane-ezdrive.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [invoices]);
+
   // --- Filtering & Pagination -----------------------------------------
 
   const filtered = useMemo(() => {
@@ -398,8 +477,8 @@ export function InvoicesPage() {
       />
 
       {/* ── Header Actions ─────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-end gap-2">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-end gap-2 flex-wrap">
+        <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={handleExportCSV}
             disabled={isLoading || !invoices?.length}
@@ -409,12 +488,28 @@ export function InvoicesPage() {
             Exporter CSV
           </button>
           <button
+            onClick={handleExportPennylane}
+            disabled={isLoading || !invoices?.length}
+            className="flex items-center gap-2 px-3 py-2 bg-surface border border-border rounded-xl text-sm text-foreground-muted hover:text-foreground hover:border-foreground-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <Upload className="w-4 h-4" />
+            Pennylane
+          </button>
+          <button
+            disabled
+            title="Necessite la configuration de l'API Zoho"
+            className="flex items-center gap-2 px-3 py-2 bg-surface border border-border rounded-xl text-sm text-foreground-muted transition-colors opacity-40 cursor-not-allowed"
+          >
+            <Upload className="w-4 h-4" />
+            Sync Zoho
+          </button>
+          <button
             onClick={() => setShowGenerateModal(true)}
             disabled={isLoading}
             className="flex items-center gap-2 px-4 py-2 bg-primary/10 border border-primary/20 text-primary rounded-xl text-sm font-medium hover:bg-primary/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Receipt className="w-4 h-4" />
-            Générer factures
+            Generer factures
           </button>
         </div>
       </div>
@@ -454,6 +549,28 @@ export function InvoicesPage() {
           />
         </div>
       ) : null}
+
+      {/* ── Revenue Chart ─────────────────────────────────────────── */}
+      {revenueByMonth.length > 0 && (
+        <div className="bg-surface border border-border rounded-2xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <BarChart3 className="w-4 h-4 text-primary" />
+            <h3 className="text-sm font-heading font-bold text-foreground">Revenu par mois</h3>
+          </div>
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={revenueByMonth}>
+              <XAxis dataKey="month" tick={{ fill: "#8892B0", fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "#8892B0", fontSize: 10 }} axisLine={false} tickLine={false} width={60} tickFormatter={(v: number) => `${v.toFixed(0)}€`} />
+              <RechartsTooltip
+                contentStyle={{ background: "#161B22", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 12 }}
+                labelStyle={{ color: "#ccc" }}
+                formatter={(value: number) => [`${value.toFixed(2)} €`, "Revenu"]}
+              />
+              <Bar dataKey="total" fill="#00D4AA" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {/* ── Tab Filters ────────────────────────────────────────────── */}
       <div className="flex items-center gap-1 bg-surface border border-border rounded-xl p-1">
@@ -615,20 +732,45 @@ export function InvoicesPage() {
                       </span>
                     </td>
 
-                    {/* PDF action */}
+                    {/* Actions */}
                     <td className="px-4 py-3.5">
-                      <button
-                        onClick={() => handleDownloadPDF(inv.id)}
-                        disabled={pdfLoading === inv.id}
-                        title="Télécharger PDF"
-                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated transition-all disabled:opacity-50"
-                      >
-                        {pdfLoading === inv.id ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <FileDown className="w-4 h-4" />
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                        <button
+                          onClick={() => handleDownloadPDF(inv.id)}
+                          disabled={pdfLoading === inv.id}
+                          title="Telecharger PDF"
+                          className="p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated transition-all disabled:opacity-50"
+                        >
+                          {pdfLoading === inv.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+                        </button>
+                        {inv.status === "draft" && (
+                          <button
+                            onClick={() => handleSendInvoice(inv.id)}
+                            title="Envoyer par email"
+                            className="p-1.5 rounded-lg text-foreground-muted hover:text-blue-400 hover:bg-blue-500/10 transition-all"
+                          >
+                            <Send className="w-4 h-4" />
+                          </button>
                         )}
-                      </button>
+                        {(inv.status === "issued" || inv.status === "draft") && (
+                          <button
+                            onClick={() => handleMarkPaid(inv.id)}
+                            title="Marquer comme payee"
+                            className="p-1.5 rounded-lg text-foreground-muted hover:text-status-available hover:bg-status-available/10 transition-all"
+                          >
+                            <CheckCircle className="w-4 h-4" />
+                          </button>
+                        )}
+                        {inv.status !== "cancelled" && (
+                          <button
+                            onClick={() => handleCreditNote(inv.id)}
+                            title="Creer un avoir"
+                            className="p-1.5 rounded-lg text-foreground-muted hover:text-danger hover:bg-danger/10 transition-all"
+                          >
+                            <Ban className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

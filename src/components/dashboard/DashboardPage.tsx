@@ -19,6 +19,8 @@ import {
   Trophy,
   ThumbsDown,
   MapPin,
+  Printer,
+  GitCompare,
 } from "lucide-react";
 import {
   BarChart,
@@ -120,6 +122,11 @@ export function DashboardPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>(getDefaultTimeRange);
   const [customFrom, setCustomFrom] = useState(timeRange.from);
   const [customTo, setCustomTo] = useState(timeRange.to);
+
+  // ── Compare mode state ──────────────────────────────
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareFrom, setCompareFrom] = useState("");
+  const [compareTo, setCompareTo] = useState("");
 
   const handleFilterChange = (filter: TimeFilter) => {
     if (filter === "custom") {
@@ -238,6 +245,32 @@ export function DashboardPage() {
         totalRevenue: totalRevenue > 0 ? totalRevenue : Math.round(totalRevenueCdr * 100),
         totalEnergy,
         activeSubscriptions: subsRes.count ?? 0,
+      };
+    },
+    staleTime: 30000,
+  });
+
+  // ── Compare period metrics (lightweight CDR count + energy + revenue) ─
+  const { data: compareMetrics } = useQuery({
+    queryKey: ["dashboard-compare-metrics", selectedCpoId ?? "all", compareFrom, compareTo],
+    retry: false,
+    enabled: compareMode && !!compareFrom && !!compareTo,
+    queryFn: async () => {
+      const nameFilter = cpoStationNames?.slice(0, 50);
+      let query = supabase.from("ocpi_cdrs").select("total_energy, total_cost")
+        .gte("start_date_time", compareFrom)
+        .lte("start_date_time", compareTo + "T23:59:59");
+      if (nameFilter && nameFilter.length > 0) {
+        query = query.in("cdr_location->>name", nameFilter);
+      } else if (selectedCpoId) {
+        query = query.eq("id", "00000000-0000-0000-0000-000000000000");
+      }
+      const { data } = await query.limit(50000);
+      const cdrs = (data ?? []) as Array<{ total_energy?: number; total_cost?: number }>;
+      return {
+        totalSessions: cdrs.length,
+        totalEnergy: cdrs.reduce((s, c) => s + (c.total_energy ?? 0), 0),
+        totalRevenue: Math.round(cdrs.reduce((s, c) => s + (c.total_cost ?? 0), 0) * 100),
       };
     },
     staleTime: 30000,
@@ -677,10 +710,59 @@ export function DashboardPage() {
             </div>
           )}
 
+          {/* Compare toggle */}
+          <button
+            onClick={() => setCompareMode(!compareMode)}
+            className={cn(
+              "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ml-2",
+              compareMode
+                ? "bg-purple-500/15 text-purple-400 border-purple-500/30"
+                : "text-foreground-muted border-border hover:border-foreground-muted"
+            )}
+          >
+            <GitCompare className="w-3.5 h-3.5" />
+            Comparer
+          </button>
+
+          {/* PDF export */}
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border text-foreground-muted hover:border-foreground-muted hover:text-foreground transition-all"
+          >
+            <Printer className="w-3.5 h-3.5" />
+            Exporter PDF
+          </button>
+
           <span className="text-[10px] text-foreground-muted ml-auto">
             {new Date(timeRange.from).toLocaleDateString("fr-FR")} — {new Date(timeRange.to).toLocaleDateString("fr-FR")}
           </span>
         </div>
+
+        {/* Compare period picker */}
+        {compareMode && (
+          <div className="flex items-center gap-3 mt-3 pt-3 border-t border-border/50 flex-wrap">
+            <GitCompare className="w-4 h-4 text-purple-400 shrink-0" />
+            <span className="text-xs font-medium text-purple-400 shrink-0">Comparer avec :</span>
+            <input
+              type="date"
+              value={compareFrom}
+              onChange={(e) => setCompareFrom(e.target.value)}
+              className="bg-surface-elevated border border-border rounded-lg px-2 py-1 text-xs text-foreground"
+            />
+            <span className="text-xs text-foreground-muted">au</span>
+            <input
+              type="date"
+              value={compareTo}
+              onChange={(e) => setCompareTo(e.target.value)}
+              className="bg-surface-elevated border border-border rounded-lg px-2 py-1 text-xs text-foreground"
+            />
+            {compareMetrics && (
+              <span className="text-[10px] text-purple-400 ml-auto">
+                Période de comparaison : {compareMetrics.totalSessions} sessions
+              </span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Station Status KPIs ─────────────────────────── */}
@@ -696,8 +778,8 @@ export function DashboardPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <MetricCard icon={Users} label="Clients inscrits" value={businessMetrics?.totalCustomers ?? 0} color="#9B59B6" />
         <MetricCard icon={CreditCard} label="Abonnements actifs" value={businessMetrics?.activeSubscriptions ?? 0} color="#3498DB" />
-        <MetricCard icon={Zap} label="Énergie totale" value={`${((businessMetrics?.totalEnergy ?? 0) / 1000).toFixed(1)} MWh`} color="#F39C12" />
-        <MetricCard icon={TrendingUp} label="Revenu total" value={`${((businessMetrics?.totalRevenue ?? 0) / 100).toLocaleString("fr-FR")} €`} color="#00D4AA" />
+        <MetricCard icon={Zap} label="Énergie totale" value={`${((businessMetrics?.totalEnergy ?? 0) / 1000).toFixed(1)} MWh`} color="#F39C12" compareValue={compareMode && compareMetrics ? compareMetrics.totalEnergy / 1000 : undefined} />
+        <MetricCard icon={TrendingUp} label="Revenu total" value={`${((businessMetrics?.totalRevenue ?? 0) / 100).toLocaleString("fr-FR")} €`} color="#00D4AA" compareValue={compareMode && compareMetrics ? compareMetrics.totalRevenue / 100 : undefined} />
       </div>
 
       {/* ── New KPIs: Occupation, Avg kWh, kWh by Territory ── */}
@@ -1165,12 +1247,18 @@ function MetricCard({
   label,
   value,
   color,
+  compareValue,
 }: {
   icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
   label: string;
   value: string | number;
   color: string;
+  compareValue?: number | null;
 }) {
+  const pctChange = compareValue != null && compareValue > 0
+    ? (((typeof value === "number" ? value : 0) - compareValue) / compareValue) * 100
+    : null;
+
   return (
     <div className="bg-surface border border-border rounded-xl p-4 flex items-center gap-3">
       <div
@@ -1180,7 +1268,15 @@ function MetricCard({
         <Icon className="w-4.5 h-4.5" style={{ color }} />
       </div>
       <div>
-        <p className="text-sm font-heading font-bold text-foreground">{value}</p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-heading font-bold text-foreground">{value}</p>
+          {pctChange != null && (
+            <span className={cn("text-[10px] font-semibold flex items-center gap-0.5", pctChange >= 0 ? "text-status-available" : "text-danger")}>
+              {pctChange >= 0 ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+              {Math.abs(pctChange).toFixed(0)}%
+            </span>
+          )}
+        </div>
         <p className="text-[11px] text-foreground-muted">{label}</p>
       </div>
     </div>

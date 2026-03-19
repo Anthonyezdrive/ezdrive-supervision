@@ -16,6 +16,10 @@ import {
   Loader2,
   AlertCircle,
   Link2,
+  Copy,
+  Calculator,
+  History,
+  Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -73,6 +77,8 @@ export function TariffsPage() {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showCreateOcpiModal, setShowCreateOcpiModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<StationTariffRow | null>(null);
+  const [showSimulateModal, setShowSimulateModal] = useState(false);
+  const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
 
   // ── Resolve station IDs for selected CPO ──
   const { data: cpoStationIds } = useQuery({
@@ -173,6 +179,48 @@ export function TariffsPage() {
     onError: (err: Error) => toastError(err.message),
   });
 
+  // ── Duplicate tariff mutation ──
+  const duplicateMutation = useMutation({
+    mutationFn: async (tariff: OcpiTariff) => {
+      const { id, created_at, ...rest } = tariff;
+      const newTariffId = tariff.tariff_id + "-COPY-" + Date.now().toString(36).slice(-4).toUpperCase();
+      const { error } = await supabase.from("ocpi_tariffs").insert({ ...rest, tariff_id: newTariffId });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ocpi-tariffs"] });
+      toastSuccess("Tarif duplique avec succes");
+    },
+    onError: (err: Error) => toastError(err.message),
+  });
+
+  // ── Bulk assign tariff to territory ──
+  const bulkAssignMutation = useMutation({
+    mutationFn: async ({ tariffId, territoryCode }: { tariffId: string; territoryCode: string }) => {
+      // Get all stations in territory
+      const { data: stns } = await supabase.from("stations")
+        .select("id")
+        .eq("territory_code", territoryCode);
+      if (!stns?.length) throw new Error("Aucune station dans ce territoire");
+      const inserts = stns.map((s: { id: string }) => ({
+        station_id: s.id,
+        tariff_id: tariffId,
+        connector_type: null,
+        priority: 1,
+        source: "bulk_assign",
+      }));
+      const { error } = await supabase.from("station_tariffs").insert(inserts);
+      if (error) throw error;
+      return inserts.length;
+    },
+    onSuccess: (count) => {
+      queryClient.invalidateQueries({ queryKey: ["station-tariffs"] });
+      toastSuccess(`Tarif assigne a ${count} station(s)`);
+      setShowBulkAssignModal(false);
+    },
+    onError: (err: Error) => toastError(err.message),
+  });
+
   // ── Filtered data ──
   const filteredStation = useMemo(() => {
     if (!stationTariffs) return [];
@@ -223,23 +271,39 @@ export function TariffsPage() {
             Configuration des tarifs de recharge
           </p>
         </div>
-        {activeTab === "station" ? (
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => setShowAssignModal(true)}
-            className="flex items-center gap-1.5 px-4 py-2 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
+            onClick={() => setShowSimulateModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-surface border border-border rounded-xl text-sm text-foreground-muted hover:text-foreground hover:border-foreground-muted transition-colors"
           >
-            <Plus className="w-4 h-4" />
-            Assigner un tarif
+            <Calculator className="w-4 h-4" />
+            Simuler
           </button>
-        ) : (
           <button
-            onClick={() => setShowCreateOcpiModal(true)}
-            className="flex items-center gap-1.5 px-4 py-2 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
+            onClick={() => setShowBulkAssignModal(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-surface border border-border rounded-xl text-sm text-foreground-muted hover:text-foreground hover:border-foreground-muted transition-colors"
           >
-            <Plus className="w-4 h-4" />
-            Créer un tarif OCPI
+            <Layers className="w-4 h-4" />
+            Appliquer en masse
           </button>
-        )}
+          {activeTab === "station" ? (
+            <button
+              onClick={() => setShowAssignModal(true)}
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Assigner un tarif
+            </button>
+          ) : (
+            <button
+              onClick={() => setShowCreateOcpiModal(true)}
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Creer un tarif OCPI
+            </button>
+          )}
+        </div>
       </div>
 
       <PageHelp
@@ -322,7 +386,7 @@ export function TariffsPage() {
           dataUpdatedAt={stDataUpdatedAt}
         />
       ) : (
-        <OcpiTariffsTable tariffs={filteredOcpi} isLoading={ocpiLoading} />
+        <OcpiTariffsTable tariffs={filteredOcpi} isLoading={ocpiLoading} onDuplicate={(t) => duplicateMutation.mutate(t)} />
       )}
 
       {/* Assign Modal */}
@@ -352,8 +416,26 @@ export function TariffsPage() {
           onCreated={() => {
             setShowCreateOcpiModal(false);
             queryClient.invalidateQueries({ queryKey: ["ocpi-tariffs"] });
-            toastSuccess("Tarif OCPI créé avec succès");
+            toastSuccess("Tarif OCPI cree avec succes");
           }}
+        />
+      )}
+
+      {/* Simulate Session Cost Modal */}
+      {showSimulateModal && (
+        <SimulateSessionCostModal
+          onClose={() => setShowSimulateModal(false)}
+          ocpiTariffs={ocpiTariffs ?? []}
+        />
+      )}
+
+      {/* Bulk Assign Modal */}
+      {showBulkAssignModal && (
+        <BulkAssignModal
+          onClose={() => setShowBulkAssignModal(false)}
+          ocpiTariffs={ocpiTariffs ?? []}
+          onSubmit={(tariffId, territoryCode) => bulkAssignMutation.mutate({ tariffId, territoryCode })}
+          isLoading={bulkAssignMutation.isPending}
         />
       )}
     </div>
@@ -523,9 +605,11 @@ function SourceBadge({ source }: { source: string | null }) {
 function OcpiTariffsTable({
   tariffs,
   isLoading,
+  onDuplicate,
 }: {
   tariffs: OcpiTariff[];
   isLoading: boolean;
+  onDuplicate?: (t: OcpiTariff) => void;
 }) {
   if (isLoading) {
     return (
@@ -557,7 +641,8 @@ function OcpiTariffsTable({
               <th className="text-left px-4 py-3 text-xs font-medium text-foreground-muted">Devise</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-foreground-muted">Composants</th>
               <th className="text-left px-4 py-3 text-xs font-medium text-foreground-muted">Identifiant</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-foreground-muted">Dernière MàJ</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-foreground-muted">Derniere MaJ</th>
+              <th className="text-right px-4 py-3 text-xs font-medium text-foreground-muted">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -608,6 +693,15 @@ function OcpiTariffsTable({
                     {t.last_updated
                       ? new Date(t.last_updated).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
                       : new Date(t.created_at).toLocaleDateString("fr-FR")}
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <button
+                      onClick={() => onDuplicate?.(t)}
+                      title="Dupliquer ce tarif"
+                      className="p-1.5 text-foreground-muted hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
                   </td>
                 </tr>
               );
@@ -1107,10 +1201,147 @@ function CreateOcpiTariffModal({ onClose, onCreated }: { onClose: () => void; on
             className="flex items-center gap-2 px-5 py-2.5 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-            Créer le tarif
+            Creer le tarif
           </button>
         </div>
       </div>
     </>
+  );
+}
+
+// ── Simulate Session Cost Modal ────────────────────────
+
+function SimulateSessionCostModal({
+  onClose,
+  ocpiTariffs,
+}: {
+  onClose: () => void;
+  ocpiTariffs: OcpiTariff[];
+}) {
+  const [energy, setEnergy] = useState("20");
+  const [duration, setDuration] = useState("60");
+  const [parking, setParking] = useState("0");
+  const [selectedTariffId, setSelectedTariffId] = useState(ocpiTariffs[0]?.id ?? "");
+  const [result, setResult] = useState<number | null>(null);
+
+  async function handleSimulate() {
+    try {
+      const { data, error } = await supabase.rpc("calculate_session_cost", {
+        p_energy_kwh: parseFloat(energy) || 0,
+        p_duration_minutes: parseFloat(duration) || 0,
+        p_tariff_id: selectedTariffId,
+      });
+      if (!error && data != null) setResult(data);
+      else {
+        // Fallback: compute manually from tariff elements
+        const tariff = ocpiTariffs.find((t) => t.id === selectedTariffId);
+        const comps = parseOcpiElements(tariff?.elements);
+        let total = 0;
+        for (const c of comps) {
+          if (c.type === "ENERGY") total += parseFloat(energy) * Number(c.price);
+          if (c.type === "TIME") total += (parseFloat(duration) / 60) * Number(c.price);
+          if (c.type === "FLAT") total += Number(c.price);
+          if (c.type === "PARKING_TIME") total += (parseFloat(parking) / 60) * Number(c.price);
+        }
+        setResult(total);
+      }
+    } catch {
+      setResult(null);
+    }
+  }
+
+  const inputClass = "w-full px-3 py-2 bg-background border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-primary";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl">
+        <h2 className="text-lg font-heading font-bold text-foreground mb-4">Simuler le cout d'une session</h2>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-foreground-muted">Tarif</label>
+            <select value={selectedTariffId} onChange={(e) => setSelectedTariffId(e.target.value)} className={inputClass}>
+              {ocpiTariffs.map((t) => <option key={t.id} value={t.id}>{t.tariff_id} ({t.currency})</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs text-foreground-muted">Energie (kWh)</label>
+              <input type="number" value={energy} onChange={(e) => setEnergy(e.target.value)} className={inputClass} />
+            </div>
+            <div>
+              <label className="text-xs text-foreground-muted">Duree (min)</label>
+              <input type="number" value={duration} onChange={(e) => setDuration(e.target.value)} className={inputClass} />
+            </div>
+            <div>
+              <label className="text-xs text-foreground-muted">Parking (min)</label>
+              <input type="number" value={parking} onChange={(e) => setParking(e.target.value)} className={inputClass} />
+            </div>
+          </div>
+          <button onClick={handleSimulate} className="w-full px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors">
+            Calculer
+          </button>
+          {result != null && (
+            <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl text-center">
+              <p className="text-2xl font-heading font-bold text-primary">{result.toFixed(2)} EUR</p>
+              <p className="text-xs text-foreground-muted mt-1">Cout estime de la session</p>
+            </div>
+          )}
+        </div>
+        <div className="flex justify-end mt-4">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-foreground-muted hover:text-foreground transition-colors">Fermer</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Bulk Assign Modal ──────────────────────────────────
+
+function BulkAssignModal({
+  onClose,
+  ocpiTariffs,
+  onSubmit,
+  isLoading,
+}: {
+  onClose: () => void;
+  ocpiTariffs: OcpiTariff[];
+  onSubmit: (tariffId: string, territoryCode: string) => void;
+  isLoading: boolean;
+}) {
+  const [selectedTariffId, setSelectedTariffId] = useState(ocpiTariffs[0]?.id ?? "");
+  const [territoryCode, setTerritoryCode] = useState("");
+
+  const inputClass = "w-full px-3 py-2 bg-background border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-primary";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl">
+        <h2 className="text-lg font-heading font-bold text-foreground mb-2">Appliquer un tarif en masse</h2>
+        <p className="text-sm text-foreground-muted mb-4">Assigne un tarif a toutes les stations d'un territoire.</p>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs text-foreground-muted">Tarif OCPI</label>
+            <select value={selectedTariffId} onChange={(e) => setSelectedTariffId(e.target.value)} className={inputClass}>
+              {ocpiTariffs.map((t) => <option key={t.id} value={t.id}>{t.tariff_id}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-foreground-muted">Code territoire</label>
+            <input type="text" placeholder="ex: MTQ, GLP, GUF..." value={territoryCode} onChange={(e) => setTerritoryCode(e.target.value)} className={inputClass} />
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-3 mt-6">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-foreground-muted hover:text-foreground transition-colors">Annuler</button>
+          <button
+            onClick={() => onSubmit(selectedTariffId, territoryCode)}
+            disabled={isLoading || !selectedTariffId || !territoryCode.trim()}
+            className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-40"
+          >
+            {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+            Appliquer
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

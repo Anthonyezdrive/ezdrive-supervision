@@ -17,12 +17,20 @@ import {
   UserX,
   Zap,
   X,
+  Plus,
+  Download,
+  Pencil,
+  Loader2,
+  BarChart3,
+  Tag,
 } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useCpo } from "@/contexts/CpoContext";
+import { downloadCSV, todayISO } from "@/lib/export";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -343,6 +351,7 @@ export function CustomersPage() {
   const [sortKey, setSortKey] = useState<SortKey>("total_sessions");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [page, setPage] = useState(1);
+  const [showCreate, setShowCreate] = useState(false);
 
   // ── Sorting handler ──
   const handleSort = useCallback(
@@ -451,12 +460,42 @@ export function CustomersPage() {
             Base de données clients eMSP
           </p>
         </div>
-        {!isLoading && customers && (
-          <span className="inline-flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/25 rounded-lg px-3 py-1.5 text-xs font-semibold">
-            <Users className="w-3.5 h-3.5" />
-            {customers.length} conducteur{customers.length !== 1 ? "s" : ""}
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {!isLoading && customers && (
+            <span className="inline-flex items-center gap-1.5 bg-primary/10 text-primary border border-primary/25 rounded-lg px-3 py-1.5 text-xs font-semibold">
+              <Users className="w-3.5 h-3.5" />
+              {customers.length} client{customers.length !== 1 ? "s" : ""}
+            </span>
+          )}
+          {/* Story 76: Export CSV */}
+          <button
+            onClick={() => {
+              if (!filtered.length) return;
+              const rows = filtered.map((c) => ({
+                nom: c.full_name ?? "",
+                email: c.email ?? "",
+                groupe: c.customer_name ?? "",
+                sessions: c.total_sessions,
+                energy_kwh: Number(c.total_energy_kwh).toFixed(1),
+                derniere_charge: c.last_session_at ?? "",
+              }));
+              downloadCSV(rows, `clients-${todayISO()}.csv`);
+            }}
+            disabled={!filtered.length}
+            className="flex items-center gap-2 px-3 py-1.5 bg-surface-elevated border border-border rounded-lg text-xs font-medium text-foreground-muted hover:text-foreground hover:bg-surface transition-colors disabled:opacity-40"
+          >
+            <Download className="w-3.5 h-3.5" />
+            Exporter CSV
+          </button>
+          {/* Story 73: Create customer */}
+          <button
+            onClick={() => setShowCreate(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors whitespace-nowrap"
+          >
+            <Plus className="w-4 h-4" />
+            Nouveau client
+          </button>
+        </div>
       </div>
 
       <PageHelp
@@ -708,8 +747,12 @@ export function CustomersPage() {
         <CustomerDetailDrawer
           customer={selectedCustomer}
           onClose={() => setSelectedCustomer(null)}
+          onRefresh={() => refetch()}
         />
       )}
+
+      {/* Story 73: Create Customer Modal */}
+      {showCreate && <CreateCustomerModal onClose={() => setShowCreate(false)} cpoId={selectedCpoId} onCreated={() => { setShowCreate(false); refetch(); }} />}
     </div>
   );
 }
@@ -719,12 +762,78 @@ export function CustomersPage() {
 function CustomerDetailDrawer({
   customer,
   onClose,
+  onRefresh,
 }: {
   customer: Customer;
   onClose: () => void;
+  onRefresh: () => void;
 }) {
   const hue = nameToHue(customer.full_name ?? customer.driver_external_id);
   const displayName = customer.full_name || customer.driver_external_id;
+  const queryClient = useQueryClient();
+
+  // Story 74: Edit state
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ first_name: customer.first_name ?? "", last_name: customer.last_name ?? "", email: customer.email ?? "", phone: customer.phone ?? "" });
+
+  const editMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from("gfx_consumers").update({
+        first_name: editForm.first_name || null,
+        last_name: editForm.last_name || null,
+        email: editForm.email || null,
+        phone: editForm.phone || null,
+      }).eq("id", customer.id);
+      if (error) throw error;
+    },
+    onSuccess: () => { setEditing(false); onRefresh(); },
+  });
+
+  // Story 75: Revenue data
+  const { data: revenueData } = useQuery<Array<{ month: string; revenue: number }>>({
+    queryKey: ["customer-revenue", customer.driver_external_id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("ocpi_cdrs")
+        .select("start_date_time, total_cost")
+        .eq("driver_external_id", customer.driver_external_id);
+      if (!data) return [];
+      // Group by month
+      const byMonth: Record<string, number> = {};
+      for (const cdr of data) {
+        const d = new Date(cdr.start_date_time as string);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        byMonth[key] = (byMonth[key] ?? 0) + (Number(cdr.total_cost) || 0);
+      }
+      return Object.entries(byMonth)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .slice(-6)
+        .map(([month, revenue]) => ({ month, revenue }));
+    },
+  });
+  const totalRevenue = (revenueData ?? []).reduce((s, r) => s + r.revenue, 0);
+  const maxRevenue = Math.max(...(revenueData ?? []).map((r) => r.revenue), 1);
+
+  // Story 77: Subscription offers
+  const [showRetailPlan, setShowRetailPlan] = useState(false);
+  const { data: subscriptionOffers } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ["subscription-offers"],
+    enabled: showRetailPlan,
+    queryFn: async () => {
+      const { data } = await supabase.from("subscription_offers").select("id, name").order("name");
+      return (data ?? []) as Array<{ id: string; name: string }>;
+    },
+  });
+
+  const assignPlanMutation = useMutation({
+    mutationFn: async (planName: string) => {
+      const { error } = await supabase.from("gfx_consumers").update({ retail_package: planName }).eq("id", customer.id);
+      if (error) throw error;
+    },
+    onSuccess: () => { setShowRetailPlan(false); onRefresh(); },
+  });
+
+  const inputClass = "w-full px-3 py-2 bg-surface-elevated border border-border rounded-lg text-sm text-foreground focus:outline-none focus:border-border-focus transition-colors";
 
   return (
     <>
@@ -748,39 +857,129 @@ function CustomerDetailDrawer({
               )}
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 hover:bg-surface-elevated rounded-lg transition-colors">
-            <X className="w-5 h-5 text-foreground-muted" />
-          </button>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setEditing(!editing)} className="p-1.5 hover:bg-surface-elevated rounded-lg transition-colors" title="Modifier">
+              <Pencil className="w-4 h-4 text-foreground-muted" />
+            </button>
+            <button onClick={onClose} className="p-1.5 hover:bg-surface-elevated rounded-lg transition-colors">
+              <X className="w-5 h-5 text-foreground-muted" />
+            </button>
+          </div>
         </div>
         <div className="p-5 space-y-5">
-          {/* Activité */}
-          <div>
-            <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Activité</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-surface-elevated border border-border rounded-xl p-3 text-center">
-                <p className="text-xl font-bold text-foreground">{customer.total_sessions.toLocaleString("fr-FR")}</p>
-                <p className="text-xs text-foreground-muted mt-0.5">Sessions</p>
+          {/* Story 74: Edit form */}
+          {editing ? (
+            <div className="space-y-3 p-4 bg-surface-elevated border border-border rounded-xl">
+              <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Modifier le client</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-foreground-muted mb-1 block">Prénom</label>
+                  <input type="text" value={editForm.first_name} onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })} className={inputClass} />
+                </div>
+                <div>
+                  <label className="text-xs text-foreground-muted mb-1 block">Nom</label>
+                  <input type="text" value={editForm.last_name} onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })} className={inputClass} />
+                </div>
               </div>
-              <div className="bg-surface-elevated border border-border rounded-xl p-3 text-center">
-                <p className="text-xl font-bold text-foreground">{formatEnergy(Number(customer.total_energy_kwh))}</p>
-                <p className="text-xs text-foreground-muted mt-0.5">Énergie</p>
+              <div>
+                <label className="text-xs text-foreground-muted mb-1 block">Email</label>
+                <input type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} className={inputClass} />
+              </div>
+              <div>
+                <label className="text-xs text-foreground-muted mb-1 block">Téléphone</label>
+                <input type="tel" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} className={inputClass} />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button onClick={() => setEditing(false)} className="flex-1 px-3 py-2 text-sm text-foreground-muted hover:text-foreground transition-colors">Annuler</button>
+                <button onClick={() => editMutation.mutate()} disabled={editMutation.isPending} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors">
+                  {editMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                  Enregistrer
+                </button>
               </div>
             </div>
-          </div>
-          {/* Informations */}
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Informations</p>
-            <DetailItem label="Groupe client" value={customer.customer_name ?? "—"} />
-            {customer.email && <DetailItem label="Email" value={customer.email} />}
-            {customer.phone && <DetailItem label="Téléphone" value={customer.phone} />}
-            <DetailItem label="Statut" value={customer.status ?? "—"} />
-            {customer.first_session_at && (
-              <DetailItem label="Première charge" value={new Date(customer.first_session_at).toLocaleDateString("fr-FR")} />
-            )}
-            {customer.last_session_at && (
-              <DetailItem label="Dernière charge" value={formatRelativeDate(customer.last_session_at)} />
-            )}
-          </div>
+          ) : (
+            <>
+              {/* Activité */}
+              <div>
+                <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Activité</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-surface-elevated border border-border rounded-xl p-3 text-center">
+                    <p className="text-xl font-bold text-foreground">{customer.total_sessions.toLocaleString("fr-FR")}</p>
+                    <p className="text-xs text-foreground-muted mt-0.5">Sessions</p>
+                  </div>
+                  <div className="bg-surface-elevated border border-border rounded-xl p-3 text-center">
+                    <p className="text-xl font-bold text-foreground">{formatEnergy(Number(customer.total_energy_kwh))}</p>
+                    <p className="text-xs text-foreground-muted mt-0.5">Énergie</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Story 75: Revenue */}
+              <div>
+                <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">
+                  <BarChart3 className="w-3.5 h-3.5 inline mr-1" />
+                  Revenus ({totalRevenue.toFixed(2)} €)
+                </p>
+                {revenueData && revenueData.length > 0 ? (
+                  <div className="flex items-end gap-1 h-16">
+                    {revenueData.map((r) => (
+                      <div key={r.month} className="flex-1 flex flex-col items-center gap-1">
+                        <div
+                          className="w-full bg-primary/60 rounded-t"
+                          style={{ height: `${Math.max(4, (r.revenue / maxRevenue) * 48)}px` }}
+                          title={`${r.month}: ${r.revenue.toFixed(2)} €`}
+                        />
+                        <span className="text-[9px] text-foreground-muted">{r.month.split("-")[1]}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-foreground-muted">Aucune donnée de revenus</p>
+                )}
+              </div>
+
+              {/* Informations */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Informations</p>
+                <DetailItem label="Groupe client" value={customer.customer_name ?? "—"} />
+                {customer.email && <DetailItem label="Email" value={customer.email} />}
+                {customer.phone && <DetailItem label="Téléphone" value={customer.phone} />}
+                <DetailItem label="Statut" value={customer.status ?? "—"} />
+                <DetailItem label="Forfait" value={customer.retail_package ?? "—"} />
+                {customer.first_session_at && (
+                  <DetailItem label="Première charge" value={new Date(customer.first_session_at).toLocaleDateString("fr-FR")} />
+                )}
+                {customer.last_session_at && (
+                  <DetailItem label="Dernière charge" value={formatRelativeDate(customer.last_session_at)} />
+                )}
+              </div>
+
+              {/* Story 77: Retail plan */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider">Forfait</p>
+                  <button onClick={() => setShowRetailPlan(!showRetailPlan)} className="text-xs text-primary hover:underline flex items-center gap-1">
+                    <Tag className="w-3 h-3" /> Changer
+                  </button>
+                </div>
+                {showRetailPlan && (
+                  <div className="p-3 bg-surface-elevated border border-border rounded-xl">
+                    <select
+                      onChange={(e) => { if (e.target.value) assignPlanMutation.mutate(e.target.value); }}
+                      className={inputClass}
+                      defaultValue=""
+                    >
+                      <option value="" disabled>Sélectionner un forfait...</option>
+                      {(subscriptionOffers ?? []).map((o) => (
+                        <option key={o.id} value={o.name}>{o.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
           {/* Identifiant externe */}
           <div className="space-y-2">
             <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Identifiant externe</p>
@@ -809,5 +1008,92 @@ function DetailItem({ label, value }: { label: string; value: string }) {
       <span className="text-foreground-muted">{label}</span>
       <span className="text-foreground font-medium">{value}</span>
     </div>
+  );
+}
+
+// ── Story 73: Create Customer Modal ───────────────────────────
+
+function CreateCustomerModal({ onClose, cpoId, onCreated }: { onClose: () => void; cpoId: string | null; onCreated: () => void }) {
+  const queryClient = useQueryClient();
+  const [form, setForm] = useState({ name: "", customer_external_id: "", group: "" });
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!form.name.trim()) throw new Error("Le nom est requis");
+      const parts = form.name.trim().split(" ");
+      const firstName = parts[0] ?? "";
+      const lastName = parts.slice(1).join(" ") ?? "";
+      const driverExternalId = form.customer_external_id.trim() || `cust-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const { error } = await supabase.from("gfx_consumers").insert({
+        id: crypto.randomUUID(),
+        driver_external_id: driverExternalId,
+        first_name: firstName,
+        last_name: lastName,
+        full_name: form.name.trim(),
+        customer_name: form.group.trim() || null,
+        cpo_id: cpoId,
+        status: "active",
+        total_sessions: 0,
+        total_energy_kwh: 0,
+        source: "manual",
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["customers"] });
+      onCreated();
+    },
+  });
+
+  const inputClass = "w-full px-3 py-2.5 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-border-focus transition-colors";
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+      <div className="fixed inset-x-4 top-[10%] md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-[480px] bg-surface border border-border rounded-2xl z-50 flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Users className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <h2 className="font-heading font-bold text-lg">Nouveau client</h2>
+              <p className="text-xs text-foreground-muted">Ajouter manuellement</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-surface-elevated rounded-lg transition-colors">
+            <X className="w-5 h-5 text-foreground-muted" />
+          </button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1.5">Nom *</label>
+            <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Jean Dupont" className={inputClass} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1.5">ID externe</label>
+            <input type="text" value={form.customer_external_id} onChange={(e) => setForm({ ...form, customer_external_id: e.target.value })} placeholder="customer-123" className={inputClass} />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1.5">Groupe</label>
+            <input type="text" value={form.group} onChange={(e) => setForm({ ...form, group: e.target.value })} placeholder="Client B2B" className={inputClass} />
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border">
+          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-foreground-muted hover:text-foreground transition-colors">Annuler</button>
+          <button
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending || !form.name.trim()}
+            className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl text-sm font-medium hover:bg-primary/90 disabled:opacity-40 transition-colors"
+          >
+            {saveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            Créer
+          </button>
+        </div>
+        {saveMutation.isError && (
+          <p className="px-6 pb-3 text-xs text-red-400">{(saveMutation.error as Error)?.message ?? "Erreur"}</p>
+        )}
+      </div>
+    </>
   );
 }

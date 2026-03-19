@@ -12,6 +12,9 @@ import {
   FileText,
   X,
   AlertCircle,
+  Eye,
+  Calculator,
+  MessageSquare,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
@@ -356,6 +359,9 @@ export function SessionsPage() {
   const [dateTo, setDateTo] = useState("");
   const [selectedSession, setSelectedSession] = useState<Transaction | null>(null);
   const [activeView, setActiveView] = useState<"ocpp" | "cdr">("ocpp");
+  const [selectedCdr, setSelectedCdr] = useState<OcpiCdr | null>(null);
+  const [amountMin, setAmountMin] = useState("");
+  const [amountMax, setAmountMax] = useState("");
   const { selectedCpoId } = useCpo();
 
   // ── Resolve station IDs and chargepoint IDs for selected CPO ──
@@ -516,7 +522,7 @@ export function SessionsPage() {
     isError: _isCdrError,
     refetch: cdrRefetch,
   } = useQuery({
-    queryKey: ["ocpi-cdrs", page, dateFrom, dateTo, selectedCpoId ?? "all"],
+    queryKey: ["ocpi-cdrs", page, dateFrom, dateTo, amountMin, amountMax, selectedCpoId ?? "all"],
     enabled: activeView === "cdr",
     retry: false,
     queryFn: async () => {
@@ -534,6 +540,8 @@ export function SessionsPage() {
         }
         if (dateFrom) query = query.gte("start_date_time", dateFrom);
         if (dateTo) query = query.lte("start_date_time", dateTo + "T23:59:59");
+        if (amountMin) query = query.gte("total_cost", parseFloat(amountMin));
+        if (amountMax) query = query.lte("total_cost", parseFloat(amountMax));
         const { data, error, count } = await query;
         if (error) { console.warn("[CDR] query:", error.message); return { data: [] as OcpiCdr[], total: 0 }; }
         return { data: (data ?? []) as OcpiCdr[], total: count ?? 0 };
@@ -1188,8 +1196,8 @@ export function SessionsPage() {
       {/* CDR OCPI View */}
       {activeView === "cdr" && (
         <div className="space-y-4">
-          {/* Date filter */}
-          <div className="flex items-center gap-2">
+          {/* Date + Amount filters */}
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs text-foreground-muted whitespace-nowrap">Période :</span>
             <input
               type="date"
@@ -1207,6 +1215,33 @@ export function SessionsPage() {
             {(dateFrom || dateTo) && (
               <button
                 onClick={() => { setDateFrom(""); setDateTo(""); setPage(0); }}
+                className="p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            <span className="text-xs text-foreground-muted whitespace-nowrap ml-4">Montant :</span>
+            <input
+              type="number"
+              placeholder="Min"
+              value={amountMin}
+              onChange={(e) => { setAmountMin(e.target.value); setPage(0); }}
+              className="w-20 px-2.5 py-1.5 bg-surface border border-border rounded-xl text-xs text-foreground focus:outline-none focus:border-primary/50"
+              step="0.01"
+            />
+            <span className="text-xs text-foreground-muted">→</span>
+            <input
+              type="number"
+              placeholder="Max"
+              value={amountMax}
+              onChange={(e) => { setAmountMax(e.target.value); setPage(0); }}
+              className="w-20 px-2.5 py-1.5 bg-surface border border-border rounded-xl text-xs text-foreground focus:outline-none focus:border-primary/50"
+              step="0.01"
+            />
+            {(amountMin || amountMax) && (
+              <button
+                onClick={() => { setAmountMin(""); setAmountMax(""); setPage(0); }}
                 className="p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated transition-colors"
               >
                 <X className="w-3.5 h-3.5" />
@@ -1253,7 +1288,7 @@ export function SessionsPage() {
                       const token = cdr.cdr_token as { uid?: string } | null;
                       const sourceColor = cdr.source === "gfx" ? "#4ECDC4" : cdr.source === "road" ? "#F39C12" : "#8892B0";
                       return (
-                        <tr key={cdr.id} className="hover:bg-surface-elevated/50 transition-colors">
+                        <tr key={cdr.id} className="hover:bg-surface-elevated/50 transition-colors cursor-pointer" onClick={() => setSelectedCdr(cdr)}>
                           <td className="px-4 py-3">
                             <span className="text-xs font-mono text-foreground">{cdr.cdr_id.slice(0, 12)}…</span>
                             {cdr.gfx_cdr_id && <p className="text-[10px] text-foreground-muted font-mono">{cdr.gfx_cdr_id.slice(0, 10)}…</p>}
@@ -1342,6 +1377,158 @@ export function SessionsPage() {
           onClose={() => setSelectedSession(null)}
         />
       )}
+
+      {/* CDR detail drawer */}
+      {selectedCdr && (
+        <CdrDetailDrawer
+          cdr={selectedCdr}
+          onClose={() => setSelectedCdr(null)}
+        />
+      )}
     </div>
+  );
+}
+
+// ── CDR Detail Drawer ─────────────────────────────────────────
+
+function CdrDetailDrawer({ cdr, onClose }: { cdr: OcpiCdr; onClose: () => void }) {
+  const [annotation, setAnnotation] = useState("");
+  const [annotationStatus, setAnnotationStatus] = useState<"verified" | "contested">("verified");
+  const [annotationSaved, setAnnotationSaved] = useState(false);
+  const [showSimulate, setShowSimulate] = useState(false);
+  const [simResult, setSimResult] = useState<number | null>(null);
+  const [simTariffId, setSimTariffId] = useState("");
+
+  const loc = cdr.cdr_location as { name?: string; address?: string; city?: string } | null;
+  const token = cdr.cdr_token as { uid?: string; type?: string } | null;
+
+  async function handleAnnotate() {
+    try {
+      await supabase.from("ocpi_cdrs").update({ remarks: `[${annotationStatus}] ${annotation}` }).eq("id", cdr.id);
+      setAnnotationSaved(true);
+    } catch { /* ignore */ }
+  }
+
+  async function handleSimulate() {
+    if (!simTariffId) return;
+    try {
+      const { data, error } = await supabase.rpc("calculate_session_cost", {
+        p_energy_kwh: cdr.total_energy,
+        p_duration_minutes: cdr.total_time * 60,
+        p_tariff_id: simTariffId,
+      });
+      if (!error && data != null) setSimResult(data);
+      else setSimResult(null);
+    } catch { setSimResult(null); }
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-surface border-l border-border z-50 overflow-y-auto">
+        <div className="flex items-center justify-between p-5 border-b border-border">
+          <h2 className="font-heading font-bold text-lg">Detail CDR</h2>
+          <button onClick={onClose} className="p-1.5 hover:bg-surface-elevated rounded-lg transition-colors">
+            <X className="w-5 h-5 text-foreground-muted" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-5">
+          {/* Station */}
+          <div className="bg-surface-elevated border border-border rounded-xl p-4 space-y-1">
+            <p className="text-xs text-foreground-muted">Station</p>
+            <p className="text-sm font-semibold text-foreground">{loc?.name ?? "—"}</p>
+            <p className="text-xs text-foreground-muted">{[loc?.address, loc?.city].filter(Boolean).join(", ")}</p>
+          </div>
+
+          {/* Details grid */}
+          <div className="grid grid-cols-2 gap-3">
+            <DetailField label="CDR ID" value={cdr.cdr_id.slice(0, 16) + "..."} mono />
+            <DetailField label="Token" value={token?.uid ?? "—"} mono />
+            <DetailField label="Debut" value={formatDateTime(cdr.start_date_time)} />
+            <DetailField label="Fin" value={formatDateTime(cdr.end_date_time)} />
+            <DetailField label="Energie" value={`${cdr.total_energy.toFixed(2)} kWh`} />
+            <DetailField label="Duree" value={cdr.total_time < 1 ? `${Math.round(cdr.total_time * 60)}m` : `${cdr.total_time.toFixed(1)}h`} />
+            <DetailField label="Cout HT" value={`${cdr.total_cost.toFixed(2)} ${cdr.currency}`} />
+            <DetailField label="TVA" value={cdr.total_vat != null ? `${cdr.total_vat.toFixed(2)} ${cdr.currency}` : "—"} />
+            <DetailField label="Cout TTC" value={cdr.total_cost_incl_vat != null ? `${cdr.total_cost_incl_vat.toFixed(2)} ${cdr.currency}` : "—"} />
+            <DetailField label="Taux TVA" value={cdr.vat_rate != null ? `${cdr.vat_rate}%` : "—"} />
+            <DetailField label="Source" value={cdr.source?.toUpperCase() ?? "OCPI"} />
+            <DetailField label="Retail TTC" value={cdr.total_retail_cost_incl_vat != null ? `${cdr.total_retail_cost_incl_vat.toFixed(2)} ${cdr.currency}` : "—"} />
+          </div>
+
+          {/* Simulate with different tariff */}
+          <div className="border-t border-border pt-4">
+            <button
+              onClick={() => setShowSimulate(!showSimulate)}
+              className="flex items-center gap-2 text-sm text-primary font-medium"
+            >
+              <Calculator className="w-4 h-4" />
+              Simuler avec un autre tarif
+            </button>
+            {showSimulate && (
+              <div className="mt-3 space-y-2">
+                <input
+                  type="text"
+                  placeholder="ID tarif OCPI (ex: STANDARD-AC)"
+                  value={simTariffId}
+                  onChange={(e) => setSimTariffId(e.target.value)}
+                  className="w-full px-3 py-2 bg-background border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-primary"
+                />
+                <button onClick={handleSimulate} className="px-3 py-1.5 bg-primary/10 text-primary rounded-lg text-xs font-medium hover:bg-primary/20 transition-colors">
+                  Calculer
+                </button>
+                {simResult != null && (
+                  <p className="text-sm text-foreground">
+                    Cout simule : <span className="font-bold text-primary">{simResult.toFixed(2)} {cdr.currency}</span>
+                    {" "}(actuel : {cdr.total_cost.toFixed(2)} {cdr.currency})
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Annotate / Contest */}
+          <div className="border-t border-border pt-4">
+            <p className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
+              <MessageSquare className="w-4 h-4" />
+              Annoter / Contester
+            </p>
+            <div className="flex gap-2 mb-2">
+              <button
+                onClick={() => setAnnotationStatus("verified")}
+                className={cn("px-3 py-1 rounded-lg text-xs font-medium border transition-all", annotationStatus === "verified" ? "bg-status-available/15 text-status-available border-status-available/30" : "text-foreground-muted border-border")}
+              >
+                Verifie
+              </button>
+              <button
+                onClick={() => setAnnotationStatus("contested")}
+                className={cn("px-3 py-1 rounded-lg text-xs font-medium border transition-all", annotationStatus === "contested" ? "bg-danger/15 text-danger border-danger/30" : "text-foreground-muted border-border")}
+              >
+                Conteste
+              </button>
+            </div>
+            <textarea
+              value={annotation}
+              onChange={(e) => setAnnotation(e.target.value)}
+              placeholder="Ajouter une annotation..."
+              className="w-full px-3 py-2 bg-background border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-primary min-h-[60px]"
+            />
+            <button
+              onClick={handleAnnotate}
+              disabled={!annotation.trim()}
+              className="mt-2 px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary/90 transition-colors disabled:opacity-40"
+            >
+              {annotationSaved ? "Enregistre !" : "Enregistrer"}
+            </button>
+          </div>
+
+          {/* Technical ID */}
+          <div className="pt-4 border-t border-border">
+            <p className="text-xs text-foreground-muted">UUID: <span className="font-mono text-foreground/60">{cdr.id}</span></p>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
