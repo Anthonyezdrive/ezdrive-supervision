@@ -26,7 +26,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 interface Agreement {
   id: string;
-  status: "active" | "expired" | "planned";
+  status: "active" | "expired" | "planned" | "terminating";
   management: string | null;
   cpo_network_id: string | null;
   cpo_contract_id: string | null;
@@ -41,6 +41,15 @@ interface Agreement {
   updated_by: string | null;
   created_at: string;
   updated_at: string;
+  // Termination fields
+  notice_period_days: number | null;
+  auto_renew: boolean | null;
+  renewal_period_months: number | null;
+  termination_requested_at: string | null;
+  termination_effective_at: string | null;
+  termination_reason: string | null;
+  termination_requested_by: string | null;
+  tacit_acceptance_days: number | null;
 }
 
 interface NetworkRef { id: string; name: string }
@@ -60,6 +69,11 @@ const EMPTY_AGREEMENT = {
   technical_contact: "",
   remarks: "",
   updated_by: "",
+  notice_period_days: "90",
+  auto_renew: true,
+  renewal_period_months: "12",
+  tacit_acceptance_days: "30",
+  termination_reason: "",
 };
 
 type SortKey = "status" | "management" | "connection_method" | "valid_from" | "valid_to" | "created_at";
@@ -73,6 +87,7 @@ const PAGE_SIZE = 25;
 function ValidityBadge({ status }: { status: string }) {
   if (status === "active") return <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">Valid</span>;
   if (status === "expired") return <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-semibold bg-red-500/15 text-red-400 border border-red-500/25">Expiré</span>;
+  if (status === "terminating") return <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-semibold bg-orange-500/15 text-orange-400 border border-orange-500/25">En résiliation</span>;
   return <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/25">Planifié</span>;
 }
 
@@ -231,6 +246,10 @@ export function AgreementsPage() {
         technical_contact: data.technical_contact || null,
         remarks: data.remarks || null,
         updated_by: data.updated_by || null,
+        notice_period_days: data.notice_period_days ? parseInt(String(data.notice_period_days)) : 90,
+        auto_renew: data.auto_renew ?? true,
+        renewal_period_months: data.renewal_period_months ? parseInt(String(data.renewal_period_months)) : 12,
+        tacit_acceptance_days: data.tacit_acceptance_days ? parseInt(String(data.tacit_acceptance_days)) : 30,
       });
       if (error) throw error;
     },
@@ -258,6 +277,11 @@ export function AgreementsPage() {
         technical_contact: data.technical_contact || null,
         remarks: data.remarks || null,
         updated_by: data.updated_by || null,
+        notice_period_days: data.notice_period_days ? parseInt(String(data.notice_period_days)) : 90,
+        auto_renew: data.auto_renew ?? true,
+        renewal_period_months: data.renewal_period_months ? parseInt(String(data.renewal_period_months)) : 12,
+        tacit_acceptance_days: data.tacit_acceptance_days ? parseInt(String(data.tacit_acceptance_days)) : 30,
+        termination_reason: data.termination_reason || null,
       }).eq("id", id);
       if (error) throw error;
     },
@@ -894,6 +918,75 @@ export function AgreementsPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Conditions contractuelles */}
+                <div className="mt-6 pt-4 border-t border-border">
+                  <h3 className="text-sm font-semibold text-foreground mb-3">Conditions contractuelles</h3>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs text-foreground-muted mb-1">Préavis résiliation (jours)</label>
+                      <input type="number" min="0" value={(form as any).notice_period_days ?? "90"} onChange={(e) => setForm((f) => ({ ...f, notice_period_days: e.target.value }))} className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-lg text-sm focus:outline-none focus:border-primary/50" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-foreground-muted mb-1">Renouvellement (mois)</label>
+                      <input type="number" min="1" value={(form as any).renewal_period_months ?? "12"} onChange={(e) => setForm((f) => ({ ...f, renewal_period_months: e.target.value }))} className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-lg text-sm focus:outline-none focus:border-primary/50" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-foreground-muted mb-1">Acceptation tacite (jours)</label>
+                      <input type="number" min="0" value={(form as any).tacit_acceptance_days ?? "30"} onChange={(e) => setForm((f) => ({ ...f, tacit_acceptance_days: e.target.value }))} className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-lg text-sm focus:outline-none focus:border-primary/50" />
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-center gap-3">
+                    <button type="button" onClick={() => setForm((f) => ({ ...f, auto_renew: !(f as any).auto_renew }))} className={cn("relative inline-flex h-6 w-11 items-center rounded-full transition-colors", (form as any).auto_renew ? "bg-primary" : "bg-foreground-muted/30")}>
+                      <span className={cn("inline-block h-4 w-4 transform rounded-full bg-white transition-transform", (form as any).auto_renew ? "translate-x-6" : "translate-x-1")} />
+                    </button>
+                    <label className="text-sm text-foreground">Renouvellement tacite activé</label>
+                  </div>
+                </div>
+
+                {/* Résiliation (si contrat en cours) */}
+                {editingAgreement && (
+                  <div className="mt-4 pt-4 border-t border-border">
+                    <h3 className="text-sm font-semibold text-foreground mb-3">Résiliation</h3>
+                    {editingAgreement.termination_requested_at ? (
+                      <div className="p-3 bg-orange-500/10 border border-orange-500/20 rounded-xl">
+                        <p className="text-sm text-orange-400 font-medium">Résiliation demandée le {new Date(editingAgreement.termination_requested_at).toLocaleDateString("fr-FR")}</p>
+                        {editingAgreement.termination_effective_at && (
+                          <p className="text-xs text-orange-300 mt-1">Date effective : {new Date(editingAgreement.termination_effective_at).toLocaleDateString("fr-FR")}</p>
+                        )}
+                        {editingAgreement.termination_reason && (
+                          <p className="text-xs text-foreground-muted mt-1">Motif : {editingAgreement.termination_reason}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="block text-xs text-foreground-muted mb-1">Motif de résiliation</label>
+                        <input type="text" value={(form as any).termination_reason ?? ""} onChange={(e) => setForm((f) => ({ ...f, termination_reason: e.target.value }))} placeholder="Ex: changement de partenaire, fin de contrat..." className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-lg text-sm placeholder:text-foreground-muted/50 focus:outline-none focus:border-primary/50" />
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const noticeDays = editingAgreement.notice_period_days ?? 90;
+                            const effectiveDate = new Date();
+                            effectiveDate.setDate(effectiveDate.getDate() + noticeDays);
+                            await supabase.from("roaming_agreements").update({
+                              status: "terminating",
+                              termination_requested_at: new Date().toISOString(),
+                              termination_effective_at: effectiveDate.toISOString().split("T")[0],
+                              termination_reason: (form as any).termination_reason || "Résiliation à l'initiative d'EZDrive",
+                              termination_requested_by: "EZDrive",
+                            }).eq("id", editingAgreement.id);
+                            queryClient.invalidateQueries({ queryKey: ["roaming-agreements"] });
+                            toastSuccess("Résiliation demandée", `Effective dans ${noticeDays} jours (${effectiveDate.toLocaleDateString("fr-FR")})`);
+                            closeModal();
+                          }}
+                          className="mt-3 px-4 py-2 text-sm font-medium text-red-400 bg-red-500/10 border border-red-500/20 rounded-xl hover:bg-red-500/20 transition-colors"
+                        >
+                          Demander la résiliation (préavis {editingAgreement.notice_period_days ?? 90}j)
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Divers */}
                 <div className="mt-6 pt-4 border-t border-border">
