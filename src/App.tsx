@@ -22,6 +22,7 @@ import { CpoNetworksPage } from "@/components/cpo-networks/CpoNetworksPage";
 // CpoContracts fusionné dans CpoNetworksPage (onglet Contrats CPO → détail contrat)
 // ── CPO > Billing (fusionné) ─────────────────────────────
 import { BillingPage } from "@/components/billing/BillingPage";
+import { BillingProfilesPage } from "@/components/billing/BillingProfilesPage";
 import { TariffsPage } from "@/components/tariffs/TariffsPage";
 import { RoamingContractsPage } from "@/components/roaming-contracts/RoamingContractsPage";
 // ── CPO > Roaming ────────────────────────────────────────
@@ -109,6 +110,7 @@ export default function App() {
 
                 {/* ── CPO > Billing ── */}
                 <Route path="/billing" element={<BillingPage />} />
+                <Route path="/billing-profiles" element={<BillingProfilesPage />} />
                 <Route path="/tariffs" element={<TariffsPage />} />
                 <Route path="/roaming-contracts" element={<RoamingContractsPage />} />
 

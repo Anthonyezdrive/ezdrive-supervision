@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useOutletContext } from "react-router-dom";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList, Legend,
 } from "recharts";
-import { Clock, Zap, Euro, Gauge, AlertTriangle, CheckCircle, GitCompareArrows } from "lucide-react";
+import { Clock, Zap, Euro, Gauge, AlertTriangle, CheckCircle, GitCompareArrows, CreditCard, Tag } from "lucide-react";
 import { KPICard } from "@/components/ui/KPICard";
 import { PageHelp } from "@/components/ui/PageHelp";
 import { ExportButtons } from "./ExportButtons";
@@ -38,6 +38,7 @@ export function B2BOverviewPage() {
   const { year } = useB2BFilters();
 
   const [showComparison, setShowComparison] = useState(false);
+  const [sessionFilter, setSessionFilter] = useState<"all" | "free" | "paid">("all");
 
   const { data: cdrs, isLoading } = useB2BCdrs(customerExternalIds);
   const { data: prevCdrs } = useB2BCdrsPrevYear(customerExternalIds, showComparison);
@@ -55,7 +56,25 @@ export function B2BOverviewPage() {
     );
   }
 
-  const data = cdrs ?? [];
+  const allData = cdrs ?? [];
+
+  // Session type counts (computed on unfiltered data)
+  const freeSessionCount = useMemo(
+    () => allData.filter((c) => c.total_retail_cost === 0 || c.total_retail_cost == null).length,
+    [allData]
+  );
+  const paidSessionCount = useMemo(
+    () => allData.filter((c) => c.total_retail_cost != null && c.total_retail_cost > 0).length,
+    [allData]
+  );
+
+  // Apply session type filter
+  const data = useMemo(() => {
+    if (sessionFilter === "free") return allData.filter((c) => c.total_retail_cost === 0 || c.total_retail_cost == null);
+    if (sessionFilter === "paid") return allData.filter((c) => c.total_retail_cost != null && c.total_retail_cost > 0);
+    return allData;
+  }, [allData, sessionFilter]);
+
   const rate = activeClient?.redevance_rate ?? 0.33;
   const kpis = computeKPIs(data, rate);
   const monthlyData = groupByMonth(data, rate);
@@ -139,6 +158,51 @@ export function B2BOverviewPage() {
         ]}
         tips={["Les données proviennent des CDRs GreenFlux et sont mises à jour quotidiennement."]}
       />
+
+      {/* Session type filter + free/paid KPIs */}
+      <div className="flex items-center gap-3">
+        <span className="text-sm text-foreground-muted">Sessions :</span>
+        {(
+          [
+            { key: "all", label: "Toutes" },
+            { key: "free", label: "Gratuites (RFID)" },
+            { key: "paid", label: "Payantes (SPOT)" },
+          ] as const
+        ).map((opt) => (
+          <button
+            key={opt.key}
+            onClick={() => setSessionFilter(opt.key)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+              sessionFilter === opt.key
+                ? "border-primary/40 bg-primary/10 text-primary"
+                : "border-border text-foreground-muted hover:text-foreground hover:bg-surface-elevated"
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <KPICard
+          label="Sessions gratuites (RFID)"
+          value={freeSessionCount}
+          icon={Tag}
+          color="#3498DB"
+        />
+        <KPICard
+          label="Sessions payantes (SPOT)"
+          value={paidSessionCount}
+          icon={CreditCard}
+          color="#9B59B6"
+        />
+        <KPICard
+          label="Total sessions"
+          value={allData.length}
+          icon={Zap}
+          color="#2ECC71"
+        />
+      </div>
 
       {/* KPI Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

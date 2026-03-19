@@ -100,6 +100,7 @@ const NAV_SECTIONS: NavSection[] = [
         label: "Billing",
         items: [
           { to: "/billing", label: "CDRs & Factures", icon: FileText, requiredPermissions: ["billing.view"] },
+          { to: "/billing-profiles", label: "Profils de facturation", icon: Building2, requiredPermissions: ["billing.view"] },
           { to: "/tariffs", label: "Tarifs", icon: Wallet, requiredPermissions: ["billing.tariffs"] },
           { to: "/roaming-contracts", label: "Accords & Remboursement", icon: Handshake, requiredPermissions: ["ocpi.view"] },
         ],
