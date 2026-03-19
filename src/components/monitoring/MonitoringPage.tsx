@@ -125,6 +125,7 @@ function useActiveTransactions() {
     retry: false,
     queryFn: async () => {
       try {
+        // 1) Try ocpp_transactions first
         const { data, error } = await supabase
           .from("ocpp_transactions")
           .select("*, stations(name, city)")
@@ -132,9 +133,39 @@ function useActiveTransactions() {
           .order("started_at", { ascending: false });
         if (error) {
           console.warn("[Monitoring] ocpp_transactions error:", error.code, error.message);
+        }
+
+        // 2) If ocpp_transactions returned data, use it
+        if (data && data.length > 0) return data as OcppTransaction[];
+
+        // 3) Fallback: query recent ocpi_cdrs (CDRs from GreenFlux/Road sync)
+        console.info("[Monitoring] ocpp_transactions empty, falling back to ocpi_cdrs");
+        const { data: cdrs, error: cdrError } = await supabase
+          .from("ocpi_cdrs")
+          .select("id, start_date_time, end_date_time, total_energy, total_cost, cdr_location, cdr_token, status")
+          .order("start_date_time", { ascending: false })
+          .limit(15);
+        if (cdrError) {
+          console.warn("[Monitoring] CDR fallback error:", cdrError.message);
           return [];
         }
-        return (data ?? []) as OcppTransaction[];
+
+        // Map CDR fields to OcppTransaction shape for the UI
+        return (cdrs ?? []).map((cdr: Record<string, unknown>): OcppTransaction => {
+          const location = cdr.cdr_location as Record<string, unknown> | null;
+          const stationName = location?.name as string ?? "Borne CDR";
+          const stationCity = (location?.city as string) ?? null;
+          const totalEnergy = cdr.total_energy as number | null;
+          return {
+            id: cdr.id as string,
+            connector_id: 1,
+            meter_start: 0,
+            meter_stop: totalEnergy != null ? Math.round(totalEnergy * 1000) : null, // Wh for computeEnergy
+            started_at: cdr.start_date_time as string,
+            status: "Active",
+            stations: { name: stationName, city: stationCity },
+          };
+        });
       } catch {
         return [];
       }

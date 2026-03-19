@@ -59,16 +59,66 @@ export async function createPaymentIntent(params: {
   customerId?: string;
   description?: string;
   metadata?: Record<string, string>;
+  captureMethod?: "automatic" | "manual";
+  connectedAccountId?: string;
+  applicationFeeAmount?: number;
 }): Promise<Stripe.PaymentIntent> {
   const stripe = getStripe();
-  return stripe.paymentIntents.create({
+  const createParams: Stripe.PaymentIntentCreateParams = {
     amount: params.amountCents,
     currency: params.currency ?? "eur",
     customer: params.customerId,
     description: params.description,
     payment_method_types: ["card"],
     metadata: params.metadata ?? {},
-  });
+  };
+  if (params.captureMethod) {
+    createParams.capture_method = params.captureMethod;
+  }
+  if (params.applicationFeeAmount) {
+    createParams.application_fee_amount = params.applicationFeeAmount;
+  }
+  const options: Stripe.RequestOptions = {};
+  if (params.connectedAccountId) {
+    options.stripeAccount = params.connectedAccountId;
+  }
+  return stripe.paymentIntents.create(createParams, options);
+}
+
+/**
+ * Capture a previously authorized PaymentIntent (capture_method: manual)
+ * Used for spot charging: authorize 20€, then capture actual amount
+ */
+export async function capturePaymentIntent(
+  paymentIntentId: string,
+  amountToCaptureCents?: number,
+  connectedAccountId?: string,
+): Promise<Stripe.PaymentIntent> {
+  const stripe = getStripe();
+  const options: Stripe.RequestOptions = {};
+  if (connectedAccountId) {
+    options.stripeAccount = connectedAccountId;
+  }
+  return stripe.paymentIntents.capture(
+    paymentIntentId,
+    amountToCaptureCents ? { amount_to_capture: amountToCaptureCents } : {},
+    options,
+  );
+}
+
+/**
+ * Cancel a PaymentIntent (e.g., if charging fails to start)
+ */
+export async function cancelPaymentIntent(
+  paymentIntentId: string,
+  connectedAccountId?: string,
+): Promise<Stripe.PaymentIntent> {
+  const stripe = getStripe();
+  const options: Stripe.RequestOptions = {};
+  if (connectedAccountId) {
+    options.stripeAccount = connectedAccountId;
+  }
+  return stripe.paymentIntents.cancel(paymentIntentId, {}, options);
 }
 
 // ─── Checkout Session Operations ───────────────────────────

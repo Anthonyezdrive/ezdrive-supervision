@@ -129,6 +129,7 @@ export function DashboardPage() {
   });
 
   // Recent sessions — scoped by CPO via chargepoint → station chain
+  // Fallback: if ocpp_transactions is empty, query ocpi_cdrs instead
   const { data: recentSessions } = useQuery({
     queryKey: ["dashboard-recent-sessions", selectedCpoId ?? "all"],
     retry: false,
@@ -151,6 +152,7 @@ export function DashboardPage() {
           if (chargepointIds.length === 0) return [];
         }
 
+        // 1) Try ocpp_transactions first
         let query = supabase
           .from("ocpp_transactions")
           .select("id, chargepoint_id, connector_id, status, started_at, stopped_at, energy_kwh, ocpp_chargepoints(station_id, stations(name, city, cpo_id))");
@@ -160,8 +162,36 @@ export function DashboardPage() {
         const { data, error } = await query
           .order("started_at", { ascending: false })
           .limit(5);
-        if (error) { console.warn("[Dashboard] recent sessions:", error.message); return []; }
-        return data ?? [];
+        if (error) { console.warn("[Dashboard] recent sessions:", error.message); }
+
+        // 2) If ocpp_transactions returned data, use it
+        if (data && data.length > 0) return data;
+
+        // 3) Fallback: query ocpi_cdrs (CDRs from GreenFlux/Road sync)
+        console.info("[Dashboard] ocpp_transactions empty, falling back to ocpi_cdrs");
+        const { data: cdrs, error: cdrError } = await supabase
+          .from("ocpi_cdrs")
+          .select("id, start_date_time, end_date_time, total_energy, total_cost, cdr_location, cdr_token, status")
+          .order("start_date_time", { ascending: false })
+          .limit(5);
+        if (cdrError) { console.warn("[Dashboard] CDR fallback:", cdrError.message); return []; }
+
+        // Map CDR fields to match the session display format
+        return (cdrs ?? []).map((cdr: Record<string, unknown>) => {
+          const location = cdr.cdr_location as Record<string, unknown> | null;
+          const stationName = location?.name as string ?? "Borne CDR";
+          const stationCity = location?.city as string ?? "";
+          return {
+            id: cdr.id,
+            status: "Completed" as const,
+            started_at: cdr.start_date_time,
+            energy_kwh: cdr.total_energy,
+            // Provide a stations-like structure for the renderer
+            ocpp_chargepoints: {
+              stations: { name: stationName, city: stationCity },
+            },
+          };
+        });
       } catch { return []; }
     },
     refetchInterval: 15000,
