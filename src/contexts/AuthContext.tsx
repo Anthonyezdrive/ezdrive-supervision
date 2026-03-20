@@ -44,7 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(data as UserProfile);
     } else {
       // Profile doesn't exist yet (trigger may not have fired)
-      // Provide a fallback profile from auth metadata
+      // Provide a fallback profile from auth metadata — default to "user" (least privilege)
       const currentUser = (await supabase.auth.getUser()).data.user;
       if (currentUser) {
         setProfile({
@@ -52,7 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           email: currentUser.email ?? "",
           full_name:
             currentUser.user_metadata?.full_name ?? currentUser.email ?? "",
-          role: "admin",
+          role: currentUser.user_metadata?.role ?? "user",
           territory: null,
           cpo_id: null,
           admin_role_id: null,

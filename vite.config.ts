@@ -10,4 +10,34 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // ── Vendor chunks (loaded in parallel by browser) ──
+          "vendor-react": [
+            "react",
+            "react-dom",
+            "react-router-dom",
+          ],
+          "vendor-query": [
+            "@tanstack/react-query",
+          ],
+          "vendor-supabase": [
+            "@supabase/supabase-js",
+          ],
+          "vendor-charts": [
+            "recharts",
+          ],
+          "vendor-map": [
+            "leaflet",
+            "react-leaflet",
+          ],
+          "vendor-icons": [
+            "lucide-react",
+          ],
+        },
+      },
+    },
+  },
 });

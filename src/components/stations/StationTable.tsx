@@ -110,9 +110,12 @@ function ConnectorDots({ station }: { station: Station }) {
 interface StationTableProps {
   stations: Station[];
   onSelect: (station: Station) => void;
+  selectedIds?: Set<string>;
+  onToggleSelect?: (id: string) => void;
+  onToggleSelectAll?: () => void;
 }
 
-export function StationTable({ stations, onSelect }: StationTableProps) {
+export function StationTable({ stations, onSelect, selectedIds, onToggleSelect, onToggleSelectAll }: StationTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [page, setPage] = useState(1);
@@ -162,6 +165,19 @@ export function StationTable({ stations, onSelect }: StationTableProps) {
         <table className="w-full">
           <thead className="border-b border-border">
             <tr>
+              {selectedIds && (
+                <th className="px-4 py-3 w-10">
+                  <input
+                    type="checkbox"
+                    checked={stations.length > 0 && selectedIds.size === stations.length}
+                    ref={(el) => {
+                      if (el) el.indeterminate = selectedIds.size > 0 && selectedIds.size < stations.length;
+                    }}
+                    onChange={() => onToggleSelectAll?.()}
+                    className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
+                  />
+                </th>
+              )}
               <th className={thClass} onClick={() => handleSort("connectivity_status")}>
                 Connexion <SortIcon col="connectivity_status" />
               </th>
@@ -193,8 +209,21 @@ export function StationTable({ stations, onSelect }: StationTableProps) {
               <tr
                 key={station.id}
                 onClick={() => onSelect(station)}
-                className="hover:bg-surface-elevated/50 cursor-pointer transition-colors"
+                className={cn(
+                  "hover:bg-surface-elevated/50 cursor-pointer transition-colors",
+                  selectedIds?.has(station.id) && "bg-primary/5"
+                )}
               >
+                {selectedIds && (
+                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(station.id)}
+                      onChange={() => onToggleSelect?.(station.id)}
+                      className="w-4 h-4 rounded border-border accent-primary cursor-pointer"
+                    />
+                  </td>
+                )}
                 <td className="px-4 py-3">
                   <ConnectionBadge status={station.connectivity_status} />
                 </td>

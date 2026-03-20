@@ -4,7 +4,7 @@
 // ============================================================
 
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   ScanLine,
   Search,
@@ -20,6 +20,7 @@ import {
   ShieldCheck,
   Wrench,
   Crown,
+  MapPin,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -37,6 +38,18 @@ interface ExceptionResult {
   group_name: string | null;
   rule_type: string | null;
   rule_name: string | null;
+}
+
+interface StationContextResult {
+  allowed: boolean;
+  reason: string;
+  group_name: string | null;
+}
+
+interface StationOption {
+  id: string;
+  name: string;
+  evse_id: string | null;
 }
 
 interface TokenResult {
@@ -58,6 +71,7 @@ interface TokenResult {
     status: string | null;
   };
   exception?: ExceptionResult;
+  stationContext?: StationContextResult;
 }
 
 const MODES: { key: SearchMode; label: string; icon: React.ComponentType<{ className?: string }>; placeholder: string }[] = [
@@ -72,10 +86,85 @@ export function ValidateTokenPage() {
   const { selectedCpoId } = useCpo();
   const [mode, setMode] = useState<SearchMode>("auth_id");
   const [tokenInput, setTokenInput] = useState("");
+  const [stationId, setStationId] = useState<string>("");
   const [result, setResult] = useState<TokenResult | null>(null);
 
+  // Fetch stations list for contextual validation
+  const { data: stations } = useQuery<StationOption[]>({
+    queryKey: ["stations-list", selectedCpoId ?? "all"],
+    queryFn: async () => {
+      let query = supabase
+        .from("stations")
+        .select("id, name, evse_id")
+        .order("name");
+      if (selectedCpoId) query = query.eq("cpo_id", selectedCpoId);
+      const { data, error } = await query;
+      if (error) {
+        console.warn("[ValidateToken] stations query:", error.message);
+        return [];
+      }
+      return (data ?? []) as StationOption[];
+    },
+  });
+
+  // Helper: check token authorization on a specific station
+  async function checkStationContext(tokenUid: string, sid: string): Promise<StationContextResult> {
+    // Try RPC first
+    try {
+      const { data, error } = await supabase.rpc("check_token_exception", {
+        p_token_uid: tokenUid,
+        p_station_id: sid,
+      });
+      if (!error && data) return data as StationContextResult;
+    } catch {
+      // RPC may not exist — fall through to manual check
+    }
+
+    // Manual check: access_group_members
+    const { data: groupMembers } = await supabase
+      .from("access_group_members")
+      .select("id, access_group:access_groups(id, name)")
+      .eq("token_uid", tokenUid)
+      .eq("station_id", sid)
+      .limit(1);
+
+    if (groupMembers && groupMembers.length > 0) {
+      const group = (groupMembers[0] as any)?.access_group;
+      return {
+        allowed: true,
+        reason: `Membre du groupe d'accès "${group?.name ?? "—"}"`,
+        group_name: group?.name ?? null,
+      };
+    }
+
+    // Check exceptions table
+    const { data: exceptions } = await supabase
+      .from("exceptions")
+      .select("id, type, reason")
+      .eq("token_uid", tokenUid)
+      .eq("station_id", sid)
+      .limit(1);
+
+    if (exceptions && exceptions.length > 0) {
+      const ex = exceptions[0];
+      const isBlacklist = ex.type === "blacklist";
+      return {
+        allowed: !isBlacklist,
+        reason: ex.reason ?? (isBlacklist ? "Blacklisté sur cette station" : "Exception active"),
+        group_name: null,
+      };
+    }
+
+    // No specific rule found — general authorization applies
+    return {
+      allowed: true,
+      reason: "Aucune restriction spécifique — autorisation générale",
+      group_name: null,
+    };
+  }
+
   const validateMutation = useMutation({
-    mutationFn: async ({ searchMode, value }: { searchMode: SearchMode; value: string }) => {
+    mutationFn: async ({ searchMode, value, selectedStationId }: { searchMode: SearchMode; value: string; selectedStationId: string }) => {
       const trimmed = value.trim();
       if (!trimmed) throw new Error("Veuillez entrer une valeur");
 
@@ -123,6 +212,12 @@ export function ValidateTokenPage() {
         const { data: exData } = await supabase.rpc("check_token_exceptions", { p_token_uid: token.uid });
         const exception = exData as ExceptionResult | null;
 
+        // Check station context if a station is selected
+        let stationContext: StationContextResult | undefined;
+        if (selectedStationId) {
+          stationContext = await checkStationContext(token.uid, selectedStationId);
+        }
+
         return {
           found: true,
           token: {
@@ -136,6 +231,7 @@ export function ValidateTokenPage() {
           },
           user,
           exception: exception ?? undefined,
+          stationContext,
         } as TokenResult;
       }
 
@@ -154,6 +250,12 @@ export function ValidateTokenPage() {
       const { data: exData2 } = await supabase.rpc("check_token_exceptions", { p_token_uid: card.uid });
       const exception2 = exData2 as ExceptionResult | null;
 
+      // Check station context if a station is selected
+      let stationContext2: StationContextResult | undefined;
+      if (selectedStationId) {
+        stationContext2 = await checkStationContext(card.uid, selectedStationId);
+      }
+
       return {
         found: true,
         token: {
@@ -167,6 +269,7 @@ export function ValidateTokenPage() {
         },
         user,
         exception: exception2 ?? undefined,
+        stationContext: stationContext2,
       } as TokenResult;
     },
     onSuccess: (data) => setResult(data),
@@ -175,7 +278,7 @@ export function ValidateTokenPage() {
 
   function handleValidate() {
     setResult(null);
-    validateMutation.mutate({ searchMode: mode, value: tokenInput });
+    validateMutation.mutate({ searchMode: mode, value: tokenInput, selectedStationId: stationId });
   }
 
   return (
@@ -250,6 +353,29 @@ export function ValidateTokenPage() {
             )}
             Valider
           </button>
+        </div>
+
+        {/* Station Selector (optional) */}
+        <div className="mt-4 space-y-1.5">
+          <label className="text-sm text-foreground-muted">Station (optionnel)</label>
+          <div className="relative">
+            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
+            <select
+              value={stationId}
+              onChange={(e) => setStationId(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 bg-surface border border-border rounded-xl text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 appearance-none"
+            >
+              <option value="">Toutes les stations</option>
+              {stations?.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}{s.evse_id ? ` (${s.evse_id})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="text-xs text-foreground-muted/70">
+            Sélectionnez une station pour vérifier si le token y est autorisé
+          </p>
         </div>
       </div>
 
@@ -369,6 +495,65 @@ export function ValidateTokenPage() {
                     <InfoRow icon={CreditCard} label="Charge gratuite" value={result.exception.free_charging ? "Oui" : "Non"} />
                     <InfoRow icon={CheckCircle2} label="Autorise" value={result.exception.allowed ? "Oui" : "Non"} />
                   </div>
+                </div>
+              )}
+
+              {/* Station Context */}
+              {result.stationContext && stationId && (
+                <div
+                  className={cn(
+                    "border rounded-2xl p-6",
+                    result.stationContext.allowed
+                      ? "bg-surface border-emerald-500/20"
+                      : "bg-surface border-red-500/20"
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={cn(
+                        "w-10 h-10 rounded-xl flex items-center justify-center",
+                        result.stationContext.allowed ? "bg-emerald-500/10" : "bg-red-500/10"
+                      )}
+                    >
+                      {result.stationContext.allowed ? (
+                        <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                      ) : (
+                        <XCircle className="w-5 h-5 text-red-400" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-base font-semibold text-foreground">
+                        Contexte station
+                      </h3>
+                      <p className="text-sm mt-0.5">
+                        {result.stationContext.allowed ? (
+                          <span className="text-emerald-400">
+                            Autorise sur {stations?.find((s) => s.id === stationId)?.name ?? "station"}
+                          </span>
+                        ) : (
+                          <span className="text-red-400">
+                            Non autorise sur {stations?.find((s) => s.id === stationId)?.name ?? "station"}
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs text-foreground-muted mt-1">{result.stationContext.reason}</p>
+                    </div>
+                    <span
+                      className={cn(
+                        "ml-auto shrink-0 px-2.5 py-1 rounded-full text-xs font-semibold",
+                        result.stationContext.allowed
+                          ? "bg-emerald-500/10 text-emerald-400"
+                          : "bg-red-500/10 text-red-400"
+                      )}
+                    >
+                      {result.stationContext.allowed ? "Autorise" : "Refuse"}
+                    </span>
+                  </div>
+                  {result.stationContext.group_name && (
+                    <div className="mt-3 pt-3 border-t border-border/50">
+                      <InfoRow icon={ShieldCheck} label="Groupe d'acces" value={result.stationContext.group_name} />
+                    </div>
+                  )}
                 </div>
               )}
 

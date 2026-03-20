@@ -30,6 +30,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHelp } from "@/components/ui/PageHelp";
 import { MaintenancePage } from "@/components/maintenance/MaintenancePage";
 import { QuickActions } from "./QuickActions";
+import { RefreshIndicator } from "@/components/shared/RefreshIndicator";
 import {
   useMonitoringStations,
   useActiveTransactions,
@@ -82,6 +83,7 @@ export function MonitoringPage() {
     isLoading: stationsLoading,
     isError: stationsError,
     refetch: refetchStations,
+    dataUpdatedAt,
   } = useMonitoringStations(selectedCpoId);
 
   const {
@@ -153,9 +155,12 @@ export function MonitoringPage() {
   // ── Tab header wrapper ──
   const renderTab = (subtitle: string, content: React.ReactNode) => (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-heading text-xl font-bold">Monitoring</h1>
-        <p className="text-sm text-foreground-muted mt-1">{subtitle}</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-heading text-xl font-bold">Monitoring</h1>
+          <p className="text-sm text-foreground-muted mt-1">{subtitle}</p>
+        </div>
+        <RefreshIndicator dataUpdatedAt={dataUpdatedAt} />
       </div>
       {tabBar}
       <Suspense fallback={<TabLoader />}>{content}</Suspense>
@@ -209,11 +214,14 @@ export function MonitoringPage() {
   return (
     <div className="space-y-6">
       {/* ── Header ── */}
-      <div>
-        <h1 className="font-heading text-xl font-bold">Monitoring</h1>
-        <p className="text-sm text-foreground-muted mt-1">
-          Surveillance en temps réel du réseau
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="font-heading text-xl font-bold">Monitoring</h1>
+          <p className="text-sm text-foreground-muted mt-1">
+            Surveillance en temps réel du réseau
+          </p>
+        </div>
+        <RefreshIndicator dataUpdatedAt={dataUpdatedAt} />
       </div>
 
       {tabBar}

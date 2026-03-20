@@ -7,6 +7,10 @@ export interface B2BClient {
   logo_url: string | null;
   is_active: boolean;
   created_at: string;
+  monthly_budget?: number | null;
+  budget_alert_enabled?: boolean;
+  budget_block_enabled?: boolean;
+  monthly_report_email?: boolean;
 }
 
 export interface B2BFilters {

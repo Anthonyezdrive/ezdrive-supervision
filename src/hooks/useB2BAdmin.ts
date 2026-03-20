@@ -16,31 +16,23 @@ export interface B2BUserRow {
 
 // ── Queries ──────────────────────────────────────────────
 
-/** All B2B clients (including inactive) with user count */
+/** All B2B clients (including inactive) with user count — single query via join */
 export function useB2BClientsAdmin() {
   return useQuery({
     queryKey: ["b2b-clients-admin"],
     queryFn: async () => {
+      // Single query: fetch clients + embedded user count via relation
       const { data, error } = await supabase
         .from("b2b_clients")
-        .select("*")
+        .select("*, b2b_client_access(count)")
         .order("name");
       if (error) throw error;
 
-      // Count users per client
-      const { data: accessData } = await supabase
-        .from("b2b_client_access")
-        .select("b2b_client_id");
-
-      const countMap = new Map<string, number>();
-      for (const a of accessData ?? []) {
-        countMap.set(a.b2b_client_id, (countMap.get(a.b2b_client_id) ?? 0) + 1);
-      }
-
-      return (data ?? []).map((c: B2BClient) => ({
+      return (data ?? []).map((c: any) => ({
         ...c,
-        userCount: countMap.get(c.id) ?? 0,
-      }));
+        userCount: c.b2b_client_access?.[0]?.count ?? 0,
+        b2b_client_access: undefined, // clean up join data
+      })) as (B2BClient & { userCount: number })[];
     },
     staleTime: 30_000,
   });

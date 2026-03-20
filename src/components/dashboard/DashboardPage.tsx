@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
@@ -31,10 +31,13 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
-import { MapContainer, TileLayer, CircleMarker, Tooltip as LeafletTooltip, useMap } from "react-leaflet";
+import { useNavigate } from "react-router-dom";
 import type { LatLngBoundsExpression } from "leaflet";
-import "leaflet/dist/leaflet.css";
 import { supabase } from "@/lib/supabase";
+import { ExportButton } from "@/components/shared/ExportButton";
+
+// ── Lazy-loaded map (avoids ~200KB Leaflet on initial load) ──
+const DashboardMap = lazy(() => import("./DashboardMap"));
 import { useStationKPIs } from "@/hooks/useStationKPIs";
 import { useStations } from "@/hooks/useStations";
 import { useCpo } from "@/contexts/CpoContext";
@@ -44,7 +47,7 @@ import { KPISkeleton, Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { cn } from "@/lib/utils";
 import { PageHelp } from "@/components/ui/PageHelp";
-import { OCPP_STATUS_CONFIG } from "@/lib/constants";
+import { RefreshIndicator } from "@/components/shared/RefreshIndicator";
 import type { Station } from "@/types/station";
 
 // ============================================================
@@ -84,36 +87,12 @@ function getTimeRangeForFilter(filter: TimeFilter, customFrom?: string, customTo
   return { filter, from: yearStart.toISOString().slice(0, 10), to: now.toISOString().slice(0, 10) };
 }
 
-// ── Map helpers ───────────────────────────────────────────
-function AutoFitBounds({ bounds }: { bounds: LatLngBoundsExpression | null }) {
-  const map = useMap();
-  const fitted = useRef(false);
-  useEffect(() => {
-    if (!fitted.current && bounds) {
-      map.fitBounds(bounds, { padding: [50, 50], maxZoom: 12 });
-      fitted.current = true;
-    }
-  }, [map, bounds]);
-  return null;
-}
-
-function getMarkerColor(station: Station): string {
-  if (!station.is_online) return "#95A5A6"; // gray — offline
-  switch (station.ocpp_status) {
-    case "Available": return "#00D4AA"; // green
-    case "Charging": case "Preparing": case "Finishing": return "#3498DB"; // blue
-    case "SuspendedEV": case "SuspendedEVSE": return "#E67E22"; // orange
-    case "Faulted": return "#FF6B6B"; // red
-    case "Unavailable": return "#95A5A6"; // gray
-    default: return "#95A5A6";
-  }
-}
-
 // ============================================================
 // Main Component
 // ============================================================
 
 export function DashboardPage() {
+  const navigate = useNavigate();
   const { selectedCpoId } = useCpo();
   const { data: kpis, isLoading, isError, refetch } = useStationKPIs(selectedCpoId);
   const { data: stations } = useStations(selectedCpoId);
@@ -566,6 +545,36 @@ export function DashboardPage() {
     [mappableStations]
   );
 
+  // ── Export CSV data builder ─────────────────────────────
+  const exportData = useMemo(() => {
+    const rows: Record<string, unknown>[] = [];
+    if (kpis) {
+      rows.push({ type: "KPI", label: "Total Bornes", value: kpis.total_stations });
+      rows.push({ type: "KPI", label: "Disponibles", value: kpis.available });
+      rows.push({ type: "KPI", label: "En charge", value: kpis.charging });
+      rows.push({ type: "KPI", label: "En panne", value: kpis.faulted });
+      rows.push({ type: "KPI", label: "Hors ligne", value: kpis.offline });
+    }
+    if (businessMetrics) {
+      rows.push({ type: "Business", label: "Sessions totales", value: businessMetrics.totalSessions });
+      rows.push({ type: "Business", label: "Sessions actives", value: businessMetrics.activeSessions });
+      rows.push({ type: "Business", label: "Clients inscrits", value: businessMetrics.totalCustomers });
+      rows.push({ type: "Business", label: "Energie totale (kWh)", value: businessMetrics.totalEnergy });
+      rows.push({ type: "Business", label: "Revenu total (cents)", value: businessMetrics.totalRevenue });
+      rows.push({ type: "Business", label: "Abonnements actifs", value: businessMetrics.activeSubscriptions });
+    }
+    for (const s of topFlopData?.top5 ?? []) {
+      rows.push({ type: "Top 5", label: s.name, value: `${s.sessions} sessions / ${Math.round(s.totalKwh)} kWh` });
+    }
+    return rows;
+  }, [kpis, businessMetrics, topFlopData]);
+
+  const exportColumns = [
+    { key: "type", label: "Type" },
+    { key: "label", label: "Indicateur" },
+    { key: "value", label: "Valeur" },
+  ];
+
   // ── Territory kWh chart colors ────────────────────────
   const TERRITORY_COLORS: Record<string, string> = {
     Guadeloupe: "#00D4AA",
@@ -885,59 +894,16 @@ export function DashboardPage() {
 
         <div className="rounded-lg overflow-hidden" style={{ height: 350 }}>
           {mappableStations.length > 0 ? (
-            <MapContainer
-              center={[14.6, -61]}
-              zoom={9}
-              className="h-full w-full"
-              style={{ background: "#0D1117" }}
-            >
-              <TileLayer
-                url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>'
-              />
-              <AutoFitBounds bounds={mapBounds} />
-              {mappableStations.map((station) => {
-                const markerColor = getMarkerColor(station);
-                const cfg = OCPP_STATUS_CONFIG[station.ocpp_status];
-                const statusLabel = !station.is_online ? "Hors ligne" : cfg.label;
-                return (
-                  <CircleMarker
-                    key={station.id}
-                    center={[station.latitude!, station.longitude!]}
-                    radius={6}
-                    pathOptions={{
-                      fillColor: markerColor,
-                      fillOpacity: 0.9,
-                      color: "#fff",
-                      weight: 1.5,
-                      opacity: 0.5,
-                    }}
-                  >
-                    <LeafletTooltip
-                      direction="top"
-                      offset={[0, -8]}
-                      opacity={0.95}
-                    >
-                      <div style={{ fontFamily: "system-ui, sans-serif", minWidth: 160 }}>
-                        <p style={{ fontWeight: 700, fontSize: 12, margin: "0 0 2px" }}>{station.name}</p>
-                        <p style={{ fontSize: 11, margin: "0 0 4px", display: "flex", alignItems: "center", gap: 4 }}>
-                          <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", backgroundColor: markerColor }} />
-                          <span style={{ color: markerColor, fontWeight: 600 }}>{statusLabel}</span>
-                        </p>
-                        {station.max_power_kw && station.ocpp_status === "Charging" && (
-                          <p style={{ fontSize: 10, color: "#888", margin: "0 0 2px" }}>
-                            Puissance : {station.max_power_kw} kW
-                          </p>
-                        )}
-                        <p style={{ fontSize: 10, color: "#888", margin: 0 }}>
-                          Dernier signal : {timeAgo(station.last_synced_at)}
-                        </p>
-                      </div>
-                    </LeafletTooltip>
-                  </CircleMarker>
-                );
-              })}
-            </MapContainer>
+            <Suspense fallback={
+              <div className="flex items-center justify-center h-full bg-surface-elevated rounded-lg">
+                <div className="flex items-center gap-2">
+                  <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                  <p className="text-xs text-foreground-muted">Chargement carte…</p>
+                </div>
+              </div>
+            }>
+              <DashboardMap stations={mappableStations} bounds={mapBounds} />
+            </Suspense>
           ) : (
             <div className="flex items-center justify-center h-full bg-surface-elevated rounded-lg">
               <p className="text-xs text-foreground-muted">Aucune borne géolocalisée</p>

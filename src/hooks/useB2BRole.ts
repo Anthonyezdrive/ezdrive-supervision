@@ -37,7 +37,7 @@ export function useB2BRole() {
   });
 
   return {
-    b2bRole: access?.b2b_role ?? "admin",
+    b2bRole: access?.b2b_role ?? "employee",
     isEmployee: access?.b2b_role === "employee",
     isManager: access?.b2b_role === "manager",
     isB2BAdmin: access?.b2b_role === "admin",

@@ -22,6 +22,7 @@ import {
   Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TariffVisualBuilder } from "./TariffVisualBuilder";
 
 // ============================================================
 // Tariffs Management Page — Real DB schema
@@ -945,23 +946,6 @@ function DeleteConfirmModal({
 
 // ── Create OCPI Tariff Modal ─────────────────────────────
 
-const OCPI_COMPONENT_TYPES = [
-  { type: "ENERGY", label: "Énergie (par kWh)", unit: "€/kWh", description: "Prix par kilowatt-heure consommé", icon: "⚡" },
-  { type: "TIME", label: "Temps de charge (par min)", unit: "€/min", description: "Prix par minute de charge active", icon: "⏱️" },
-  { type: "FLAT", label: "Frais de session (fixe)", unit: "€", description: "Frais fixe par session de charge", icon: "💰" },
-  { type: "PARKING_TIME", label: "Stationnement (par min)", unit: "€/min", description: "Frais par minute après fin de charge (finishing/ventouse)", icon: "🅿️" },
-  { type: "RESERVATION", label: "Réservation (par min)", unit: "€/min", description: "Frais par minute de réservation de borne", icon: "📅" },
-  { type: "RESERVATION_FLAT", label: "Réservation (fixe)", unit: "€", description: "Frais fixe pour réserver une borne", icon: "📋" },
-  { type: "NO_SHOW", label: "Non-présentation (fixe)", unit: "€", description: "Pénalité si le conducteur ne se présente pas après réservation", icon: "🚫" },
-] as const;
-
-interface ComponentEntry {
-  type: string;
-  price: string;
-  enabled: boolean;
-  step_size: number;
-}
-
 function CreateOcpiTariffModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const [tariffId, setTariffId] = useState("");
   const [currency, setCurrency] = useState("EUR");
@@ -969,51 +953,29 @@ function CreateOcpiTariffModal({ onClose, onCreated }: { onClose: () => void; on
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [components, setComponents] = useState<ComponentEntry[]>(
-    OCPI_COMPONENT_TYPES.map((t) => ({
-      type: t.type,
-      price: t.type === "ENERGY" ? "0.35" : t.type === "PARKING_TIME" ? "0.10" : "0.00",
-      enabled: t.type === "ENERGY",
-      step_size: t.type === "ENERGY" ? 1 : 60,
-    }))
-  );
-
-  function toggleComponent(type: string) {
-    setComponents((prev) =>
-      prev.map((c) => (c.type === type ? { ...c, enabled: !c.enabled } : c))
-    );
-  }
-
-  function updatePrice(type: string, price: string) {
-    setComponents((prev) =>
-      prev.map((c) => (c.type === type ? { ...c, price } : c))
-    );
-  }
-
-  function updateStepSize(type: string, step_size: number) {
-    setComponents((prev) =>
-      prev.map((c) => (c.type === type ? { ...c, step_size } : c))
-    );
-  }
+  // Visual builder state — starts with one default ENERGY element
+  const [tariffValue, setTariffValue] = useState({
+    elements: [
+      {
+        price_components: [
+          { type: "ENERGY", price: 0.35, vat: 20, step_size: 1 },
+        ],
+      },
+    ],
+  });
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!tariffId.trim()) { setError("L'identifiant du tarif est requis"); return; }
 
-    const enabledComps = components.filter((c) => c.enabled && Number(c.price) > 0);
-    if (enabledComps.length === 0) { setError("Au moins une composante tarifaire est requise"); return; }
+    const elements = tariffValue?.elements ?? [];
+    const hasComponents = elements.some(
+      (el: any) => el.price_components?.length > 0
+    );
+    if (!hasComponents) { setError("Au moins une composante tarifaire est requise"); return; }
 
     setSaving(true);
     setError(null);
-
-    const elements = [{
-      price_components: enabledComps.map((c) => ({
-        type: c.type,
-        price: Number(c.price),
-        step_size: c.step_size,
-        vat: 20.0,
-      })),
-    }];
 
     const { error: insertError } = await supabase.from("ocpi_tariffs").insert({
       tariff_id: tariffId.trim().toUpperCase(),
@@ -1040,7 +1002,7 @@ function CreateOcpiTariffModal({ onClose, onCreated }: { onClose: () => void; on
   return (
     <>
       <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
-      <div className="fixed inset-x-4 top-[3%] bottom-[3%] md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-[680px] bg-surface border border-border rounded-2xl z-50 flex flex-col overflow-hidden">
+      <div className="fixed inset-x-4 top-[3%] bottom-[3%] md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-[740px] bg-surface border border-border rounded-2xl z-50 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <div>
@@ -1088,99 +1050,12 @@ function CreateOcpiTariffModal({ onClose, onCreated }: { onClose: () => void; on
             </div>
           </div>
 
-          {/* Price Components */}
-          <div>
-            <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-3">Composantes tarifaires</p>
-            <p className="text-xs text-foreground-muted mb-4">Activez les composantes que vous souhaitez inclure dans ce tarif. Au moins une composante est requise.</p>
-            <div className="space-y-2">
-              {OCPI_COMPONENT_TYPES.map((ct) => {
-                const comp = components.find((c) => c.type === ct.type)!;
-                return (
-                  <div
-                    key={ct.type}
-                    className={cn(
-                      "p-4 rounded-xl border-2 transition-all",
-                      comp.enabled
-                        ? "border-primary/30 bg-primary/5"
-                        : "border-border bg-surface-elevated/30"
-                    )}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <button
-                          type="button"
-                          onClick={() => toggleComponent(ct.type)}
-                          className={cn(
-                            "w-5 h-5 rounded border-2 flex items-center justify-center transition-colors",
-                            comp.enabled
-                              ? "bg-primary border-primary text-white"
-                              : "border-foreground-muted/40"
-                          )}
-                        >
-                          {comp.enabled && <span className="text-xs">✓</span>}
-                        </button>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm">{ct.icon}</span>
-                            <span className="text-sm font-medium text-foreground">{ct.label}</span>
-                            <span className="text-[10px] font-mono text-foreground-muted bg-surface-elevated px-1.5 py-0.5 rounded">{ct.type}</span>
-                          </div>
-                          <p className="text-xs text-foreground-muted mt-0.5">{ct.description}</p>
-                        </div>
-                      </div>
-
-                      {comp.enabled && (
-                        <div className="flex items-center gap-2">
-                          <div className="relative w-28">
-                            <input
-                              type="number"
-                              step="0.0001"
-                              min="0"
-                              value={comp.price}
-                              onChange={(e) => updatePrice(ct.type, e.target.value)}
-                              className="w-full px-3 py-1.5 bg-surface border border-border rounded-lg text-sm text-right font-mono focus:outline-none focus:border-primary/50"
-                            />
-                            <span className="absolute right-8 top-1/2 -translate-y-1/2 text-[10px] text-foreground-muted">{ct.unit}</span>
-                          </div>
-                          {(ct.type === "TIME" || ct.type === "PARKING_TIME" || ct.type === "RESERVATION") && (
-                            <div className="w-20">
-                              <input
-                                type="number"
-                                min="1"
-                                value={comp.step_size}
-                                onChange={(e) => updateStepSize(ct.type, Number(e.target.value))}
-                                title="Step size (secondes)"
-                                className="w-full px-2 py-1.5 bg-surface border border-border rounded-lg text-xs text-center font-mono focus:outline-none focus:border-primary/50"
-                              />
-                              <p className="text-[9px] text-foreground-muted text-center mt-0.5">step (sec)</p>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Summary */}
-          {components.some((c) => c.enabled && Number(c.price) > 0) && (
-            <div className="p-4 bg-surface-elevated border border-border rounded-xl">
-              <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Résumé du tarif</p>
-              <div className="space-y-1">
-                {components.filter((c) => c.enabled && Number(c.price) > 0).map((c) => {
-                  const ct = OCPI_COMPONENT_TYPES.find((t) => t.type === c.type)!;
-                  return (
-                    <div key={c.type} className="flex justify-between text-sm">
-                      <span className="text-foreground-muted">{ct.icon} {ct.label}</span>
-                      <span className="font-mono font-medium text-foreground">{Number(c.price).toFixed(4)} {ct.unit}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          {/* Visual Tariff Builder */}
+          <TariffVisualBuilder
+            value={tariffValue}
+            onChange={setTariffValue}
+            showJsonToggle={true}
+          />
 
           {error && (
             <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
@@ -1243,7 +1118,7 @@ function SimulateSessionCostModal({
           if (c.type === "FLAT") total += Number(c.price);
           if (c.type === "PARKING_TIME") total += (parseFloat(parking) / 60) * Number(c.price);
         }
-        setResult(total);
+        setResult(Math.round(total * 100) / 100);
       }
     } catch {
       setResult(null);

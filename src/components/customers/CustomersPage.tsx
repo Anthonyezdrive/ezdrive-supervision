@@ -31,6 +31,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useCpo } from "@/contexts/CpoContext";
 import { downloadCSV, todayISO } from "@/lib/export";
+import { CustomerDetailPage } from "@/components/customers/CustomerDetailPage";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -346,7 +347,7 @@ export function CustomersPage() {
   }, [customers]);
 
   // ── Local state ──
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("total_sessions");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -616,7 +617,7 @@ export function CustomersPage() {
                     <tr
                       key={customer.id}
                       className="hover:bg-surface-elevated/50 transition-colors cursor-pointer"
-                      onClick={() => setSelectedCustomer(customer)}
+                      onClick={() => setSelectedCustomerId(customer.driver_external_id)}
                     >
                       {/* Conducteur */}
                       <td className="px-4 py-3">
@@ -742,12 +743,11 @@ export function CustomersPage() {
         </div>
       )}
 
-      {/* Customer Detail Drawer */}
-      {selectedCustomer && (
-        <CustomerDetailDrawer
-          customer={selectedCustomer}
-          onClose={() => setSelectedCustomer(null)}
-          onRefresh={() => refetch()}
+      {/* Customer 360° Detail Page */}
+      {selectedCustomerId && (
+        <CustomerDetailPage
+          customerId={selectedCustomerId}
+          onClose={() => setSelectedCustomerId(null)}
         />
       )}
 

@@ -160,6 +160,7 @@ export function SubscriptionsPage() {
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const [showCreateOffer, setShowCreateOffer] = useState(false);
+  const [showCreateSub, setShowCreateSub] = useState(false);
   const [syncingOfferId, setSyncingOfferId] = useState<string | null>(null);
   const [cancellingSubId, setCancellingSubId] = useState<string | null>(null);
 
@@ -353,6 +354,23 @@ export function SubscriptionsPage() {
     },
   });
 
+  // --- Create subscription mutation ---
+  const createSubMutation = useMutation({
+    mutationFn: async (data: { user_id: string; offer_id: string; started_at: string }) => {
+      const { error } = await supabase.from("user_subscriptions").insert({
+        user_id: data.user_id,
+        offer_id: data.offer_id,
+        status: "ACTIVE",
+        started_at: data.started_at || new Date().toISOString(),
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["subscriptions"] });
+      setShowCreateSub(false);
+    },
+  });
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -363,13 +381,22 @@ export function SubscriptionsPage() {
             Gestion des abonnements clients
           </p>
         </div>
-        <button
-          onClick={() => setShowCreateOffer(true)}
-          className="flex items-center gap-1.5 px-4 py-2 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Créer une offre
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowCreateSub(true)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Créer abonnement
+          </button>
+          <button
+            onClick={() => setShowCreateOffer(true)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-surface-elevated text-foreground border border-border rounded-xl text-sm font-semibold hover:bg-surface-elevated/80 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Créer une offre
+          </button>
+        </div>
       </div>
 
       <PageHelp
@@ -699,6 +726,17 @@ export function SubscriptionsPage() {
           error={(createOfferMutation.error as Error | null)?.message ?? null}
         />
       )}
+
+      {/* Create Subscription Modal */}
+      {showCreateSub && (
+        <CreateSubscriptionModal
+          onClose={() => setShowCreateSub(false)}
+          onSubmit={(data) => createSubMutation.mutate(data)}
+          isLoading={createSubMutation.isPending}
+          error={(createSubMutation.error as Error | null)?.message ?? null}
+          offers={offers ?? []}
+        />
+      )}
     </div>
   );
 }
@@ -814,6 +852,178 @@ function CreateOfferModal({ onClose, onSubmit, isLoading, error }: {
               <button type="submit" disabled={isLoading || !name.trim()} className="flex-1 py-2.5 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
                 {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
                 Créer l'offre
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function CreateSubscriptionModal({ onClose, onSubmit, isLoading, error, offers }: {
+  onClose: () => void;
+  onSubmit: (data: { user_id: string; offer_id: string; started_at: string }) => void;
+  isLoading: boolean;
+  error: string | null;
+  offers: SubscriptionOffer[];
+}) {
+  const [userSearch, setUserSearch] = useState("");
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [selectedUserLabel, setSelectedUserLabel] = useState("");
+  const [offerId, setOfferId] = useState(offers[0]?.id ?? "");
+  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [userResults, setUserResults] = useState<{ id: string; label: string; email: string }[]>([]);
+  const [searching, setSearching] = useState(false);
+
+  const inputClass = "w-full px-3 py-2.5 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-primary/50 transition-colors";
+
+  async function searchUsers(q: string) {
+    if (q.length < 2) { setUserResults([]); return; }
+    setSearching(true);
+    try {
+      // Try all_consumers first
+      const { data, error } = await supabase
+        .from("all_consumers")
+        .select("id, first_name, last_name, email")
+        .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,email.ilike.%${q}%`)
+        .limit(10);
+      if (error) {
+        // Fallback to profiles
+        const { data: pData } = await supabase
+          .from("profiles")
+          .select("id, full_name, email")
+          .or(`full_name.ilike.%${q}%,email.ilike.%${q}%`)
+          .limit(10);
+        setUserResults((pData ?? []).map((p: any) => ({
+          id: p.id,
+          label: p.full_name || p.email,
+          email: p.email ?? "",
+        })));
+        return;
+      }
+      setUserResults((data ?? []).map((c: any) => ({
+        id: c.id,
+        label: [c.first_name, c.last_name].filter(Boolean).join(" ") || c.email,
+        email: c.email ?? "",
+      })));
+    } catch {
+      setUserResults([]);
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedUserId || !offerId) return;
+    onSubmit({ user_id: selectedUserId, offer_id: offerId, started_at: startDate });
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/50 z-40" onClick={onClose} />
+      <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+        <div className="bg-surface border border-border rounded-2xl w-full max-w-lg shadow-2xl">
+          <div className="flex items-center justify-between p-5 border-b border-border">
+            <h2 className="font-heading font-bold text-lg">Créer un abonnement</h2>
+            <button onClick={onClose} className="p-1.5 hover:bg-surface-elevated rounded-lg transition-colors">
+              <X className="w-5 h-5 text-foreground-muted" />
+            </button>
+          </div>
+          <form onSubmit={handleSubmit} className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+            {/* User search */}
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1.5">Client *</label>
+              {selectedUserId ? (
+                <div className="flex items-center justify-between bg-surface-elevated border border-border rounded-xl px-3 py-2.5">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">{selectedUserLabel}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setSelectedUserId(""); setSelectedUserLabel(""); setUserSearch(""); }}
+                    className="p-1 text-foreground-muted hover:text-foreground"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
+                  <input
+                    type="text"
+                    value={userSearch}
+                    onChange={(e) => { setUserSearch(e.target.value); searchUsers(e.target.value); }}
+                    placeholder="Rechercher par nom ou email..."
+                    className={`${inputClass} pl-9`}
+                  />
+                  {searching && (
+                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted animate-spin" />
+                  )}
+                  {userResults.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-surface border border-border rounded-xl shadow-lg max-h-48 overflow-y-auto">
+                      {userResults.map((u) => (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedUserId(u.id);
+                            setSelectedUserLabel(`${u.label} (${u.email})`);
+                            setUserSearch("");
+                            setUserResults([]);
+                          }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-surface-elevated transition-colors"
+                        >
+                          <p className="font-medium text-foreground">{u.label}</p>
+                          <p className="text-xs text-foreground-muted">{u.email}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Offer select */}
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1.5">Offre *</label>
+              <select value={offerId} onChange={(e) => setOfferId(e.target.value)} className={inputClass}>
+                <option value="">Sélectionner une offre...</option>
+                {offers.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name} — {formatCurrency(o.price_cents)}{billingLabel(o.billing_period)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Start date */}
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1.5">Date de début</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+
+            {error && (
+              <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>
+            )}
+
+            <div className="flex gap-3 pt-2">
+              <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-xl text-sm text-foreground-muted hover:text-foreground transition-colors">
+                Annuler
+              </button>
+              <button
+                type="submit"
+                disabled={isLoading || !selectedUserId || !offerId}
+                className="flex-1 py-2.5 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+              >
+                {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                Créer l'abonnement
               </button>
             </div>
           </form>

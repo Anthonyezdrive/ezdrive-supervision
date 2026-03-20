@@ -5,7 +5,7 @@
 // ============================================================
 
 import { useState, useMemo, useRef, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Radio,
@@ -1630,6 +1630,25 @@ function SchedulingTab({ station }: { station: Station }) {
 // DETAILS TAB (GreenFlux-style)
 // ══════════════════════════════════════════════════════════════
 
+const CONNECTOR_TYPES = ["Type2", "CCS", "CHAdeMO", "Type1", "Schuko"] as const;
+const CONNECTOR_STATUSES = ["Available", "Occupied", "Faulted", "Unavailable", "Reserved"] as const;
+
+interface ConnectorFormData {
+  id: string;
+  type: string;
+  status: string;
+  max_power_kw: number;
+  evse_uid: string;
+}
+
+const emptyConnectorForm: ConnectorFormData = {
+  id: "",
+  type: "Type2",
+  status: "Available",
+  max_power_kw: 0,
+  evse_uid: "",
+};
+
 function DetailsTab({
   station,
   onEdit,
@@ -1645,6 +1664,88 @@ function DetailsTab({
 }) {
   const { data: history } = useStationStatusHistory(station.id);
   const connectors = parseConnectors(station);
+  const queryClient = useQueryClient();
+
+  // Connector CRUD state
+  const [showConnectorForm, setShowConnectorForm] = useState(false);
+  const [editingConnectorIndex, setEditingConnectorIndex] = useState<number | null>(null);
+  const [connectorForm, setConnectorForm] = useState<ConnectorFormData>(emptyConnectorForm);
+  const [connectorSaving, setConnectorSaving] = useState(false);
+
+  const openAddForm = () => {
+    setConnectorForm({ ...emptyConnectorForm, id: `conn-${Date.now()}` });
+    setEditingConnectorIndex(null);
+    setShowConnectorForm(true);
+  };
+
+  const openEditForm = (index: number) => {
+    const c = connectors[index];
+    setConnectorForm({
+      id: c.id ?? `conn-${index}`,
+      type: c.type ?? "Type2",
+      status: c.status ?? "Available",
+      max_power_kw: c.max_power_kw ?? 0,
+      evse_uid: (c as any).evse_uid ?? "",
+    });
+    setEditingConnectorIndex(index);
+    setShowConnectorForm(true);
+  };
+
+  const cancelForm = () => {
+    setShowConnectorForm(false);
+    setEditingConnectorIndex(null);
+    setConnectorForm(emptyConnectorForm);
+  };
+
+  const saveConnector = async () => {
+    setConnectorSaving(true);
+    try {
+      const updated = [...connectors];
+      const entry = {
+        id: connectorForm.id,
+        type: connectorForm.type,
+        status: connectorForm.status,
+        max_power_kw: connectorForm.max_power_kw,
+        evse_uid: connectorForm.evse_uid || undefined,
+      };
+      if (editingConnectorIndex !== null) {
+        updated[editingConnectorIndex] = entry;
+      } else {
+        updated.push(entry);
+      }
+      const { error } = await supabase
+        .from("stations")
+        .update({ connectors: updated })
+        .eq("id", station.id);
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ["stations"] });
+      queryClient.invalidateQueries({ queryKey: ["station", station.id] });
+      cancelForm();
+    } catch (err) {
+      console.error("Failed to save connector:", err);
+    } finally {
+      setConnectorSaving(false);
+    }
+  };
+
+  const deleteConnector = async (index: number) => {
+    if (!confirm("Supprimer ce connecteur ?")) return;
+    setConnectorSaving(true);
+    try {
+      const updated = connectors.filter((_, i) => i !== index);
+      const { error } = await supabase
+        .from("stations")
+        .update({ connectors: updated })
+        .eq("id", station.id);
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ["stations"] });
+      queryClient.invalidateQueries({ queryKey: ["station", station.id] });
+    } catch (err) {
+      console.error("Failed to delete connector:", err);
+    } finally {
+      setConnectorSaving(false);
+    }
+  };
 
   // Group connectors by EVSE
   const evses = (() => {
@@ -1856,7 +1957,10 @@ function DetailsTab({
             <div className="border-t border-border">
               <div className="px-5 py-3">
                 <h4 className="text-xs font-semibold text-foreground-muted mb-3">Connecteurs</h4>
-                {evseConnectors.map((c, cIdx) => (
+                {evseConnectors.map((c, cIdx) => {
+                  // Find the global index of this connector in the full connectors array
+                  const globalIndex = connectors.indexOf(c);
+                  return (
                   <div key={cIdx} className="flex items-center justify-between bg-surface-elevated border border-border rounded-xl px-4 py-3 mb-2">
                     <div className="flex items-center gap-3">
                       <div className={cn(
@@ -1881,11 +1985,30 @@ function DetailsTab({
                         </p>
                       </div>
                     </div>
-                    <button className="px-3 py-1 text-xs font-medium text-foreground-muted border border-border rounded-lg hover:text-foreground hover:border-foreground-muted/50 transition-colors flex items-center gap-1">
-                      Deverrouiller <ChevronDown className="w-3 h-3" />
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => openEditForm(globalIndex)}
+                        disabled={connectorSaving}
+                        className="p-1.5 text-foreground-muted hover:text-primary border border-transparent hover:border-primary/30 rounded-lg transition-colors disabled:opacity-40"
+                        title="Modifier"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => deleteConnector(globalIndex)}
+                        disabled={connectorSaving}
+                        className="p-1.5 text-foreground-muted hover:text-red-400 border border-transparent hover:border-red-500/30 rounded-lg transition-colors disabled:opacity-40"
+                        title="Supprimer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button className="px-3 py-1 text-xs font-medium text-foreground-muted border border-border rounded-lg hover:text-foreground hover:border-foreground-muted/50 transition-colors flex items-center gap-1">
+                        Deverrouiller <ChevronDown className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -1894,6 +2017,96 @@ function DetailsTab({
             <Plug className="w-8 h-8 text-foreground-muted mx-auto mb-2" />
             <p className="text-sm text-foreground-muted">Aucun EVSE / connecteur</p>
           </div>
+        )}
+
+        {/* Inline connector form */}
+        {showConnectorForm && (
+          <div className="bg-surface border border-primary/30 rounded-2xl">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+              <h4 className="text-sm font-semibold text-foreground">
+                {editingConnectorIndex !== null ? "Modifier connecteur" : "Ajouter connecteur"}
+              </h4>
+              <button onClick={cancelForm} className="p-1 text-foreground-muted hover:text-foreground transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-foreground-muted mb-1">Type de connecteur</label>
+                <select
+                  value={connectorForm.type}
+                  onChange={(e) => setConnectorForm({ ...connectorForm, type: e.target.value })}
+                  className="w-full bg-surface-elevated border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {CONNECTOR_TYPES.map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-foreground-muted mb-1">Puissance max (kW)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.1}
+                  value={connectorForm.max_power_kw}
+                  onChange={(e) => setConnectorForm({ ...connectorForm, max_power_kw: parseFloat(e.target.value) || 0 })}
+                  className="w-full bg-surface-elevated border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-foreground-muted mb-1">Statut</label>
+                <select
+                  value={connectorForm.status}
+                  onChange={(e) => setConnectorForm({ ...connectorForm, status: e.target.value })}
+                  className="w-full bg-surface-elevated border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {CONNECTOR_STATUSES.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-foreground-muted mb-1">EVSE UID (optionnel)</label>
+                <input
+                  type="text"
+                  value={connectorForm.evse_uid}
+                  onChange={(e) => setConnectorForm({ ...connectorForm, evse_uid: e.target.value })}
+                  placeholder="ex: EVSE-001"
+                  className="w-full bg-surface-elevated border border-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={saveConnector}
+                  disabled={connectorSaving}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-40"
+                >
+                  {connectorSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                  {editingConnectorIndex !== null ? "Enregistrer" : "Ajouter"}
+                </button>
+                <button
+                  onClick={cancelForm}
+                  disabled={connectorSaving}
+                  className="px-4 py-2 border border-border rounded-xl text-sm text-foreground-muted hover:text-foreground hover:border-foreground-muted/50 transition-colors disabled:opacity-40"
+                >
+                  Annuler
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Add connector button */}
+        {!showConnectorForm && (
+          <button
+            onClick={openAddForm}
+            disabled={connectorSaving}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-dashed border-border rounded-2xl text-sm text-foreground-muted hover:text-primary hover:border-primary/40 transition-colors disabled:opacity-40"
+          >
+            <Plus className="w-4 h-4" />
+            Ajouter connecteur
+          </button>
         )}
 
         {/* Actions card */}

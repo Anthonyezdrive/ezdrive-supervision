@@ -16,26 +16,30 @@ import {
   UserX,
   Zap,
   X,
-  Eye,
   Activity,
   Plus,
   Download,
   Pencil,
   Building2,
   GitMerge,
-  Clock,
   Loader2,
+  CreditCard,
+  BarChart3,
+  Info,
+  Trash2,
 } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { KPICard } from "@/components/ui/KPICard";
-import { Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHelp } from "@/components/ui/PageHelp";
 import { useCpo } from "@/contexts/CpoContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { SlideOver } from "@/components/ui/SlideOver";
 import { downloadCSV, todayISO } from "@/lib/export";
+import { DriverTokenLink } from "@/components/drivers/DriverTokenLink";
+import { useDriverSessions, useSoftDeleteDriver } from "@/hooks/useDriverTokens";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -59,6 +63,14 @@ interface Driver {
   last_session_at: string | null;
   source: string | null;
   created_at: string;
+  // eMSP P1: Extended fields
+  address?: string | null;
+  postal_code?: string | null;
+  city?: string | null;
+  billing_mode?: string | null;
+  siret?: string | null;
+  cost_center?: string | null;
+  validity_date?: string | null;
 }
 
 const TABS = ["Tous", "Actifs", "Inactifs"] as const;
@@ -145,7 +157,7 @@ export function DriversPage() {
       while (hasMore) {
         let query = supabase
           .from("all_consumers")
-          .select("id, driver_external_id, first_name, last_name, email, phone, country, status, retail_package, emsp_contract, customer_name, cpo_name, total_sessions, total_energy_kwh, first_session_at, last_session_at, source, created_at")
+          .select("id, driver_external_id, first_name, last_name, email, phone, country, status, retail_package, emsp_contract, customer_name, cpo_name, total_sessions, total_energy_kwh, first_session_at, last_session_at, source, created_at, address, postal_code, city, billing_mode, siret, cost_center, validity_date")
           .order("total_sessions", { ascending: false })
           .range(from, from + PAGE - 1);
 
@@ -533,7 +545,9 @@ export function DriversPage() {
   );
 }
 
-// ── Driver Detail Drawer ──────────────────────────────────────
+// ── Driver Detail Drawer (SlideOver with Tabs) ───────────────
+
+type DetailTab = "informations" | "tokens" | "sessions";
 
 function DriverDetailDrawer({ driver, onClose, onRefresh }: { driver: Driver; onClose: () => void; onRefresh: () => void }) {
   const hue = nameToHue(driver.full_name ?? driver.driver_external_id);
@@ -543,16 +557,31 @@ function DriverDetailDrawer({ driver, onClose, onRefresh }: { driver: Driver; on
     : false;
 
   const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<DetailTab>("informations");
   const [editing, setEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ first_name: driver.first_name ?? "", last_name: driver.last_name ?? "", email: driver.email ?? "", phone: driver.phone ?? "" });
+  const [editForm, setEditForm] = useState({
+    first_name: driver.first_name ?? "",
+    last_name: driver.last_name ?? "",
+    email: driver.email ?? "",
+    phone: driver.phone ?? "",
+    address: driver.address ?? "",
+    postal_code: driver.postal_code ?? "",
+    city: driver.city ?? "",
+    country: driver.country ?? "FR",
+    billing_mode: driver.billing_mode ?? "POSTPAID",
+    siret: driver.siret ?? "",
+    cost_center: driver.cost_center ?? "",
+  });
   const [showB2BAssign, setShowB2BAssign] = useState(false);
   const [b2bSearch, setB2bSearch] = useState("");
   const [showMerge, setShowMerge] = useState(false);
   const [mergeSearch, setMergeSearch] = useState("");
   const [mergeTarget, setMergeTarget] = useState<Driver | null>(null);
   const [showMergeConfirm, setShowMergeConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
 
-  // Story 68: Edit mutation
+  // Story 68: Edit mutation (enriched with extended fields)
   const editMutation = useMutation({
     mutationFn: async () => {
       const { error } = await supabase.from("gfx_consumers").update({
@@ -560,10 +589,29 @@ function DriverDetailDrawer({ driver, onClose, onRefresh }: { driver: Driver; on
         last_name: editForm.last_name || null,
         email: editForm.email || null,
         phone: editForm.phone || null,
+        address: editForm.address || null,
+        postal_code: editForm.postal_code || null,
+        city: editForm.city || null,
+        country: editForm.country || null,
+        billing_mode: editForm.billing_mode || "POSTPAID",
+        siret: editForm.siret || null,
+        cost_center: editForm.cost_center || null,
       }).eq("id", driver.id);
       if (error) throw error;
     },
     onSuccess: () => { setEditing(false); onRefresh(); },
+  });
+
+  // Task 5.3: Soft delete driver mutation
+  const softDeleteMutation = useSoftDeleteDriver();
+
+  // eMSP P1: Change driver status mutation
+  const statusMutation = useMutation({
+    mutationFn: async (newStatus: string) => {
+      const { error } = await supabase.from("gfx_consumers").update({ status: newStatus }).eq("id", driver.id);
+      if (error) throw error;
+    },
+    onSuccess: () => { setShowStatusMenu(false); onRefresh(); },
   });
 
   // Story 69: B2B clients list
@@ -584,19 +632,8 @@ function DriverDetailDrawer({ driver, onClose, onRefresh }: { driver: Driver; on
     onSuccess: () => { setShowB2BAssign(false); onRefresh(); },
   });
 
-  // Story 70: Session history
-  const { data: sessionHistory } = useQuery<Array<{ id: string; start_date_time: string; location_name: string; total_energy: number; total_cost: number }>>({
-    queryKey: ["driver-sessions", driver.driver_external_id],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("ocpi_cdrs")
-        .select("id, start_date_time, location_name, total_energy, total_cost")
-        .eq("driver_external_id", driver.driver_external_id)
-        .order("start_date_time", { ascending: false })
-        .limit(20);
-      return (data ?? []) as Array<{ id: string; start_date_time: string; location_name: string; total_energy: number; total_cost: number }>;
-    },
-  });
+  // Task 5.2: Driver sessions from OCPP transactions via linked tokens
+  const { data: driverSessions, isLoading: sessionsLoading } = useDriverSessions(driver.driver_external_id);
 
   // Story 72: Merge - search duplicates
   const { data: mergeCandidates } = useQuery<Driver[]>({
@@ -626,225 +663,394 @@ function DriverDetailDrawer({ driver, onClose, onRefresh }: { driver: Driver; on
 
   const inputClass = "w-full px-3 py-2 bg-surface-elevated border border-border rounded-lg text-sm text-foreground focus:outline-none focus:border-border-focus transition-colors";
 
+  const DETAIL_TABS: Array<{ key: DetailTab; label: string; icon: typeof Info }> = [
+    { key: "informations", label: "Informations", icon: Info },
+    { key: "tokens", label: "Tokens", icon: CreditCard },
+    { key: "sessions", label: "Sessions", icon: BarChart3 },
+  ];
+
   return (
     <>
-      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
-      <div className="fixed right-0 top-0 h-full w-full max-w-md bg-surface border-l border-border z-50 overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <div className="flex items-center gap-3">
+      <SlideOver
+        open={true}
+        onClose={onClose}
+        title={displayName}
+        subtitle={driver.customer_name ?? undefined}
+        maxWidth="max-w-lg"
+      >
+        {/* Driver identity + Tabs */}
+        <div className="px-6 pt-4 pb-4 border-b border-border">
+          <div className="flex items-center gap-3 mb-4">
             <div
               className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
               style={{ backgroundColor: `hsl(${hue}, 45%, 25%)`, color: `hsl(${hue}, 70%, 75%)` }}
             >
               {getInitials(driver.full_name ?? driver.driver_external_id)}
             </div>
-            <div>
-              <h2 className="font-heading font-bold text-base">{displayName}</h2>
-              <div className="flex items-center gap-2 mt-0.5">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
                 <span className={cn(
                   "inline-flex px-2 py-0.5 rounded-full text-xs font-semibold",
                   isActive ? "bg-emerald-500/10 text-emerald-400" : "bg-foreground-muted/10 text-foreground-muted"
                 )}>
                   {isActive ? "Actif" : "Inactif"}
                 </span>
-                {driver.customer_name && (
-                  <span className="text-xs text-foreground-muted">{driver.customer_name}</span>
-                )}
+                <span className="text-xs text-foreground-muted">{driver.total_sessions.toLocaleString("fr-FR")} sessions</span>
               </div>
             </div>
-          </div>
-          <div className="flex items-center gap-1">
-            {/* Story 68: Edit button */}
-            <button onClick={() => setEditing(!editing)} className="p-1.5 hover:bg-surface-elevated rounded-lg transition-colors" title="Modifier">
+            <button onClick={() => setEditing(!editing)} className="p-1.5 hover:bg-surface-elevated rounded-lg transition-colors shrink-0" title="Modifier">
               <Pencil className="w-4 h-4 text-foreground-muted" />
             </button>
-            <button onClick={onClose} className="p-1.5 hover:bg-surface-elevated rounded-lg transition-colors">
-              <X className="w-5 h-5 text-foreground-muted" />
-            </button>
+          </div>
+
+          {/* Tabs */}
+          <div className="flex gap-1">
+            {DETAIL_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg transition-colors",
+                  activeTab === tab.key
+                    ? "bg-primary/15 text-primary border border-primary/30"
+                    : "text-foreground-muted hover:text-foreground hover:bg-surface-elevated"
+                )}
+              >
+                <tab.icon className="w-3.5 h-3.5" />
+                {tab.label}
+              </button>
+            ))}
           </div>
         </div>
 
         <div className="p-5 space-y-5">
-          {/* Story 68: Edit form */}
-          {editing ? (
-            <div className="space-y-3 p-4 bg-surface-elevated border border-border rounded-xl">
-              <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Modifier le conducteur</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-foreground-muted mb-1 block">Prénom</label>
-                  <input type="text" value={editForm.first_name} onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })} className={inputClass} />
-                </div>
-                <div>
-                  <label className="text-xs text-foreground-muted mb-1 block">Nom</label>
-                  <input type="text" value={editForm.last_name} onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })} className={inputClass} />
-                </div>
-              </div>
-              <div>
-                <label className="text-xs text-foreground-muted mb-1 block">Email</label>
-                <input type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} className={inputClass} />
-              </div>
-              <div>
-                <label className="text-xs text-foreground-muted mb-1 block">Téléphone</label>
-                <input type="tel" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} className={inputClass} />
-              </div>
-              <div className="flex gap-2 pt-2">
-                <button onClick={() => setEditing(false)} className="flex-1 px-3 py-2 text-sm text-foreground-muted hover:text-foreground transition-colors">Annuler</button>
-                <button onClick={() => editMutation.mutate()} disabled={editMutation.isPending} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors">
-                  {editMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
-                  Enregistrer
-                </button>
-              </div>
-            </div>
-          ) : (
+          {/* ── Tab: Informations ── */}
+          {activeTab === "informations" && (
             <>
-              {/* Activité */}
-              <div>
-                <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Activité</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-surface-elevated border border-border rounded-xl p-3 text-center">
-                    <p className="text-xl font-bold text-foreground">{driver.total_sessions.toLocaleString("fr-FR")}</p>
-                    <p className="text-xs text-foreground-muted mt-0.5">Sessions</p>
+              {/* Story 68: Edit form */}
+              {editing ? (
+                <div className="space-y-3 p-4 bg-surface-elevated border border-border rounded-xl">
+                  <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Modifier le conducteur</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-foreground-muted mb-1 block">Prénom</label>
+                      <input type="text" value={editForm.first_name} onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })} className={inputClass} />
+                    </div>
+                    <div>
+                      <label className="text-xs text-foreground-muted mb-1 block">Nom</label>
+                      <input type="text" value={editForm.last_name} onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })} className={inputClass} />
+                    </div>
                   </div>
-                  <div className="bg-surface-elevated border border-border rounded-xl p-3 text-center">
-                    <p className="text-xl font-bold text-foreground">{formatEnergy(Number(driver.total_energy_kwh))}</p>
-                    <p className="text-xs text-foreground-muted mt-0.5">Énergie</p>
+                  <div>
+                    <label className="text-xs text-foreground-muted mb-1 block">Email</label>
+                    <input type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} className={inputClass} />
                   </div>
-                </div>
-              </div>
-
-              {/* Informations personnelles */}
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Informations</p>
-                {driver.first_name && <DetailItem label="Prénom" value={driver.first_name} />}
-                {driver.last_name && <DetailItem label="Nom" value={driver.last_name} />}
-                {driver.email && <DetailItem label="Email" value={driver.email} />}
-                {driver.phone && <DetailItem label="Téléphone" value={driver.phone} />}
-                <DetailItem label="Pays" value={driver.country ?? "—"} />
-                <DetailItem label="Statut GFX" value={driver.status ?? "—"} />
-              </div>
-
-              {/* Abonnement & rattachement */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider">Forfait & Rattachement</p>
-                  {/* Story 69: B2B association button */}
-                  <button onClick={() => setShowB2BAssign(!showB2BAssign)} className="text-xs text-primary hover:underline flex items-center gap-1">
-                    <Building2 className="w-3 h-3" /> Client B2B
-                  </button>
-                </div>
-                <DetailItem label="Forfait" value={driver.retail_package ?? "—"} />
-                <DetailItem label="Contrat eMSP" value={driver.emsp_contract ?? "—"} />
-                <DetailItem label="Groupe / Client" value={driver.customer_name ?? "—"} />
-                <DetailItem label="CPO" value={driver.cpo_name ?? "—"} />
-
-                {/* Story 69: B2B assign dropdown */}
-                {showB2BAssign && (
-                  <div className="mt-2 p-3 bg-surface-elevated border border-border rounded-xl space-y-2">
-                    <label className="text-xs text-foreground-muted">Associer à un client B2B</label>
-                    <select
-                      onChange={(e) => { if (e.target.value) b2bAssignMutation.mutate(e.target.value); }}
-                      className={inputClass}
-                      defaultValue=""
-                    >
-                      <option value="" disabled>Sélectionner un client...</option>
-                      {(b2bClients ?? []).map((c) => (
-                        <option key={c.id} value={c.name}>{c.name}</option>
-                      ))}
-                    </select>
+                  <div>
+                    <label className="text-xs text-foreground-muted mb-1 block">Téléphone</label>
+                    <input type="tel" value={editForm.phone} onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} className={inputClass} />
                   </div>
-                )}
-              </div>
-
-              {/* Charge dates */}
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Historique de charge</p>
-                {driver.first_session_at && <DetailItem label="Première charge" value={formatDate(driver.first_session_at)} />}
-                {driver.last_session_at && <DetailItem label="Dernière charge" value={formatRelativeDate(driver.last_session_at)} />}
-              </div>
-
-              {/* Story 70: Session History */}
-              {sessionHistory && sessionHistory.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">
-                    <Clock className="w-3.5 h-3.5 inline mr-1" />
-                    Sessions récentes
-                  </p>
-                  <div className="space-y-1.5 max-h-60 overflow-y-auto">
-                    {sessionHistory.map((s) => (
-                      <div key={s.id} className="flex items-center justify-between text-xs py-2 px-3 bg-surface-elevated border border-border rounded-lg">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-foreground font-medium truncate">{s.location_name ?? "Station"}</p>
-                          <p className="text-foreground-muted">{new Date(s.start_date_time).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" })}</p>
-                        </div>
-                        <div className="text-right shrink-0 ml-3">
-                          <p className="text-foreground font-medium">{Number(s.total_energy).toFixed(1)} kWh</p>
-                          <p className="text-foreground-muted">{Number(s.total_cost).toFixed(2)} €</p>
-                        </div>
+                  {/* eMSP P1: Extended fields */}
+                  <div className="border-t border-border/50 pt-3 mt-3">
+                    <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Adresse</p>
+                    <div className="space-y-2">
+                      <input type="text" value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} placeholder="Adresse" className={inputClass} />
+                      <div className="grid grid-cols-2 gap-2">
+                        <input type="text" value={editForm.postal_code} onChange={(e) => setEditForm({ ...editForm, postal_code: e.target.value })} placeholder="Code postal" className={inputClass} />
+                        <input type="text" value={editForm.city} onChange={(e) => setEditForm({ ...editForm, city: e.target.value })} placeholder="Ville" className={inputClass} />
                       </div>
-                    ))}
+                      <input type="text" value={editForm.country} onChange={(e) => setEditForm({ ...editForm, country: e.target.value })} placeholder="Pays (FR)" className={inputClass} />
+                    </div>
+                  </div>
+                  <div className="border-t border-border/50 pt-3 mt-3">
+                    <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Facturation</p>
+                    <div className="space-y-2">
+                      <div>
+                        <label className="text-xs text-foreground-muted mb-1 block">Mode de facturation</label>
+                        <select value={editForm.billing_mode} onChange={(e) => setEditForm({ ...editForm, billing_mode: e.target.value })} className={inputClass}>
+                          <option value="POSTPAID">Postpaid</option>
+                          <option value="PREPAID">Prépayé</option>
+                        </select>
+                      </div>
+                      <input type="text" value={editForm.siret} onChange={(e) => setEditForm({ ...editForm, siret: e.target.value })} placeholder="SIRET (B2B)" className={inputClass} />
+                      <input type="text" value={editForm.cost_center} onChange={(e) => setEditForm({ ...editForm, cost_center: e.target.value })} placeholder="Centre de coût" className={inputClass} />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <button onClick={() => setEditing(false)} className="flex-1 px-3 py-2 text-sm text-foreground-muted hover:text-foreground transition-colors">Annuler</button>
+                    <button onClick={() => editMutation.mutate()} disabled={editMutation.isPending} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors">
+                      {editMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                      Enregistrer
+                    </button>
                   </div>
                 </div>
-              )}
-
-              {/* Actions */}
-              <div className="space-y-2 pt-3 border-t border-border">
-                <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Actions</p>
-                {/* Story 72: Merge */}
-                <button onClick={() => setShowMerge(!showMerge)} className="flex items-center gap-1.5 px-3 py-2 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-lg text-xs font-medium hover:bg-amber-500/20 transition-colors">
-                  <GitMerge className="w-3.5 h-3.5" /> Fusionner
-                </button>
-                {showMerge && (
-                  <div className="p-3 bg-surface-elevated border border-border rounded-xl space-y-2">
-                    <label className="text-xs text-foreground-muted">Rechercher un doublon à fusionner</label>
-                    <input
-                      type="text"
-                      placeholder="Rechercher par nom..."
-                      value={mergeTarget ? (mergeTarget.full_name ?? mergeTarget.driver_external_id) : mergeSearch}
-                      onChange={(e) => { setMergeSearch(e.target.value); setMergeTarget(null); }}
-                      className={inputClass}
-                    />
-                    {mergeCandidates && mergeCandidates.length > 0 && !mergeTarget && (
-                      <div className="max-h-36 overflow-y-auto border border-border rounded-lg">
-                        {mergeCandidates.map((d) => (
-                          <button key={d.id} onClick={() => setMergeTarget(d)} className="w-full px-3 py-2 text-left hover:bg-surface text-sm text-foreground">
-                            {d.full_name ?? d.driver_external_id} <span className="text-foreground-muted">({d.total_sessions} sessions)</span>
-                          </button>
-                        ))}
+              ) : (
+                <>
+                  {/* Activité */}
+                  <div>
+                    <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Activité</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-surface-elevated border border-border rounded-xl p-3 text-center">
+                        <p className="text-xl font-bold text-foreground">{driver.total_sessions.toLocaleString("fr-FR")}</p>
+                        <p className="text-xs text-foreground-muted mt-0.5">Sessions</p>
                       </div>
-                    )}
-                    {mergeTarget && (
-                      <button onClick={() => setShowMergeConfirm(true)} className="w-full px-3 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-500 transition-colors">
-                        Fusionner avec {mergeTarget.full_name ?? mergeTarget.driver_external_id}
+                      <div className="bg-surface-elevated border border-border rounded-xl p-3 text-center">
+                        <p className="text-xl font-bold text-foreground">{formatEnergy(Number(driver.total_energy_kwh))}</p>
+                        <p className="text-xs text-foreground-muted mt-0.5">Énergie</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Informations personnelles */}
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Informations</p>
+                    {driver.first_name && <DetailItem label="Prénom" value={driver.first_name} />}
+                    {driver.last_name && <DetailItem label="Nom" value={driver.last_name} />}
+                    {driver.email && <DetailItem label="Email" value={driver.email} />}
+                    {driver.phone && <DetailItem label="Téléphone" value={driver.phone} />}
+                    <DetailItem label="Pays" value={driver.country ?? "—"} />
+                    <DetailItem label="Statut GFX" value={driver.status ?? "—"} />
+                  </div>
+
+                  {/* Abonnement & rattachement */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider">Forfait & Rattachement</p>
+                      {/* Story 69: B2B association button */}
+                      <button onClick={() => setShowB2BAssign(!showB2BAssign)} className="text-xs text-primary hover:underline flex items-center gap-1">
+                        <Building2 className="w-3 h-3" /> Client B2B
                       </button>
+                    </div>
+                    <DetailItem label="Forfait" value={driver.retail_package ?? "—"} />
+                    <DetailItem label="Contrat eMSP" value={driver.emsp_contract ?? "—"} />
+                    <DetailItem label="Groupe / Client" value={driver.customer_name ?? "—"} />
+                    <DetailItem label="CPO" value={driver.cpo_name ?? "—"} />
+
+                    {/* Story 69: B2B assign dropdown */}
+                    {showB2BAssign && (
+                      <div className="mt-2 p-3 bg-surface-elevated border border-border rounded-xl space-y-2">
+                        <label className="text-xs text-foreground-muted">Associer à un client B2B</label>
+                        <select
+                          onChange={(e) => { if (e.target.value) b2bAssignMutation.mutate(e.target.value); }}
+                          className={inputClass}
+                          defaultValue=""
+                        >
+                          <option value="" disabled>Sélectionner un client...</option>
+                          {(b2bClients ?? []).map((c) => (
+                            <option key={c.id} value={c.name}>{c.name}</option>
+                          ))}
+                        </select>
+                      </div>
                     )}
                   </div>
-                )}
-              </div>
+
+                  {/* Charge dates */}
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Historique de charge</p>
+                    {driver.first_session_at && <DetailItem label="Première charge" value={formatDate(driver.first_session_at)} />}
+                    {driver.last_session_at && <DetailItem label="Dernière charge" value={formatRelativeDate(driver.last_session_at)} />}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="space-y-3 pt-3 border-t border-border">
+                    <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Actions</p>
+
+                    {/* eMSP P1: Status toggle */}
+                    <div className="flex items-center justify-between p-3 bg-surface-elevated border border-border rounded-xl">
+                      <div>
+                        <p className="text-xs font-medium text-foreground">Statut du compte</p>
+                        <p className="text-xs text-foreground-muted mt-0.5">
+                          {driver.status === "active" ? "Actif — peut charger" : driver.status === "suspended" ? "Suspendu — charge bloquée" : "Inactif — compte désactivé"}
+                        </p>
+                      </div>
+                      <div className="relative">
+                        <button
+                          onClick={() => setShowStatusMenu(!showStatusMenu)}
+                          className={cn(
+                            "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors",
+                            driver.status === "active" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
+                            driver.status === "suspended" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
+                            "bg-foreground-muted/10 text-foreground-muted border-foreground-muted/20"
+                          )}
+                        >
+                          {driver.status === "active" ? "Actif" : driver.status === "suspended" ? "Suspendu" : "Inactif"}
+                          <ChevronDown className="w-3 h-3" />
+                        </button>
+                        {showStatusMenu && (
+                          <div className="absolute right-0 mt-1 w-40 bg-surface border border-border rounded-lg shadow-lg z-10 overflow-hidden">
+                            {[
+                              { value: "active", label: "Actif", color: "text-emerald-400" },
+                              { value: "inactive", label: "Inactif", color: "text-foreground-muted" },
+                              { value: "suspended", label: "Suspendu", color: "text-amber-400" },
+                            ].filter((s) => s.value !== driver.status).map((s) => (
+                              <button
+                                key={s.value}
+                                onClick={() => statusMutation.mutate(s.value)}
+                                disabled={statusMutation.isPending}
+                                className={cn("w-full px-3 py-2 text-left text-xs font-medium hover:bg-surface-elevated transition-colors", s.color)}
+                              >
+                                {statusMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin inline mr-1" /> : null}
+                                {s.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {/* Story 72: Merge */}
+                      <button onClick={() => setShowMerge(!showMerge)} className="flex items-center gap-1.5 px-3 py-2 bg-amber-500/10 text-amber-400 border border-amber-500/20 rounded-lg text-xs font-medium hover:bg-amber-500/20 transition-colors">
+                        <GitMerge className="w-3.5 h-3.5" /> Fusionner
+                      </button>
+                    </div>
+                    {showMerge && (
+                      <div className="p-3 bg-surface-elevated border border-border rounded-xl space-y-2">
+                        <label className="text-xs text-foreground-muted">Rechercher un doublon à fusionner</label>
+                        <input
+                          type="text"
+                          placeholder="Rechercher par nom..."
+                          value={mergeTarget ? (mergeTarget.full_name ?? mergeTarget.driver_external_id) : mergeSearch}
+                          onChange={(e) => { setMergeSearch(e.target.value); setMergeTarget(null); }}
+                          className={inputClass}
+                        />
+                        {mergeCandidates && mergeCandidates.length > 0 && !mergeTarget && (
+                          <div className="max-h-36 overflow-y-auto border border-border rounded-lg">
+                            {mergeCandidates.map((d) => (
+                              <button key={d.id} onClick={() => setMergeTarget(d)} className="w-full px-3 py-2 text-left hover:bg-surface text-sm text-foreground">
+                                {d.full_name ?? d.driver_external_id} <span className="text-foreground-muted">({d.total_sessions} sessions)</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {mergeTarget && (
+                          <button onClick={() => setShowMergeConfirm(true)} className="w-full px-3 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-500 transition-colors">
+                            Fusionner avec {mergeTarget.full_name ?? mergeTarget.driver_external_id}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ID externe */}
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Identifiants</p>
+                    <p className="text-xs text-foreground font-mono bg-surface-elevated border border-border rounded-lg px-3 py-2 break-all">
+                      {driver.driver_external_id}
+                    </p>
+                    {driver.source && (
+                      <p className="text-xs text-foreground-muted">
+                        Source: <span className="font-medium">{driver.source === "gfx_crm" ? "API GreenFlux CRM" : "Extraction CDRs"}</span>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* ID technique */}
+                  <div className="pt-3 border-t border-border">
+                    <p className="text-xs text-foreground-muted">
+                      ID: <span className="font-mono text-foreground">{driver.id}</span>
+                    </p>
+                  </div>
+                </>
+              )}
             </>
           )}
 
-          {/* ID externe */}
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Identifiants</p>
-            <p className="text-xs text-foreground font-mono bg-surface-elevated border border-border rounded-lg px-3 py-2 break-all">
-              {driver.driver_external_id}
-            </p>
-            {driver.source && (
-              <p className="text-xs text-foreground-muted">
-                Source: <span className="font-medium">{driver.source === "gfx_crm" ? "API GreenFlux CRM" : "Extraction CDRs"}</span>
-              </p>
-            )}
-          </div>
+          {/* ── Tab: Tokens ── */}
+          {activeTab === "tokens" && (
+            <DriverTokenLink driverExternalId={driver.driver_external_id} />
+          )}
 
-          {/* ID technique */}
-          <div className="pt-3 border-t border-border">
-            <p className="text-xs text-foreground-muted">
-              ID: <span className="font-mono text-foreground">{driver.id}</span>
-            </p>
+          {/* ── Tab: Sessions ── */}
+          {activeTab === "sessions" && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-foreground-muted" />
+                <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider">
+                  Sessions de charge
+                </p>
+              </div>
+
+              {sessionsLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-5 h-5 animate-spin text-foreground-muted" />
+                </div>
+              ) : driverSessions && driverSessions.length > 0 ? (
+                <div className="border border-border rounded-xl overflow-hidden">
+                  {/* Table header */}
+                  <div className="grid grid-cols-[1fr_1fr_70px_70px_60px] gap-1 px-3 py-2.5 bg-surface-elevated border-b border-border">
+                    <span className="text-xs font-semibold text-foreground-muted uppercase tracking-wider">Date</span>
+                    <span className="text-xs font-semibold text-foreground-muted uppercase tracking-wider">Station</span>
+                    <span className="text-xs font-semibold text-foreground-muted uppercase tracking-wider text-right">Énergie</span>
+                    <span className="text-xs font-semibold text-foreground-muted uppercase tracking-wider text-right">Durée</span>
+                    <span className="text-xs font-semibold text-foreground-muted uppercase tracking-wider text-right">Coût</span>
+                  </div>
+
+                  {/* Session rows */}
+                  <div className="divide-y divide-border max-h-[400px] overflow-y-auto">
+                    {driverSessions.map((session) => {
+                      const startDate = session.start_timestamp
+                        ? new Date(session.start_timestamp).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" })
+                        : "—";
+                      const startTime = session.start_timestamp
+                        ? new Date(session.start_timestamp).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
+                        : "";
+                      const durationMin =
+                        session.start_timestamp && session.stop_timestamp
+                          ? Math.round((new Date(session.stop_timestamp).getTime() - new Date(session.start_timestamp).getTime()) / 60000)
+                          : null;
+                      const durationStr = durationMin != null
+                        ? durationMin >= 60
+                          ? `${Math.floor(durationMin / 60)}h${String(durationMin % 60).padStart(2, "0")}`
+                          : `${durationMin} min`
+                        : "—";
+                      const energy = session.total_energy_kwh != null ? `${Number(session.total_energy_kwh).toFixed(1)} kWh` : "—";
+                      const cost = session.total_cost != null ? `${Number(session.total_cost).toFixed(2)} €` : "—";
+                      const stationName = session.location_name ?? session.charge_point_id ?? "—";
+
+                      return (
+                        <div
+                          key={session.id}
+                          className="grid grid-cols-[1fr_1fr_70px_70px_60px] gap-1 px-3 py-2.5 items-center hover:bg-surface-elevated/50 transition-colors"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium text-foreground">{startDate}</p>
+                            <p className="text-xs text-foreground-muted">{startTime}</p>
+                          </div>
+                          <p className="text-xs text-foreground truncate" title={stationName}>
+                            {stationName}
+                          </p>
+                          <p className="text-xs text-foreground tabular-nums text-right">{energy}</p>
+                          <p className="text-xs text-foreground-muted tabular-nums text-right">{durationStr}</p>
+                          <p className="text-xs text-foreground tabular-nums text-right">{cost}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-10 bg-surface-elevated border border-border rounded-xl">
+                  <BarChart3 className="w-8 h-8 text-foreground-muted mb-3" />
+                  <p className="text-sm font-medium text-foreground">Aucune session trouvée</p>
+                  <p className="text-xs text-foreground-muted mt-1">
+                    Les sessions apparaîtront une fois des tokens associés
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Task 5.3: Soft Delete Button (visible on all tabs) ── */}
+          <div className="pt-6 mt-4 border-t border-border">
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl text-sm font-medium hover:bg-red-500/20 transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              Supprimer ce conducteur
+            </button>
           </div>
         </div>
-      </div>
+      </SlideOver>
 
       {/* Story 72: Merge confirmation */}
       <ConfirmDialog
@@ -858,6 +1064,121 @@ function DriverDetailDrawer({ driver, onClose, onRefresh }: { driver: Driver; on
         loading={mergeMutation.isPending}
         loadingLabel="Fusion..."
       />
+
+      {/* Task 5.3: Soft delete confirmation with name typing */}
+      {showDeleteConfirm && <DeleteConfirmWithName
+        driverName={displayName}
+        onConfirm={() => {
+          softDeleteMutation.mutate(driver.driver_external_id, {
+            onSuccess: () => {
+              setShowDeleteConfirm(false);
+              onClose();
+            },
+          });
+        }}
+        onCancel={() => setShowDeleteConfirm(false)}
+        loading={softDeleteMutation.isPending}
+      />}
+    </>
+  );
+}
+
+// ── Delete Confirmation with Name Typing ──────────────────────
+
+function DeleteConfirmWithName({
+  driverName,
+  onConfirm,
+  onCancel,
+  loading,
+}: {
+  driverName: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  loading: boolean;
+}) {
+  const [value, setValue] = useState("");
+  const isMatch = value.trim().toLowerCase() === driverName.trim().toLowerCase();
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[150] transition-opacity duration-200"
+        onClick={() => !loading && onCancel()}
+        aria-hidden="true"
+      />
+      {/* Dialog */}
+      <div className="fixed inset-0 z-[151] flex items-center justify-center p-4" role="dialog" aria-modal="true">
+        <div className="bg-surface border border-border rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+          {/* Header */}
+          <div className="flex items-start gap-4 p-6 pb-0">
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 bg-red-500/10">
+              <Trash2 className="w-6 h-6 text-red-400" />
+            </div>
+            <div className="flex-1 min-w-0 pt-1">
+              <h3 className="text-base font-heading font-bold text-foreground">Supprimer ce conducteur</h3>
+              <p className="text-sm text-foreground-muted mt-1.5 leading-relaxed">
+                Pour confirmer la suppression de « <span className="font-semibold text-foreground">{driverName}</span> », tapez son nom ci-dessous. Le conducteur sera marqué comme supprimé.
+              </p>
+            </div>
+            <button
+              onClick={() => !loading && onCancel()}
+              disabled={loading}
+              aria-label="Fermer"
+              className="p-1 text-foreground-muted hover:text-foreground rounded-lg transition-colors shrink-0 -mt-1 -mr-1 disabled:opacity-50"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Name input */}
+          <div className="px-6 pt-4">
+            <input
+              type="text"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder={driverName}
+              className="w-full px-3 py-2.5 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/30 focus:outline-none focus:border-red-500/50 transition-colors"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && isMatch && !loading) onConfirm();
+                if (e.key === "Escape" && !loading) onCancel();
+              }}
+            />
+            {value.length > 0 && !isMatch && (
+              <p className="text-xs text-red-400 mt-1">Le nom ne correspond pas</p>
+            )}
+            {isMatch && (
+              <p className="text-xs text-emerald-400 mt-1">Nom confirmé</p>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center justify-end gap-3 p-6">
+            <button
+              onClick={onCancel}
+              disabled={loading}
+              className="px-4 py-2.5 text-sm font-medium text-foreground-muted hover:text-foreground border border-border rounded-xl transition-colors disabled:opacity-50"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={onConfirm}
+              disabled={!isMatch || loading}
+              className="px-5 py-2.5 text-sm font-semibold text-white rounded-xl transition-colors disabled:opacity-50 min-w-[100px] bg-red-500 hover:bg-red-600 disabled:hover:bg-red-500"
+            >
+              {loading ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Suppression...
+                </span>
+              ) : (
+                "Supprimer définitivement"
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
     </>
   );
 }
@@ -875,7 +1196,11 @@ function DetailItem({ label, value }: { label: string; value: string }) {
 
 function CreateDriverModal({ onClose, cpoId, onCreated }: { onClose: () => void; cpoId: string | null; onCreated: () => void }) {
   const queryClient = useQueryClient();
-  const [form, setForm] = useState({ first_name: "", last_name: "", email: "", phone: "", customer_group: "" });
+  const [form, setForm] = useState({
+    first_name: "", last_name: "", email: "", phone: "", customer_group: "",
+    address: "", postal_code: "", city: "", country: "FR",
+    billing_mode: "POSTPAID", siret: "", cost_center: "", status: "active",
+  });
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -891,7 +1216,14 @@ function CreateDriverModal({ onClose, cpoId, onCreated }: { onClose: () => void;
         phone: form.phone.trim() || null,
         customer_name: form.customer_group.trim() || null,
         cpo_id: cpoId,
-        status: "active",
+        status: form.status,
+        address: form.address.trim() || null,
+        postal_code: form.postal_code.trim() || null,
+        city: form.city.trim() || null,
+        country: form.country.trim() || "FR",
+        billing_mode: form.billing_mode,
+        siret: form.siret.trim() || null,
+        cost_center: form.cost_center.trim() || null,
         total_sessions: 0,
         total_energy_kwh: 0,
         source: "manual",
@@ -946,6 +1278,40 @@ function CreateDriverModal({ onClose, cpoId, onCreated }: { onClose: () => void;
           <div>
             <label className="block text-sm font-medium text-foreground mb-1.5">Groupe client</label>
             <input type="text" value={form.customer_group} onChange={(e) => setForm({ ...form, customer_group: e.target.value })} placeholder="Nom du client B2B" className={inputClass} />
+          </div>
+
+          {/* eMSP P1: Extended fields */}
+          <div className="border-t border-border pt-4 mt-2">
+            <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-3">Adresse & Facturation</p>
+            <div className="space-y-3">
+              <input type="text" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder="Adresse" className={inputClass} />
+              <div className="grid grid-cols-3 gap-3">
+                <input type="text" value={form.postal_code} onChange={(e) => setForm({ ...form, postal_code: e.target.value })} placeholder="Code postal" className={inputClass} />
+                <input type="text" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder="Ville" className={inputClass} />
+                <input type="text" value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} placeholder="Pays" className={inputClass} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">Mode facturation</label>
+                  <select value={form.billing_mode} onChange={(e) => setForm({ ...form, billing_mode: e.target.value })} className={inputClass}>
+                    <option value="POSTPAID">Postpaid</option>
+                    <option value="PREPAID">Prépayé</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-1.5">Statut initial</label>
+                  <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className={inputClass}>
+                    <option value="active">Actif</option>
+                    <option value="inactive">Inactif</option>
+                    <option value="suspended">Suspendu</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <input type="text" value={form.siret} onChange={(e) => setForm({ ...form, siret: e.target.value })} placeholder="SIRET (B2B)" className={inputClass} />
+                <input type="text" value={form.cost_center} onChange={(e) => setForm({ ...form, cost_center: e.target.value })} placeholder="Centre de coût" className={inputClass} />
+              </div>
+            </div>
           </div>
         </div>
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border">

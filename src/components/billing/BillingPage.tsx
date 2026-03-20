@@ -15,6 +15,9 @@ import {
   ExternalLink,
   Search,
   Wallet,
+  TrendingUp,
+  BarChart3,
+  CalendarDays,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SessionsPage } from "@/components/sessions/SessionsPage";
@@ -26,6 +29,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 const TABS = [
   { key: "sessions", label: "Sessions CDR", icon: Activity },
   { key: "invoices", label: "Factures", icon: FileText },
+  { key: "revenue", label: "Chiffre d'affaires", icon: TrendingUp },
   { key: "payments", label: "Paiements Stripe", icon: CreditCard },
   { key: "disputes", label: "Litiges", icon: AlertTriangle },
   { key: "methods", label: "Methodes de paiement", icon: Wallet },
@@ -60,6 +64,7 @@ export function BillingPage() {
       </div>
       {tab === "sessions" && <SessionsPage />}
       {tab === "invoices" && <InvoicesPage />}
+      {tab === "revenue" && <RevenueByPeriodSection />}
       {tab === "payments" && <StripePaymentsSection />}
       {tab === "disputes" && <StripeDisputesSection />}
       {tab === "methods" && <PaymentMethodsConfigSection />}
@@ -138,6 +143,22 @@ function StripePaymentsSection() {
     refunded: { label: "Rembourse", bg: "bg-blue-500/15", text: "text-blue-400", icon: RefreshCcw },
   };
 
+  // Facturation P1: KPIs for payments
+  const kpis = useMemo(() => {
+    if (!payments) return null;
+    const succeeded = payments.filter((p) => p.status === "succeeded" || p.status === "paid");
+    const failed = payments.filter((p) => p.status === "failed");
+    const pending = payments.filter((p) => p.status === "pending");
+    const totalRevenue = succeeded.reduce((s, p) => s + p.amount, 0);
+    return {
+      total: payments.length,
+      succeeded: succeeded.length,
+      failed: failed.length,
+      pending: pending.length,
+      revenue: totalRevenue,
+    };
+  }, [payments]);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -147,6 +168,32 @@ function StripePaymentsSection() {
           <p className="text-xs text-foreground-muted">Rafraichissement automatique toutes les 30s</p>
         </div>
       </div>
+
+      {/* Facturation P1: Payment KPIs */}
+      {kpis && (
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <div className="bg-surface border border-border rounded-xl p-3">
+            <p className="text-lg font-bold text-foreground">{kpis.total}</p>
+            <p className="text-xs text-foreground-muted">Total</p>
+          </div>
+          <div className="bg-surface border border-emerald-500/20 rounded-xl p-3">
+            <p className="text-lg font-bold text-emerald-400">{kpis.succeeded}</p>
+            <p className="text-xs text-foreground-muted">Réussis</p>
+          </div>
+          <div className="bg-surface border border-yellow-500/20 rounded-xl p-3">
+            <p className="text-lg font-bold text-yellow-400">{kpis.pending}</p>
+            <p className="text-xs text-foreground-muted">En attente</p>
+          </div>
+          <div className="bg-surface border border-red-500/20 rounded-xl p-3">
+            <p className="text-lg font-bold text-red-400">{kpis.failed}</p>
+            <p className="text-xs text-foreground-muted">Échoués</p>
+          </div>
+          <div className="bg-surface border border-primary/20 rounded-xl p-3">
+            <p className="text-lg font-bold text-primary">{(kpis.revenue / 100).toFixed(2)} €</p>
+            <p className="text-xs text-foreground-muted">CA encaissé</p>
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
@@ -571,6 +618,261 @@ function PaymentMethodsConfigSection() {
               {saveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <CheckCircle className="w-4 h-4" /> : null}
               {saved ? "Sauvegarde !" : "Sauvegarder"}
             </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// Facturation P1: Revenue by period (CA par période)
+// ══════════════════════════════════════════════════════════════
+
+type RevenuePeriod = "day" | "week" | "month" | "year";
+
+interface RevenueRow {
+  period: string;
+  label: string;
+  sessions: number;
+  energy_kwh: number;
+  revenue_ht: number;
+  revenue_ttc: number;
+  vat: number;
+}
+
+function RevenueByPeriodSection() {
+  const [granularity, setGranularity] = useState<RevenuePeriod>("month");
+  const [year, setYear] = useState(new Date().getFullYear());
+
+  const { data: revenueData, isLoading } = useQuery<RevenueRow[]>({
+    queryKey: ["revenue-by-period", granularity, year],
+    queryFn: async () => {
+      // Fetch all CDRs for the selected year
+      const { data, error } = await supabase
+        .from("ocpi_cdrs")
+        .select("start_date_time, total_energy, total_cost, total_cost_incl_vat, total_vat")
+        .gte("start_date_time", `${year}-01-01`)
+        .lt("start_date_time", `${year + 1}-01-01`)
+        .order("start_date_time", { ascending: true });
+
+      if (error) throw error;
+      const cdrs = (data ?? []) as Array<{
+        start_date_time: string;
+        total_energy: number;
+        total_cost: number;
+        total_cost_incl_vat: number | null;
+        total_vat: number | null;
+      }>;
+
+      // Group by period
+      const groups = new Map<string, { sessions: number; energy: number; ht: number; ttc: number; vat: number }>();
+
+      for (const cdr of cdrs) {
+        const d = new Date(cdr.start_date_time);
+        let key: string;
+        let label: string;
+
+        if (granularity === "day") {
+          key = d.toISOString().slice(0, 10);
+          label = d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+        } else if (granularity === "week") {
+          // ISO week
+          const jan1 = new Date(d.getFullYear(), 0, 1);
+          const weekNum = Math.ceil(((d.getTime() - jan1.getTime()) / 86400000 + jan1.getDay() + 1) / 7);
+          key = `${d.getFullYear()}-W${String(weekNum).padStart(2, "0")}`;
+          label = `S${weekNum}`;
+        } else if (granularity === "month") {
+          key = d.toISOString().slice(0, 7);
+          label = d.toLocaleDateString("fr-FR", { month: "long" });
+        } else {
+          key = String(d.getFullYear());
+          label = String(d.getFullYear());
+        }
+
+        const g = groups.get(key) ?? { sessions: 0, energy: 0, ht: 0, ttc: 0, vat: 0 };
+        g.sessions += 1;
+        g.energy += Number(cdr.total_energy) || 0;
+        g.ht += Number(cdr.total_cost) || 0;
+        g.ttc += Number(cdr.total_cost_incl_vat) || Number(cdr.total_cost) || 0;
+        g.vat += Number(cdr.total_vat) || 0;
+        groups.set(key, g);
+      }
+
+      return Array.from(groups.entries()).map(([period, g]) => ({
+        period,
+        label: groups.size > 0 ? (() => {
+          const d2 = new Date(period + (granularity === "month" ? "-01" : granularity === "day" ? "" : ""));
+          if (granularity === "month") return d2.toLocaleDateString("fr-FR", { month: "long" });
+          if (granularity === "day") return d2.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+          if (granularity === "week") return period.replace(`${year}-`, "");
+          return period;
+        })() : period,
+        sessions: g.sessions,
+        energy_kwh: g.energy,
+        revenue_ht: g.ht,
+        revenue_ttc: g.ttc,
+        vat: g.vat,
+      }));
+    },
+  });
+
+  // Totals
+  const totals = useMemo(() => {
+    if (!revenueData) return null;
+    return {
+      sessions: revenueData.reduce((s, r) => s + r.sessions, 0),
+      energy: revenueData.reduce((s, r) => s + r.energy_kwh, 0),
+      ht: revenueData.reduce((s, r) => s + r.revenue_ht, 0),
+      ttc: revenueData.reduce((s, r) => s + r.revenue_ttc, 0),
+      vat: revenueData.reduce((s, r) => s + r.vat, 0),
+    };
+  }, [revenueData]);
+
+  // Max revenue for bar chart scaling
+  const maxRevenue = useMemo(() => {
+    if (!revenueData?.length) return 1;
+    return Math.max(...revenueData.map((r) => r.revenue_ttc), 1);
+  }, [revenueData]);
+
+  const granularities: { key: RevenuePeriod; label: string }[] = [
+    { key: "day", label: "Jour" },
+    { key: "week", label: "Semaine" },
+    { key: "month", label: "Mois" },
+    { key: "year", label: "Année" },
+  ];
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <TrendingUp className="w-5 h-5 text-primary" />
+          <div>
+            <h2 className="text-base font-heading font-bold text-foreground">Chiffre d'affaires</h2>
+            <p className="text-xs text-foreground-muted">Revenus agrégés par période depuis les CDRs</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setYear(year - 1)} className="p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated transition-colors">
+            <CalendarDays className="w-4 h-4" />
+          </button>
+          <span className="text-sm font-bold text-foreground">{year}</span>
+          <button onClick={() => setYear(year + 1)} disabled={year >= new Date().getFullYear()} className="p-1.5 rounded-lg text-foreground-muted hover:text-foreground hover:bg-surface-elevated transition-colors disabled:opacity-30">
+            <CalendarDays className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Granularity selector */}
+      <div className="flex gap-1 bg-surface border border-border rounded-xl p-1 w-fit">
+        {granularities.map((g) => (
+          <button
+            key={g.key}
+            onClick={() => setGranularity(g.key)}
+            className={cn(
+              "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+              granularity === g.key ? "bg-primary/15 text-primary" : "text-foreground-muted hover:text-foreground"
+            )}
+          >
+            {g.label}
+          </button>
+        ))}
+      </div>
+
+      {/* KPI totals */}
+      {totals && (
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <div className="bg-surface border border-primary/20 rounded-xl p-4">
+            <p className="text-2xl font-bold text-primary">{totals.ttc.toFixed(2)} €</p>
+            <p className="text-xs text-foreground-muted">CA TTC</p>
+          </div>
+          <div className="bg-surface border border-border rounded-xl p-4">
+            <p className="text-2xl font-bold text-foreground">{totals.ht.toFixed(2)} €</p>
+            <p className="text-xs text-foreground-muted">CA HT</p>
+          </div>
+          <div className="bg-surface border border-border rounded-xl p-4">
+            <p className="text-2xl font-bold text-foreground">{totals.vat.toFixed(2)} €</p>
+            <p className="text-xs text-foreground-muted">TVA collectée</p>
+          </div>
+          <div className="bg-surface border border-border rounded-xl p-4">
+            <p className="text-2xl font-bold text-foreground">{totals.sessions.toLocaleString("fr-FR")}</p>
+            <p className="text-xs text-foreground-muted">Sessions</p>
+          </div>
+          <div className="bg-surface border border-border rounded-xl p-4">
+            <p className="text-2xl font-bold text-foreground">{totals.energy >= 1000 ? `${(totals.energy / 1000).toFixed(1)} MWh` : `${totals.energy.toFixed(0)} kWh`}</p>
+            <p className="text-xs text-foreground-muted">Énergie</p>
+          </div>
+        </div>
+      )}
+
+      {/* Chart + Table */}
+      {isLoading ? (
+        <div className="space-y-3">{[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
+      ) : !revenueData?.length ? (
+        <div className="bg-surface border border-border rounded-2xl p-8 text-center">
+          <BarChart3 className="w-8 h-8 text-foreground-muted mx-auto mb-3" />
+          <p className="text-foreground font-medium">Aucune donnée</p>
+          <p className="text-sm text-foreground-muted mt-1">Pas de CDRs pour {year}.</p>
+        </div>
+      ) : (
+        <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+          {/* Visual bar chart */}
+          <div className="p-4 border-b border-border">
+            <div className="flex items-end gap-1 h-32">
+              {revenueData.map((row) => (
+                <div key={row.period} className="flex-1 flex flex-col items-center justify-end h-full group relative">
+                  <div
+                    className="w-full bg-primary/20 hover:bg-primary/30 rounded-t-md transition-colors min-h-[2px]"
+                    style={{ height: `${Math.max(2, (row.revenue_ttc / maxRevenue) * 100)}%` }}
+                  />
+                  <p className="text-[9px] text-foreground-muted mt-1 truncate w-full text-center">{row.label}</p>
+                  {/* Tooltip on hover */}
+                  <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 hidden group-hover:block bg-surface border border-border rounded-lg px-3 py-2 shadow-lg z-10 whitespace-nowrap">
+                    <p className="text-xs font-bold text-foreground">{row.revenue_ttc.toFixed(2)} € TTC</p>
+                    <p className="text-[10px] text-foreground-muted">{row.sessions} sessions · {row.energy_kwh.toFixed(1)} kWh</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase">Période</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-foreground-muted uppercase">Sessions</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-foreground-muted uppercase">Énergie</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-foreground-muted uppercase">CA HT</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-foreground-muted uppercase">TVA</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-foreground-muted uppercase">CA TTC</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {revenueData.map((row) => (
+                  <tr key={row.period} className="hover:bg-surface-elevated/50 transition-colors">
+                    <td className="px-4 py-3 text-sm font-medium text-foreground capitalize">{row.label}</td>
+                    <td className="px-4 py-3 text-sm text-foreground-muted text-right tabular-nums">{row.sessions.toLocaleString("fr-FR")}</td>
+                    <td className="px-4 py-3 text-sm text-foreground-muted text-right tabular-nums">{row.energy_kwh.toFixed(1)} kWh</td>
+                    <td className="px-4 py-3 text-sm text-foreground text-right tabular-nums font-medium">{row.revenue_ht.toFixed(2)} €</td>
+                    <td className="px-4 py-3 text-sm text-foreground-muted text-right tabular-nums">{row.vat.toFixed(2)} €</td>
+                    <td className="px-4 py-3 text-sm text-primary text-right tabular-nums font-bold">{row.revenue_ttc.toFixed(2)} €</td>
+                  </tr>
+                ))}
+                {/* Total row */}
+                {totals && (
+                  <tr className="bg-surface-elevated/50 font-bold">
+                    <td className="px-4 py-3 text-sm text-foreground">TOTAL</td>
+                    <td className="px-4 py-3 text-sm text-foreground text-right tabular-nums">{totals.sessions.toLocaleString("fr-FR")}</td>
+                    <td className="px-4 py-3 text-sm text-foreground text-right tabular-nums">{totals.energy >= 1000 ? `${(totals.energy / 1000).toFixed(1)} MWh` : `${totals.energy.toFixed(0)} kWh`}</td>
+                    <td className="px-4 py-3 text-sm text-foreground text-right tabular-nums">{totals.ht.toFixed(2)} €</td>
+                    <td className="px-4 py-3 text-sm text-foreground text-right tabular-nums">{totals.vat.toFixed(2)} €</td>
+                    <td className="px-4 py-3 text-sm text-primary text-right tabular-nums">{totals.ttc.toFixed(2)} €</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

@@ -388,6 +388,8 @@ export function SessionsPage() {
   } = useQuery({
     queryKey: ["sessions", page, statusFilter, dateFrom, dateTo, searchQuery, selectedCpoId ?? "all"],
     retry: false,
+    // Facturation P1: Auto-refresh active sessions every 10s, otherwise 60s
+    refetchInterval: statusFilter === "Active" ? 10000 : 60000,
     queryFn: async () => {
       try {
         if (selectedCpoId && cpoFilterIds?.chargepointIds.length === 0) {
@@ -446,10 +448,11 @@ export function SessionsPage() {
     },
   });
 
-  // ── Aggregate: active sessions ──
+  // ── Aggregate: active sessions (Facturation P1: live refresh) ──
   const { data: activeCount, isError: _isActiveCountError } = useQuery({
     queryKey: ["sessions-active", selectedCpoId ?? "all"],
     retry: false,
+    refetchInterval: 15000, // Refresh active count every 15s
     queryFn: async () => {
       try {
         if (selectedCpoId && cpoFilterIds?.chargepointIds.length === 0) return 0;
@@ -1402,6 +1405,33 @@ function CdrDetailDrawer({ cdr, onClose }: { cdr: OcpiCdr; onClose: () => void }
   const loc = cdr.cdr_location as { name?: string; address?: string; city?: string } | null;
   const token = cdr.cdr_token as { uid?: string; type?: string } | null;
 
+  // Facturation P1: Fetch linked driver info
+  const { data: linkedDriver } = useQuery({
+    queryKey: ["cdr-driver", token?.uid],
+    enabled: !!token?.uid,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("gfx_tokens")
+        .select("driver_name, driver_external_id, customer_group")
+        .eq("token_uid", token!.uid!)
+        .maybeSingle();
+      return data as { driver_name: string | null; driver_external_id: string | null; customer_group: string | null } | null;
+    },
+  });
+
+  // Facturation P1: Fetch linked invoice
+  const { data: linkedInvoice } = useQuery({
+    queryKey: ["cdr-invoice", cdr.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("settlement_line_items")
+        .select("settlement_id, settlement_runs(id, period_start, period_end, status, invoice_id)")
+        .eq("cdr_id", cdr.id)
+        .maybeSingle();
+      return data as { settlement_id: string; settlement_runs: { id: string; period_start: string; period_end: string; status: string; invoice_id: string | null } | null } | null;
+    },
+  });
+
   async function handleAnnotate() {
     try {
       await supabase.from("ocpi_cdrs").update({ remarks: `[${annotationStatus}] ${annotation}` }).eq("id", cdr.id);
@@ -1441,6 +1471,17 @@ function CdrDetailDrawer({ cdr, onClose }: { cdr: OcpiCdr; onClose: () => void }
             <p className="text-xs text-foreground-muted">{[loc?.address, loc?.city].filter(Boolean).join(", ")}</p>
           </div>
 
+          {/* Facturation P1: Driver info */}
+          {linkedDriver && (
+            <div className="bg-surface-elevated border border-border rounded-xl p-4 space-y-1">
+              <p className="text-xs text-foreground-muted">Conducteur</p>
+              <p className="text-sm font-semibold text-foreground">{linkedDriver.driver_name ?? linkedDriver.driver_external_id ?? "—"}</p>
+              {linkedDriver.customer_group && (
+                <p className="text-xs text-foreground-muted">Groupe : {linkedDriver.customer_group}</p>
+              )}
+            </div>
+          )}
+
           {/* Details grid */}
           <div className="grid grid-cols-2 gap-3">
             <DetailField label="CDR ID" value={cdr.cdr_id.slice(0, 16) + "..."} mono />
@@ -1455,7 +1496,24 @@ function CdrDetailDrawer({ cdr, onClose }: { cdr: OcpiCdr; onClose: () => void }
             <DetailField label="Taux TVA" value={cdr.vat_rate != null ? `${cdr.vat_rate}%` : "—"} />
             <DetailField label="Source" value={cdr.source?.toUpperCase() ?? "OCPI"} />
             <DetailField label="Retail TTC" value={cdr.total_retail_cost_incl_vat != null ? `${cdr.total_retail_cost_incl_vat.toFixed(2)} ${cdr.currency}` : "—"} />
+            {cdr.customer_external_id && <DetailField label="Client ext. ID" value={cdr.customer_external_id} mono />}
+            <DetailField label="Country / Party" value={`${cdr.country_code}-${cdr.party_id}`} />
           </div>
+
+          {/* Facturation P1: Linked settlement/invoice */}
+          {linkedInvoice?.settlement_runs && (
+            <div className="bg-primary/5 border border-primary/20 rounded-xl p-4 space-y-1">
+              <p className="text-xs text-foreground-muted">Facturé dans</p>
+              <p className="text-sm font-semibold text-foreground">
+                Settlement {new Date(linkedInvoice.settlement_runs.period_start).toLocaleDateString("fr-FR", { month: "long", year: "numeric" })}
+              </p>
+              <p className="text-xs text-foreground-muted">
+                Statut : <span className={linkedInvoice.settlement_runs.status === "completed" ? "text-emerald-400" : "text-yellow-400"}>
+                  {linkedInvoice.settlement_runs.status}
+                </span>
+              </p>
+            </div>
+          )}
 
           {/* Simulate with different tariff */}
           <div className="border-t border-border pt-4">

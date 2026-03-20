@@ -1380,6 +1380,7 @@ export function UsersPage() {
   const [deleteUser, setDeleteUser] = useState<EzdriveUser | null>(null);
   const [manageUser, setManageUser] = useState<EzdriveUser | null>(null);
   const [revokeUser, setRevokeUser] = useState<EzdriveUser | null>(null);
+  const [activityUser, setActivityUser] = useState<EzdriveUser | null>(null);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("");
 
@@ -1635,6 +1636,13 @@ export function UsersPage() {
                             <Send className="w-4 h-4" />
                           </button>
                           <button
+                            onClick={() => setActivityUser(user)}
+                            className="p-1.5 rounded-lg text-foreground-muted hover:text-primary hover:bg-primary/10 transition-colors"
+                            title="Activité"
+                          >
+                            <History className="w-4 h-4" />
+                          </button>
+                          <button
                             onClick={() => setRevokeUser(user)}
                             className="p-1.5 rounded-lg text-foreground-muted hover:text-yellow-400 hover:bg-yellow-500/10 transition-colors"
                             title="Revoquer l'acces"
@@ -1714,9 +1722,172 @@ export function UsersPage() {
         }}
       />
 
+      {/* Activity Log SlideOver */}
+      <UserActivitySlideOver
+        user={activityUser}
+        open={!!activityUser}
+        onClose={() => setActivityUser(null)}
+      />
+
       {/* ── Stories 106-112: Security & Notifications sections ── */}
       <SecurityNotificationsSection users={users ?? []} />
     </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// User Activity Log SlideOver
+// ══════════════════════════════════════════════════════════════
+
+function UserActivitySlideOver({
+  user,
+  open,
+  onClose,
+}: {
+  user: EzdriveUser | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [logs, setLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user || !open) return;
+    setLoading(true);
+    setError(null);
+    setLogs([]);
+
+    (async () => {
+      try {
+        const { data, error: queryError } = await supabase
+          .from("audit_logs")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false })
+          .limit(20);
+
+        if (queryError) {
+          console.warn("[UsersPage] audit_logs:", queryError.message);
+          setError("Journal d'audit non disponible");
+          return;
+        }
+        setLogs(data ?? []);
+      } catch {
+        setError("Journal d'audit non disponible");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [user, open]);
+
+  if (!open || !user) return null;
+
+  function formatRelativeDate(dateStr: string): string {
+    const now = new Date();
+    const date = new Date(dateStr);
+    const diffMs = now.getTime() - date.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    const diffH = Math.floor(diffMin / 60);
+    const diffD = Math.floor(diffH / 24);
+
+    if (diffMin < 1) return "A l'instant";
+    if (diffMin < 60) return `Il y a ${diffMin} min`;
+    if (diffH < 24) return `Il y a ${diffH}h`;
+    if (diffD < 7) return `Il y a ${diffD}j`;
+    return date.toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
+  }
+
+  const roleConfig = ROLE_CONFIG[user.role] ?? ROLE_CONFIG.viewer;
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] transition-opacity duration-300 opacity-100"
+        onClick={onClose}
+      />
+      {/* Panel */}
+      <div className="fixed inset-y-0 right-0 z-[101] w-full max-w-lg transition-transform duration-300 ease-out translate-x-0">
+        <div className="w-full h-full bg-surface border-l border-border shadow-2xl flex flex-col">
+          {/* Header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold"
+                style={{ backgroundColor: `${roleConfig.color}20`, color: roleConfig.color }}
+              >
+                {getInitials(user.full_name, user.email)}
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-foreground">Activité</h2>
+                <p className="text-xs text-foreground-muted">{user.full_name ?? user.email}</p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              className="p-2 text-foreground-muted hover:text-foreground hover:bg-surface-elevated rounded-xl transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Content */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {loading && (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-6 h-6 text-primary animate-spin" />
+              </div>
+            )}
+
+            {error && (
+              <div className="bg-foreground-muted/5 border border-border rounded-xl p-5 text-center">
+                <History className="w-8 h-8 text-foreground-muted/40 mx-auto mb-2" />
+                <p className="text-sm text-foreground-muted">{error}</p>
+              </div>
+            )}
+
+            {!loading && !error && logs.length === 0 && (
+              <div className="bg-foreground-muted/5 border border-border rounded-xl p-5 text-center">
+                <History className="w-8 h-8 text-foreground-muted/40 mx-auto mb-2" />
+                <p className="text-sm text-foreground-muted">Aucune activité enregistrée</p>
+              </div>
+            )}
+
+            {!loading && !error && logs.length > 0 && (
+              <div className="space-y-3">
+                {logs.map((log, idx) => (
+                  <div
+                    key={log.id ?? idx}
+                    className="bg-surface-elevated border border-border rounded-xl p-4 space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold text-foreground">
+                        {log.action ?? "Action"}
+                      </span>
+                      <span className="text-xs text-foreground-muted">
+                        {log.created_at ? formatRelativeDate(log.created_at) : "—"}
+                      </span>
+                    </div>
+                    {log.entity && (
+                      <p className="text-xs text-foreground-muted">
+                        Entité : <span className="text-foreground">{log.entity}</span>
+                        {log.entity_id && <span className="text-foreground-muted/50 ml-1">({log.entity_id})</span>}
+                      </p>
+                    )}
+                    {log.details && (
+                      <p className="text-xs text-foreground-muted/70 break-words">
+                        {typeof log.details === "string" ? log.details : JSON.stringify(log.details)}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
 

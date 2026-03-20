@@ -17,6 +17,7 @@ import {
   Edit2,
   CreditCard,
   MapPin,
+  Calculator,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -437,7 +438,7 @@ function ProfileForm({
                 onChange={(e) =>
                   set(
                     form.commission_type === "percentage" ? "commission_rate" : "commission_fixed_amount",
-                    parseFloat(e.target.value) || 0
+                    Number.isNaN(parseFloat(e.target.value)) ? 0 : parseFloat(e.target.value)
                   )
                 }
                 className="w-full px-3 py-2 bg-surface border border-border rounded-xl text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
@@ -481,6 +482,33 @@ function TariffRulesTab() {
   const [search, setSearch] = useState("");
   const [editRule, setEditRule] = useState<TariffRule | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [simulateRule, setSimulateRule] = useState<TariffRule | null>(null);
+
+  // Fetch billing profiles for commission lookup in simulation
+  const { data: billingProfiles } = useQuery({
+    queryKey: ["billing-profiles"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("cpo_billing_profiles")
+        .select("*")
+        .order("cpo_name");
+      if (error) throw error;
+      return data as BillingProfile[];
+    },
+  });
+
+  // Fetch VAT rates for simulation
+  const { data: vatRates } = useQuery({
+    queryKey: ["territory-vat-rates"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("territory_vat_rates")
+        .select("*")
+        .order("territory");
+      if (error) throw error;
+      return data as TerritoryVat[];
+    },
+  });
 
   const { data: rules, isLoading } = useQuery({
     queryKey: ["tariff-rules"],
@@ -601,6 +629,13 @@ function TariffRulesTab() {
                     <td className="px-4 py-3">
                       <div className="flex gap-1">
                         <button
+                          onClick={() => setSimulateRule(r)}
+                          className="p-1.5 rounded-lg hover:bg-primary/10 transition-colors text-foreground-muted hover:text-primary"
+                          title="Simuler"
+                        >
+                          <Calculator className="w-4 h-4" />
+                        </button>
+                        <button
                           onClick={() => {
                             setEditRule(r);
                             setShowForm(true);
@@ -646,6 +681,271 @@ function TariffRulesTab() {
           saving={saveMutation.isPending}
         />
       )}
+
+      {/* Simulation modal */}
+      {simulateRule && (
+        <TariffSimulationModal
+          rule={simulateRule}
+          billingProfiles={billingProfiles ?? []}
+          vatRates={vatRates ?? []}
+          onClose={() => setSimulateRule(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Tariff Simulation Modal ─────────────────────────────────────
+
+interface SimulationResult {
+  energyCost: number;
+  timeCost: number;
+  sessionFee: number;
+  subtotalHT: number;
+  vatRate: number;
+  vatAmount: number;
+  totalTTC: number;
+  commissionCPO: number;
+}
+
+function TariffSimulationModal({
+  rule,
+  billingProfiles,
+  vatRates,
+  onClose,
+}: {
+  rule: TariffRule;
+  billingProfiles: BillingProfile[];
+  vatRates: TerritoryVat[];
+  onClose: () => void;
+}) {
+  const [duration, setDuration] = useState(60);
+  const [energy, setEnergy] = useState(20);
+  const [connectorType, setConnectorType] = useState<"AC" | "DC">("AC");
+  const [startTime, setStartTime] = useState("12:00");
+  const [territory, setTerritory] = useState(
+    vatRates.length > 0 ? vatRates[0].territory : "Guadeloupe"
+  );
+  const [result, setResult] = useState<SimulationResult | null>(null);
+
+  // Find matching billing profile for commission
+  const matchingProfile = billingProfiles.find((p) => p.cpo_id === rule.cpo_id);
+
+  const handleCalculate = () => {
+    // Energy cost
+    const energyCost = Number(rule.price_per_kwh) * energy;
+
+    // Time cost
+    const timeCost = Number(rule.price_per_minute) * duration;
+
+    // Session flat fee
+    const sessionFee = Number(rule.session_fee);
+
+    // Subtotal HT
+    let subtotalHT = energyCost + timeCost + sessionFee;
+
+    // Apply min/max session fee
+    if (rule.min_session_fee && subtotalHT < Number(rule.min_session_fee)) {
+      subtotalHT = Number(rule.min_session_fee);
+    }
+    if (rule.max_session_fee && subtotalHT > Number(rule.max_session_fee)) {
+      subtotalHT = Number(rule.max_session_fee);
+    }
+
+    // VAT
+    const vatEntry = vatRates.find((v) => v.territory === territory);
+    const vatRate = vatEntry ? Number(vatEntry.vat_rate) : 0;
+    const vatAmount = subtotalHT * (vatRate / 100);
+    const totalTTC = subtotalHT + vatAmount;
+
+    // Commission CPO
+    let commissionCPO = 0;
+    if (matchingProfile) {
+      if (matchingProfile.commission_type === "percentage") {
+        commissionCPO = subtotalHT * (Number(matchingProfile.commission_rate) / 100);
+      } else {
+        commissionCPO = Number(matchingProfile.commission_fixed_amount ?? 0);
+      }
+    }
+
+    setResult({
+      energyCost,
+      timeCost,
+      sessionFee,
+      subtotalHT,
+      vatRate,
+      vatAmount,
+      totalTTC,
+      commissionCPO,
+    });
+  };
+
+  const inputClass =
+    "w-full px-3 py-2 bg-surface border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted focus:outline-none focus:ring-2 focus:ring-primary/40";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative w-full max-w-md bg-surface border border-border rounded-2xl shadow-xl overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <Calculator className="w-5 h-5 text-primary" />
+            <h2 className="text-lg font-semibold text-foreground">Simuler un tarif</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg hover:bg-surface-elevated transition-colors text-foreground-muted"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {/* Rule name badge */}
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium">
+              {rule.rule_name}
+            </span>
+            <span className="text-xs text-foreground-muted">CPO: {rule.cpo_id}</span>
+          </div>
+
+          {/* Inputs */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-foreground-muted mb-1">
+                Duree de session (min)
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={duration}
+                onChange={(e) => setDuration(Math.max(0, parseInt(e.target.value) || 0))}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-foreground-muted mb-1">
+                Energie consommee (kWh)
+              </label>
+              <input
+                type="number"
+                min={0}
+                step="0.1"
+                value={energy}
+                onChange={(e) => setEnergy(Math.max(0, parseFloat(e.target.value) || 0))}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-foreground-muted mb-1">
+                Type de connecteur
+              </label>
+              <select
+                value={connectorType}
+                onChange={(e) => setConnectorType(e.target.value as "AC" | "DC")}
+                className={inputClass}
+              >
+                <option value="AC">AC</option>
+                <option value="DC">DC</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-foreground-muted mb-1">
+                Heure de debut
+              </label>
+              <input
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+          </div>
+
+          {/* Territory selector for VAT */}
+          <div>
+            <label className="block text-xs font-medium text-foreground-muted mb-1">
+              Territoire (TVA)
+            </label>
+            <select
+              value={territory}
+              onChange={(e) => setTerritory(e.target.value)}
+              className={inputClass}
+            >
+              {vatRates.map((v) => (
+                <option key={v.id} value={v.territory}>
+                  {v.territory} — {Number(v.vat_rate).toFixed(2)}%
+                </option>
+              ))}
+              {vatRates.length === 0 && <option value="">Aucun territoire</option>}
+            </select>
+          </div>
+
+          {/* Calculate button */}
+          <button
+            onClick={handleCalculate}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors"
+          >
+            <Calculator className="w-4 h-4" />
+            Calculer
+          </button>
+
+          {/* Results */}
+          {result && (
+            <div className="bg-background border border-border rounded-xl p-4 space-y-2">
+              <h3 className="text-sm font-semibold text-foreground mb-3">Resultat de la simulation</h3>
+
+              <div className="space-y-1.5 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-foreground-muted">Cout energie</span>
+                  <span className="text-foreground">{result.energyCost.toFixed(2)} EUR</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-foreground-muted">Cout temps</span>
+                  <span className="text-foreground">{result.timeCost.toFixed(2)} EUR</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-foreground-muted">Frais de session (flat)</span>
+                  <span className="text-foreground">{result.sessionFee.toFixed(2)} EUR</span>
+                </div>
+
+                <div className="border-t border-border my-2" />
+
+                <div className="flex justify-between">
+                  <span className="text-foreground-muted">Sous-total HT</span>
+                  <span className="text-foreground font-medium">{result.subtotalHT.toFixed(2)} EUR</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-foreground-muted">TVA ({result.vatRate.toFixed(2)}%)</span>
+                  <span className="text-foreground">{result.vatAmount.toFixed(2)} EUR</span>
+                </div>
+
+                <div className="border-t border-border my-2" />
+
+                <div className="flex justify-between">
+                  <span className="text-foreground font-semibold">Total TTC</span>
+                  <span className="text-primary font-bold text-base">{result.totalTTC.toFixed(2)} EUR</span>
+                </div>
+
+                <div className="border-t border-border my-2" />
+
+                <div className="flex justify-between">
+                  <span className="text-foreground-muted">
+                    Commission CPO
+                    {matchingProfile
+                      ? matchingProfile.commission_type === "percentage"
+                        ? ` (${matchingProfile.commission_rate}%)`
+                        : ` (fixe)`
+                      : " (aucun profil)"}
+                  </span>
+                  <span className="text-amber-400 font-medium">{result.commissionCPO.toFixed(2)} EUR</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -772,7 +1072,7 @@ function TariffRuleForm({
                     type="number"
                     step={f.step}
                     value={(form as Record<string, unknown>)[f.key] as number | string}
-                    onChange={(e) => set(f.key, e.target.value === "" ? "" : parseFloat(e.target.value) || 0)}
+                    onChange={(e) => set(f.key, e.target.value === "" ? "" : (Number.isNaN(parseFloat(e.target.value)) ? 0 : parseFloat(e.target.value)))}
                     className="w-full px-3 py-2 bg-surface border border-border rounded-xl text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
                   />
                 </div>

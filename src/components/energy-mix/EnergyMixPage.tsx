@@ -24,6 +24,8 @@ import {
   Search,
   ArrowLeft,
   Info,
+  Building2,
+  Check,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useCpo } from "@/contexts/CpoContext";
@@ -516,12 +518,24 @@ function ProfileDetailView({
   const editRef = useRef<HTMLDivElement>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const queryClient = useQueryClient();
-  const { success: toastSuccess } = useToast();
+  const { success: toastSuccess, error: toastError } = useToast();
+
+  // ── Station assignment state ──────────────────────────────
+  const [stationSearchQuery, setStationSearchQuery] = useState("");
+  const [stationDropdownOpen, setStationDropdownOpen] = useState(false);
+  const [pendingStationIds, setPendingStationIds] = useState<string[]>([]);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const GRID_CO2_FACTOR = 60; // gCO2/kWh — France grid average
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (editRef.current && !editRef.current.contains(e.target as Node)) {
         setEditDropdownOpen(false);
+      }
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setStationDropdownOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClick);
@@ -539,6 +553,175 @@ function ProfileDetailView({
       onBack();
     },
   });
+
+  // ── Fetch associated stations ─────────────────────────────
+  const { data: associatedStations, isLoading: loadingAssociations } = useQuery<{ station_id: string; station_name: string }[]>({
+    queryKey: ["station-energy-profiles", profile.id],
+    retry: false,
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase
+          .from("station_energy_profiles")
+          .select("station_id, stations(id, name)")
+          .eq("profile_id", profile.id);
+        if (error) {
+          console.warn("[EnergyMixPage] station_energy_profiles error:", error.message);
+          return [];
+        }
+        return (data ?? []).map((row: any) => ({
+          station_id: row.station_id,
+          station_name: row.stations?.name ?? row.station_id,
+        }));
+      } catch {
+        return [];
+      }
+    },
+  });
+
+  // ── Fetch all stations for dropdown ───────────────────────
+  const { data: allStations } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["all-stations-list"],
+    retry: false,
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase
+          .from("stations")
+          .select("id, name")
+          .order("name");
+        if (error) {
+          console.warn("[EnergyMixPage] stations list error:", error.message);
+          return [];
+        }
+        return (data ?? []) as { id: string; name: string }[];
+      } catch {
+        return [];
+      }
+    },
+  });
+
+  // ── Fetch energy from associated stations for CO2 calc ────
+  const associatedStationIds = useMemo(
+    () => (associatedStations ?? []).map((s) => s.station_id),
+    [associatedStations]
+  );
+
+  const { data: totalEnergyKwh } = useQuery<number>({
+    queryKey: ["station-energy-kwh", profile.id, associatedStationIds],
+    enabled: associatedStationIds.length > 0,
+    retry: false,
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase
+          .from("ocpp_transactions")
+          .select("energy_kwh")
+          .in("station_id", associatedStationIds);
+        if (error) {
+          console.warn("[EnergyMixPage] ocpp_transactions error:", error.message);
+          return 0;
+        }
+        return (data ?? []).reduce((sum: number, row: any) => sum + (Number(row.energy_kwh) || 0), 0);
+      } catch {
+        return 0;
+      }
+    },
+  });
+
+  // Initialize pending station IDs when associations load
+  useEffect(() => {
+    if (associatedStations) {
+      setPendingStationIds(associatedStations.map((s) => s.station_id));
+      setHasUnsavedChanges(false);
+    }
+  }, [associatedStations]);
+
+  // ── Save station associations mutation ────────────────────
+  const saveAssociationsMutation = useMutation({
+    mutationFn: async (selectedIds: string[]) => {
+      // Delete all existing associations for this profile
+      const { error: deleteError } = await supabase
+        .from("station_energy_profiles")
+        .delete()
+        .eq("profile_id", profile.id);
+      if (deleteError) throw deleteError;
+
+      // Insert new associations
+      if (selectedIds.length > 0) {
+        const newAssociations = selectedIds.map((stationId) => ({
+          profile_id: profile.id,
+          station_id: stationId,
+        }));
+        const { error: insertError } = await supabase
+          .from("station_energy_profiles")
+          .upsert(newAssociations);
+        if (insertError) throw insertError;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["station-energy-profiles", profile.id] });
+      queryClient.invalidateQueries({ queryKey: ["station-energy-kwh", profile.id] });
+      toastSuccess("Associations mises à jour");
+      setHasUnsavedChanges(false);
+    },
+    onError: (error: Error) => {
+      toastError("Erreur", error.message);
+    },
+  });
+
+  // ── Station assignment helpers ────────────────────────────
+  const availableStations = useMemo(() => {
+    const assigned = new Set(pendingStationIds);
+    const q = stationSearchQuery.toLowerCase();
+    return (allStations ?? []).filter(
+      (s) => !assigned.has(s.id) && (!q || s.name.toLowerCase().includes(q))
+    );
+  }, [allStations, pendingStationIds, stationSearchQuery]);
+
+  function toggleStationInPending(stationId: string) {
+    setPendingStationIds((prev) => {
+      const next = prev.includes(stationId)
+        ? prev.filter((id) => id !== stationId)
+        : [...prev, stationId];
+      return next;
+    });
+    setHasUnsavedChanges(true);
+  }
+
+  function removeStationFromPending(stationId: string) {
+    setPendingStationIds((prev) => prev.filter((id) => id !== stationId));
+    setHasUnsavedChanges(true);
+  }
+
+  // ── CO2 calculations ──────────────────────────────────────
+  const co2Data = useMemo(() => {
+    const energyKwh = (totalEnergyKwh && totalEnergyKwh > 0)
+      ? totalEnergyKwh
+      : (profile.sites_count || 1) * 1000; // estimated annual kWh fallback
+    const isEstimated = !totalEnergyKwh || totalEnergyKwh <= 0;
+    const profileCarbonGas = profile.carbon_gas ?? 0;
+    const co2AvoidedKg = (energyKwh * (GRID_CO2_FACTOR - profileCarbonGas)) / 1000;
+    const co2AvoidedTonnes = co2AvoidedKg / 1000;
+    const greenerPercent = GRID_CO2_FACTOR > 0
+      ? Math.max(0, Math.min(100, ((GRID_CO2_FACTOR - profileCarbonGas) / GRID_CO2_FACTOR) * 100))
+      : 0;
+
+    return {
+      energyKwh,
+      isEstimated,
+      profileCarbonGas,
+      co2AvoidedKg,
+      co2AvoidedTonnes,
+      greenerPercent,
+    };
+  }, [totalEnergyKwh, profile.carbon_gas, profile.sites_count]);
+
+  // ── Helper: get station name by id ────────────────────────
+  function getStationName(stationId: string): string {
+    const fromAssoc = (associatedStations ?? []).find((s) => s.station_id === stationId);
+    if (fromAssoc) return fromAssoc.station_name;
+    const fromAll = (allStations ?? []).find((s) => s.id === stationId);
+    if (fromAll) return fromAll.name;
+    return stationId;
+  }
 
   return (
     <div className="space-y-6">
@@ -586,6 +769,70 @@ function ProfileDetailView({
               </button>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* CO2 Estimation KPI Card */}
+      <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-border flex items-center gap-2">
+          <Leaf className="w-4 h-4 text-green-400" />
+          <h2 className="text-base font-semibold text-foreground">Estimation CO2</h2>
+        </div>
+        <div className="p-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Main KPI: CO2 avoided */}
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-xl bg-green-500/10 flex items-center justify-center shrink-0">
+                <Leaf className="w-6 h-6 text-green-400" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-foreground">
+                  {co2Data.co2AvoidedTonnes >= 1
+                    ? `${co2Data.co2AvoidedTonnes.toFixed(1)} tonnes`
+                    : `${co2Data.co2AvoidedKg.toFixed(1)} kg`}
+                </p>
+                <p className="text-sm text-foreground-muted">CO2 évitées</p>
+                <p className="text-xs text-foreground-muted mt-1">
+                  basé sur {co2Data.energyKwh.toLocaleString("fr-FR")} kWh {co2Data.isEstimated ? "(estimation)" : "produits"}
+                </p>
+              </div>
+            </div>
+
+            {/* Profile emissions vs grid */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-foreground-muted">Émissions profil</span>
+                <span className="text-sm font-semibold text-foreground">{co2Data.profileCarbonGas.toFixed(1)} gCO2/kWh</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-foreground-muted">Référence réseau</span>
+                <span className="text-sm font-semibold text-foreground">{GRID_CO2_FACTOR} gCO2/kWh</span>
+              </div>
+            </div>
+
+            {/* Progress bar: how much greener */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-foreground-muted">Plus vert que le réseau</span>
+                <span className="text-sm font-semibold text-green-400">{co2Data.greenerPercent.toFixed(0)}%</span>
+              </div>
+              <div className="w-full h-3 bg-surface-elevated rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-green-500 to-primary rounded-full transition-all duration-500"
+                  style={{ width: `${co2Data.greenerPercent}%` }}
+                />
+              </div>
+              <p className="text-xs text-foreground-muted">
+                {co2Data.greenerPercent >= 80
+                  ? "Profil très vert — impact carbone minimal"
+                  : co2Data.greenerPercent >= 40
+                  ? "Profil modérément vert"
+                  : co2Data.greenerPercent > 0
+                  ? "Profil légèrement plus vert que le réseau"
+                  : "Profil équivalent ou supérieur au réseau"}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -646,6 +893,127 @@ function ProfileDetailView({
                 {profile.updated_by && ` (${profile.updated_by})`}
               </span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Station Assignment Section */}
+      <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-primary" />
+            <h2 className="text-base font-semibold text-foreground">
+              Stations associées ({pendingStationIds.length})
+            </h2>
+          </div>
+          {hasUnsavedChanges && (
+            <button
+              onClick={() => saveAssociationsMutation.mutate(pendingStationIds)}
+              disabled={saveAssociationsMutation.isPending}
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
+            >
+              {saveAssociationsMutation.isPending ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Save className="w-3.5 h-3.5" />
+              )}
+              Enregistrer
+            </button>
+          )}
+        </div>
+        <div className="p-6 space-y-4">
+          {/* Currently assigned stations */}
+          {loadingAssociations ? (
+            <div className="flex items-center justify-center py-6">
+              <Loader2 className="w-5 h-5 animate-spin text-foreground-muted" />
+            </div>
+          ) : pendingStationIds.length === 0 ? (
+            <div className="text-center py-6">
+              <Building2 className="w-8 h-8 text-foreground-muted/30 mx-auto mb-2" />
+              <p className="text-sm text-foreground-muted">Aucune station associée à ce profil</p>
+              <p className="text-xs text-foreground-muted/60 mt-1">Utilisez le menu ci-dessous pour ajouter des stations</p>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {pendingStationIds.map((stationId) => (
+                <div
+                  key={stationId}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-surface-elevated border border-border rounded-xl text-sm text-foreground"
+                >
+                  <Building2 className="w-3.5 h-3.5 text-foreground-muted" />
+                  <span>{getStationName(stationId)}</span>
+                  <button
+                    onClick={() => removeStationFromPending(stationId)}
+                    className="p-0.5 rounded hover:bg-red-500/10 text-foreground-muted hover:text-red-400 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Multi-select dropdown to add stations */}
+          <div className="relative" ref={dropdownRef}>
+            <button
+              onClick={() => setStationDropdownOpen(!stationDropdownOpen)}
+              className="w-full flex items-center justify-between px-3 py-2.5 bg-surface border border-border rounded-xl text-sm text-foreground-muted hover:border-primary/50 transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                <Plus className="w-4 h-4" />
+                Ajouter des stations...
+              </span>
+              <ChevronDown className={cn("w-4 h-4 transition-transform", stationDropdownOpen && "rotate-180")} />
+            </button>
+
+            {stationDropdownOpen && (
+              <div className="absolute left-0 right-0 top-full mt-1 bg-surface border border-border rounded-xl shadow-lg z-50 max-h-64 overflow-hidden flex flex-col">
+                {/* Search */}
+                <div className="p-2 border-b border-border">
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-foreground-muted" />
+                    <input
+                      type="text"
+                      value={stationSearchQuery}
+                      onChange={(e) => setStationSearchQuery(e.target.value)}
+                      placeholder="Rechercher une station..."
+                      className="w-full pl-8 pr-3 py-2 bg-surface-elevated border border-border rounded-lg text-sm text-foreground placeholder:text-foreground-muted/40 focus:outline-none focus:border-primary/50"
+                      autoFocus
+                    />
+                  </div>
+                </div>
+
+                {/* Options */}
+                <div className="overflow-y-auto max-h-48 py-1">
+                  {availableStations.length === 0 ? (
+                    <p className="px-4 py-3 text-sm text-foreground-muted text-center">
+                      {(allStations ?? []).length === 0 ? "Aucune station disponible" : "Toutes les stations sont déjà assignées"}
+                    </p>
+                  ) : (
+                    availableStations.map((station) => (
+                      <button
+                        key={station.id}
+                        onClick={() => toggleStationInPending(station.id)}
+                        className="w-full flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-surface-elevated transition-colors"
+                      >
+                        <div className={cn(
+                          "w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors",
+                          pendingStationIds.includes(station.id)
+                            ? "bg-primary border-primary"
+                            : "border-border"
+                        )}>
+                          {pendingStationIds.includes(station.id) && (
+                            <Check className="w-3 h-3 text-white" />
+                          )}
+                        </div>
+                        <Building2 className="w-3.5 h-3.5 text-foreground-muted shrink-0" />
+                        <span>{station.name}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

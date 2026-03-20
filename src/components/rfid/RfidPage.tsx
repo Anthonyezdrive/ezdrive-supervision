@@ -42,6 +42,7 @@ import {
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { downloadCSV, todayISO } from "@/lib/export";
+import { useToast } from "@/contexts/ToastContext";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -157,6 +158,7 @@ export function RfidPage() {
   const [detail, setDetail] = useState<Token | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showImportCsv, setShowImportCsv] = useState(false);
+  const [topUpToken, setTopUpToken] = useState<Token | null>(null);
   const [importMsg, setImportMsg] = useState<string | null>(null);
   const [importLoading, setImportLoading] = useState(false);
 
@@ -355,6 +357,7 @@ export function RfidPage() {
                   <th className={cn(thClass, "text-right")} onClick={() => handleSort("total_sessions")}>Sessions <SortIcon col="total_sessions" /></th>
                   <th className={cn(thClass, "text-right")} onClick={() => handleSort("total_energy_kwh")}>Énergie <SortIcon col="total_energy_kwh" /></th>
                   <th className={thClass} onClick={() => handleSort("last_used_at")}>Dernière util. <SortIcon col="last_used_at" /></th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-foreground-muted uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -404,6 +407,16 @@ export function RfidPage() {
                       </td>
                       <td className="px-4 py-3 text-sm text-foreground-muted whitespace-nowrap">
                         {token.last_used_at ? formatRelativeDate(token.last_used_at) : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setTopUpToken(token); }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-primary/10 text-primary border border-primary/20 rounded-lg text-xs font-medium hover:bg-primary/20 transition-colors"
+                          title="Créditer le solde prépayé"
+                        >
+                          <Wallet className="w-3 h-3" />
+                          Créditer
+                        </button>
                       </td>
                     </tr>
                   );
@@ -468,6 +481,15 @@ export function RfidPage() {
 
       {/* Create Token Modal */}
       {showCreate && <CreateTokenModal onClose={() => setShowCreate(false)} cpoId={selectedCpoId} onCreated={() => { setShowCreate(false); refetch(); }} />}
+
+      {/* Prepaid Top-Up Modal */}
+      {topUpToken && (
+        <PrepaidTopUpModal
+          token={topUpToken}
+          onClose={() => setTopUpToken(null)}
+          onSuccess={() => { setTopUpToken(null); refetch(); }}
+        />
+      )}
 
       {/* Import CSV Modal */}
       {showImportCsv && (
@@ -590,6 +612,29 @@ function TokenDetailDrawer({ token, onClose }: { token: Token; onClose: () => vo
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["gfx-tokens"] });
       setShowBlockConfirm(false);
+      onClose();
+    },
+  });
+
+  // eMSP P1: Unblock token mutation
+  const [showUnblockConfirm, setShowUnblockConfirm] = useState(false);
+  const unblockMutation = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from("gfx_tokens")
+        .update({ status: "active" })
+        .eq("id", token.id);
+      if (error) throw error;
+      // Also clear auto_disabled_at in token_billing
+      await supabase
+        .from("token_billing")
+        .update({ auto_disabled_at: null, auto_reactivated_at: new Date().toISOString() })
+        .eq("token_uid", token.token_uid);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["gfx-tokens"] });
+      queryClient.invalidateQueries({ queryKey: ["token-billing", token.token_uid] });
+      setShowUnblockConfirm(false);
       onClose();
     },
   });
@@ -910,6 +955,16 @@ function TokenDetailDrawer({ token, onClose }: { token: Token; onClose: () => vo
                   Bloquer
                 </button>
               )}
+              {/* eMSP P1: Unblock token */}
+              {(token.status === "blocked" || token.status === "inactive") && (
+                <button
+                  onClick={() => setShowUnblockConfirm(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-medium hover:bg-emerald-500/20 transition-colors"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Débloquer
+                </button>
+              )}
               {/* Story 64: Transfer token */}
               <button
                 onClick={() => setShowTransfer(true)}
@@ -999,6 +1054,246 @@ function TokenDetailDrawer({ token, onClose }: { token: Token; onClose: () => vo
         loading={blockMutation.isPending}
         loadingLabel="Blocage..."
       />
+
+      {/* eMSP P1: Unblock confirmation dialog */}
+      <ConfirmDialog
+        open={showUnblockConfirm}
+        onConfirm={() => unblockMutation.mutate()}
+        onCancel={() => setShowUnblockConfirm(false)}
+        title="Débloquer ce token"
+        description={`Êtes-vous sûr de vouloir réactiver le token ${formatTokenId(token.token_uid)} ? Il pourra à nouveau être utilisé pour charger.`}
+        confirmLabel="Débloquer"
+        variant="warning"
+        loading={unblockMutation.isPending}
+        loadingLabel="Déblocage..."
+      />
+    </>
+  );
+}
+
+// ── Prepaid Top-Up Modal ──────────────────────────────────────
+
+function PrepaidTopUpModal({
+  token,
+  onClose,
+  onSuccess,
+}: {
+  token: Token;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [amount, setAmount] = useState<number>(50);
+
+  // Fetch billing info for this token
+  const { data: billing, isLoading: billingLoading } = useQuery<TokenBilling | null>({
+    queryKey: ["token-billing-topup", token.token_uid],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("token_billing")
+        .select("*")
+        .eq("token_uid", token.token_uid)
+        .maybeSingle();
+      if (error) {
+        console.warn("token_billing query:", error.message);
+        return null;
+      }
+      return data as TokenBilling | null;
+    },
+  });
+
+  const topUpMutation = useMutation({
+    mutationFn: async () => {
+      if (amount <= 0) throw new Error("Le montant doit être supérieur à 0");
+      const amountCents = Math.round(amount * 100);
+
+      // Try RPC first
+      try {
+        const { error } = await supabase.rpc("reactivate_prepaid_token", {
+          p_token_id: token.id,
+          p_amount_cents: amountCents,
+        });
+        if (!error) return;
+        // If RPC fails (e.g. doesn't exist), fall through to manual update
+        console.warn("reactivate_prepaid_token RPC:", error.message);
+      } catch {
+        // fall through
+      }
+
+      // Also try the existing RPC with different signature
+      try {
+        const { error } = await supabase.rpc("reactivate_prepaid_token", {
+          p_token_uid: token.token_uid,
+          p_recharge_amount: amount,
+        });
+        if (!error) return;
+        console.warn("reactivate_prepaid_token RPC (v2):", error.message);
+      } catch {
+        // fall through
+      }
+
+      // Manual update: increment balance in token_billing
+      const currentBalance = billing?.prepaid_balance ?? 0;
+      const { error: updateError } = await supabase
+        .from("token_billing")
+        .update({
+          prepaid_balance: currentBalance + amount,
+        })
+        .eq("token_uid", token.token_uid);
+      if (updateError) throw updateError;
+
+      // Also reactivate the token if it was blocked
+      await supabase
+        .from("gfx_tokens")
+        .update({ status: "active" })
+        .eq("id", token.id);
+    },
+    onSuccess: () => {
+      toast(`Token credite de ${amount.toFixed(2)} EUR`, "success");
+      queryClient.invalidateQueries({ queryKey: ["gfx-tokens"] });
+      queryClient.invalidateQueries({ queryKey: ["token-billing", token.token_uid] });
+      queryClient.invalidateQueries({ queryKey: ["token-billing-topup", token.token_uid] });
+      onSuccess();
+    },
+    onError: (err) => {
+      toast((err as Error)?.message ?? "Erreur lors du credit", "error");
+    },
+  });
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50" onClick={onClose} />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="bg-surface border border-border rounded-2xl w-full max-w-md shadow-2xl">
+          {/* Header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                <Wallet className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <h2 className="font-heading font-bold text-lg text-foreground">Crediter prepaye</h2>
+                <p className="text-xs text-foreground-muted font-mono">{formatTokenId(token.token_uid)}</p>
+              </div>
+            </div>
+            <button onClick={onClose} className="p-1.5 hover:bg-surface-elevated rounded-lg transition-colors">
+              <X className="w-5 h-5 text-foreground-muted" />
+            </button>
+          </div>
+
+          {/* Body */}
+          <div className="px-6 py-5 space-y-5">
+            {billingLoading ? (
+              <div className="animate-pulse space-y-3">
+                <div className="h-5 bg-surface-elevated rounded w-1/3" />
+                <div className="h-10 bg-surface-elevated rounded" />
+              </div>
+            ) : (
+              <>
+                {/* Current balance */}
+                <div className="bg-surface-elevated border border-border rounded-xl p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-foreground-muted">Solde actuel</span>
+                    <span className={cn(
+                      "text-lg font-bold font-mono",
+                      (billing?.prepaid_balance ?? 0) <= 0 ? "text-red-400" : "text-emerald-400"
+                    )}>
+                      {(billing?.prepaid_balance ?? 0).toFixed(2)} EUR
+                    </span>
+                  </div>
+                  {billing?.billing_type && (
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-xs text-foreground-muted">Type</span>
+                      <span className="text-xs text-foreground font-medium">
+                        {billing.billing_type === "prepaid" ? "Prepaye" : "Postpaid"}
+                      </span>
+                    </div>
+                  )}
+                  {billing?.prepaid_amount != null && (
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-xs text-foreground-muted">Montant initial</span>
+                      <span className="text-xs text-foreground font-medium font-mono">
+                        {(billing.prepaid_amount ?? 0).toFixed(2)} EUR
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Amount input */}
+                <div className="space-y-1.5">
+                  <label className="block text-sm font-medium text-foreground">
+                    Montant a crediter (EUR)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={amount}
+                      onChange={(e) => setAmount(Number(e.target.value))}
+                      className="w-full px-4 py-2.5 bg-surface-elevated border border-border rounded-xl text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50"
+                      placeholder="50"
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-foreground-muted">EUR</span>
+                  </div>
+                  {/* Quick amounts */}
+                  <div className="flex gap-2 mt-2">
+                    {[10, 25, 50, 100, 200].map((v) => (
+                      <button
+                        key={v}
+                        onClick={() => setAmount(v)}
+                        className={cn(
+                          "px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors",
+                          amount === v
+                            ? "bg-primary/10 border-primary/30 text-primary"
+                            : "bg-surface-elevated border-border text-foreground-muted hover:text-foreground hover:border-foreground-muted/30"
+                        )}
+                      >
+                        {v} EUR
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Preview */}
+                {amount > 0 && (
+                  <div className="bg-surface-elevated border border-emerald-500/20 rounded-xl p-3">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-foreground-muted">Nouveau solde apres credit</span>
+                      <span className="text-emerald-400 font-bold font-mono">
+                        {((billing?.prepaid_balance ?? 0) + amount).toFixed(2)} EUR
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border">
+            <button
+              onClick={onClose}
+              className="px-4 py-2.5 text-sm text-foreground-muted hover:text-foreground transition-colors"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={() => topUpMutation.mutate()}
+              disabled={topUpMutation.isPending || amount <= 0 || billingLoading}
+              className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
+            >
+              {topUpMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Wallet className="w-4 h-4" />
+              )}
+              Crediter {amount > 0 ? `${amount.toFixed(2)} EUR` : ""}
+            </button>
+          </div>
+        </div>
+      </div>
     </>
   );
 }

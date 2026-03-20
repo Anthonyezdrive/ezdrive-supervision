@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { cn } from "@/lib/utils";
 import { useOutletContext } from "react-router-dom";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList, Legend,
@@ -78,6 +79,24 @@ export function B2BOverviewPage() {
   const rate = activeClient?.redevance_rate ?? 0.33;
   const kpis = computeKPIs(data, rate);
   const monthlyData = groupByMonth(data, rate);
+
+  // Budget gauge: sum of total_cost for the current month
+  const totalSpentThisMonth = useMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getMonth(); // 0-indexed
+    const currentYear = now.getFullYear();
+    return allData
+      .filter((c) => {
+        const d = new Date(c.start_date_time);
+        return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+      })
+      .reduce((sum, c) => sum + (c.total_cost ?? 0), 0);
+  }, [allData]);
+
+  const budgetAmount = activeClient?.monthly_budget ?? 0;
+  const pct = budgetAmount > 0 ? Math.round((totalSpentThisMonth / budgetAmount) * 100) : 0;
+  const barColor = pct > 80 ? "bg-red-500" : pct > 60 ? "bg-amber-500" : "bg-emerald-500";
+  const percentClass = pct > 80 ? "text-red-400" : pct > 60 ? "text-amber-400" : "text-emerald-400";
 
   // Previous year data for comparison
   const prevMonthlyData = showComparison && prevCdrs ? groupByMonth(prevCdrs, rate) : null;
@@ -241,6 +260,27 @@ export function B2BOverviewPage() {
           color="#E74C3C"
         />
       </div>
+
+      {/* Budget Gauge */}
+      {activeClient?.monthly_budget && activeClient.monthly_budget > 0 && (
+        <div className="bg-surface border border-border rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="text-sm text-foreground-muted">Budget mensuel</p>
+              <p className="text-lg font-bold text-foreground">
+                {formatEUR(totalSpentThisMonth)} / {formatEUR(activeClient.monthly_budget)}
+              </p>
+            </div>
+            <span className={cn("text-sm font-medium", percentClass)}>{pct}%</span>
+          </div>
+          <div className="w-full h-3 bg-white/5 rounded-full overflow-hidden">
+            <div
+              className={cn("h-full rounded-full transition-all", barColor)}
+              style={{ width: `${Math.min(pct, 100)}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Bar Chart: Volume par mois */}
       <div className="bg-surface border border-border rounded-2xl p-6">

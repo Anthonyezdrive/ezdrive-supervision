@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState } from "react";
+import { useMemo, useCallback, useState, lazy, Suspense } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHelp } from "@/components/ui/PageHelp";
 import {
@@ -17,6 +17,10 @@ import {
   Ban,
   BarChart3,
   Upload,
+  BookOpen,
+  AlertTriangle,
+  RefreshCcw,
+  Scale,
 } from "lucide-react";
 import {
   BarChart,
@@ -30,7 +34,16 @@ import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { apiDownload, apiPost } from "@/lib/api";
+import { todayISO } from "@/lib/export";
 // ErrorState not needed — query never throws (returns [] on error)
+
+// Lazy-loaded Sprint 3 billing components
+const CreditNoteModal = lazy(() =>
+  import("@/components/billing/CreditNoteModal").then((m) => ({ default: m.CreditNoteModal }))
+);
+const PaymentReminderModal = lazy(() =>
+  import("@/components/billing/PaymentReminderModal").then((m) => ({ default: m.PaymentReminderModal }))
+);
 
 interface Invoice {
   id: string;
@@ -51,10 +64,23 @@ interface Invoice {
   all_consumers: { first_name: string | null; last_name: string | null; email: string | null } | null;
 }
 
+interface OcpiCdr {
+  id: string;
+  cdr_token_uid: string;
+  total_cost: number;
+  total_energy: number;
+  currency: string;
+  start_date_time: string;
+  end_date_time: string;
+  session_id: string | null;
+  invoice_id: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
+type MainView = "invoices" | "reconciliation";
 type StatusFilter = "all" | "draft" | "issued" | "paid" | "cancelled";
 
 const STATUS_TABS: { key: StatusFilter; label: string }[] = [
@@ -249,10 +275,26 @@ function InvoiceKPISkeleton() {
 
 export function InvoicesPage() {
   const queryClient = useQueryClient();
+  const [mainView, setMainView] = useState<MainView>("invoices");
   const [activeTab, setActiveTab] = useState<StatusFilter>("all");
   const [page, setPage] = useState(0);
   const [showGenerateModal, setShowGenerateModal] = useState(false);
   const [generating, setGenerating] = useState(false);
+  // Sprint 3 integration states
+  const [creditNoteInvoice, setCreditNoteInvoice] = useState<Invoice | null>(null);
+  const [reminderInvoice, setReminderInvoice] = useState<Invoice | null>(null);
+  // Reconciliation period
+  const [reconPeriodStart, setReconPeriodStart] = useState(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 1);
+    d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [reconPeriodEnd, setReconPeriodEnd] = useState(() => {
+    const d = new Date();
+    d.setDate(0); // last day of previous month
+    return d.toISOString().slice(0, 10);
+  });
 
   // --- Data fetching (direct Supabase) --------------------------------
   // NOTE: The 'invoices' table has not yet been created (pending migration 022).
@@ -314,6 +356,69 @@ export function InvoicesPage() {
       .slice(-12);
   }, [invoices]);
 
+  // --- CDR query for reconciliation ---
+  const {
+    data: cdrs,
+    isLoading: cdrsLoading,
+  } = useQuery<OcpiCdr[]>({
+    queryKey: ["ocpi_cdrs", "recon", reconPeriodStart, reconPeriodEnd],
+    enabled: mainView === "reconciliation",
+    retry: false,
+    queryFn: async () => {
+      try {
+        const { data, error } = await supabase
+          .from("ocpi_cdrs")
+          .select("id, cdr_token_uid, total_cost, total_energy, currency, start_date_time, end_date_time, session_id, invoice_id")
+          .gte("start_date_time", reconPeriodStart)
+          .lte("start_date_time", reconPeriodEnd + "T23:59:59Z")
+          .order("start_date_time", { ascending: false })
+          .limit(500);
+        if (error) {
+          console.warn("[InvoicesPage] CDR query error:", error.code, error.message);
+          return [];
+        }
+        return (data ?? []) as OcpiCdr[];
+      } catch {
+        return [];
+      }
+    },
+  });
+
+  // --- Reconciliation computation ---
+  const reconciliation = useMemo(() => {
+    if (!cdrs || !invoices) return null;
+
+    // Filter invoices for the reconciliation period
+    const periodInvoices = invoices.filter((inv) => {
+      if (inv.status === "cancelled") return false;
+      return inv.period_start >= reconPeriodStart && inv.period_start <= reconPeriodEnd;
+    });
+
+    const totalCdrAmount = cdrs.reduce((s, c) => s + (c.total_cost ?? 0), 0);
+    const totalInvoicedCents = periodInvoices.reduce((s, i) => s + i.total_cents, 0);
+    const totalInvoicedEuros = totalInvoicedCents / 100;
+    const ecart = totalCdrAmount - totalInvoicedEuros;
+
+    // CDRs without an invoice
+    const cdrsWithoutInvoice = cdrs.filter((c) => !c.invoice_id);
+
+    // Invoices without a matching CDR (session invoices only)
+    const cdrInvoiceIds = new Set(cdrs.filter((c) => c.invoice_id).map((c) => c.invoice_id));
+    const invoicesWithoutCdr = periodInvoices.filter(
+      (inv) => inv.type === "session" && !cdrInvoiceIds.has(inv.id)
+    );
+
+    return {
+      totalCdrs: cdrs.length,
+      totalCdrAmount,
+      totalInvoices: periodInvoices.length,
+      totalInvoicedEuros,
+      ecart,
+      cdrsWithoutInvoice,
+      invoicesWithoutCdr,
+    };
+  }, [cdrs, invoices, reconPeriodStart, reconPeriodEnd]);
+
   // --- Invoice action handlers ---
   const handleMarkPaid = useCallback(async (invoiceId: string) => {
     try {
@@ -362,6 +467,98 @@ export function InvoicesPage() {
     const a = document.createElement("a");
     a.href = url;
     a.download = "export-pennylane-ezdrive.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [invoices]);
+
+  // --- FEC Export (Fichier des Ecritures Comptables) ---
+  const handleExportFEC = useCallback(() => {
+    if (!invoices?.length) return;
+
+    const fecRows: Record<string, unknown>[] = [];
+
+    for (const inv of invoices) {
+      if (inv.status === "cancelled" || inv.status === "draft") continue;
+
+      const ecritureDate = inv.issued_at
+        ? new Date(inv.issued_at).toISOString().slice(0, 10).replace(/-/g, "")
+        : new Date(inv.created_at).toISOString().slice(0, 10).replace(/-/g, "");
+
+      const totalEuros = (inv.total_cents / 100).toFixed(2);
+      const subtotalEuros = (inv.subtotal_cents / 100).toFixed(2);
+      const vatEuros = (inv.vat_cents / 100).toFixed(2);
+
+      // Line 1: Debit client (total TTC)
+      fecRows.push({
+        JournalCode: "VE",
+        JournalLib: "Journal des Ventes",
+        EcritureNum: inv.invoice_number,
+        EcritureDate: ecritureDate,
+        CompteNum: "411000",
+        CompteLib: "Clients",
+        Debit: totalEuros,
+        Credit: "0.00",
+        EcritureLet: "",
+        PieceRef: inv.invoice_number,
+        PieceDate: ecritureDate,
+        EcritureLib: `Facture ${inv.invoice_number}`,
+      });
+
+      // Line 2: Credit revenue (subtotal HT)
+      fecRows.push({
+        JournalCode: "VE",
+        JournalLib: "Journal des Ventes",
+        EcritureNum: inv.invoice_number,
+        EcritureDate: ecritureDate,
+        CompteNum: "706000",
+        CompteLib: "Prestations de services",
+        Debit: "0.00",
+        Credit: subtotalEuros,
+        EcritureLet: "",
+        PieceRef: inv.invoice_number,
+        PieceDate: ecritureDate,
+        EcritureLib: `Facture ${inv.invoice_number}`,
+      });
+
+      // Line 3: Credit VAT
+      fecRows.push({
+        JournalCode: "VE",
+        JournalLib: "Journal des Ventes",
+        EcritureNum: inv.invoice_number,
+        EcritureDate: ecritureDate,
+        CompteNum: "445710",
+        CompteLib: "TVA collectee",
+        Debit: "0.00",
+        Credit: vatEuros,
+        EcritureLet: "",
+        PieceRef: inv.invoice_number,
+        PieceDate: ecritureDate,
+        EcritureLib: `Facture ${inv.invoice_number}`,
+      });
+    }
+
+    if (fecRows.length === 0) return;
+
+    // FEC standard uses tab separator — build manually
+    const headers = Object.keys(fecRows[0]);
+    const escape = (v: unknown) => {
+      const s = v === null || v === undefined ? "" : String(v);
+      if (s.includes("\t") || s.includes('"') || s.includes("\n")) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
+    const tsvLines = [
+      headers.join("\t"),
+      ...fecRows.map((row) => headers.map((h) => escape(row[h])).join("\t")),
+    ];
+    const tsv = tsvLines.join("\n");
+
+    const blob = new Blob(["\uFEFF" + tsv], { type: "text/tab-separated-values;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `FEC-EZDrive-${todayISO()}.txt`;
     a.click();
     URL.revokeObjectURL(url);
   }, [invoices]);
@@ -476,6 +673,34 @@ export function InvoicesPage() {
         ]}
       />
 
+      {/* ── Main View Toggle ────────────────────────────────────────────── */}
+      <div className="flex items-center gap-1 bg-surface border border-border rounded-xl p-1 w-fit">
+        <button
+          onClick={() => setMainView("invoices")}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+            mainView === "invoices"
+              ? "bg-surface-elevated text-foreground shadow-sm"
+              : "text-foreground-muted hover:text-foreground"
+          )}
+        >
+          <FileText className="w-4 h-4" />
+          Factures
+        </button>
+        <button
+          onClick={() => setMainView("reconciliation")}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
+            mainView === "reconciliation"
+              ? "bg-surface-elevated text-foreground shadow-sm"
+              : "text-foreground-muted hover:text-foreground"
+          )}
+        >
+          <Scale className="w-4 h-4" />
+          Reconciliation
+        </button>
+      </div>
+
       {/* ── Header Actions ─────────────────────────────────────────────────── */}
       <div className="flex items-center justify-end gap-2 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
@@ -486,6 +711,15 @@ export function InvoicesPage() {
           >
             <Download className="w-4 h-4" />
             Exporter CSV
+          </button>
+          <button
+            onClick={handleExportFEC}
+            disabled={isLoading || !invoices?.length}
+            className="flex items-center gap-2 px-3 py-2 bg-surface border border-border rounded-xl text-sm text-foreground-muted hover:text-foreground hover:border-foreground-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title="Export FEC (Fichier des Ecritures Comptables) — format reglementaire"
+          >
+            <BookOpen className="w-4 h-4" />
+            Export FEC
           </button>
           <button
             onClick={handleExportPennylane}
@@ -514,6 +748,10 @@ export function InvoicesPage() {
         </div>
       </div>
 
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/* ── INVOICES VIEW ─────────────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {mainView === "invoices" && <>
       {/* ── KPI Cards ──────────────────────────────────────────────── */}
       {isLoading ? (
         <InvoiceKPISkeleton />
@@ -761,13 +999,24 @@ export function InvoicesPage() {
                             <CheckCircle className="w-4 h-4" />
                           </button>
                         )}
-                        {inv.status !== "cancelled" && (
+                        {/* Avoir — only on paid/issued invoices */}
+                        {(inv.status === "paid" || inv.status === "issued") && (
                           <button
-                            onClick={() => handleCreditNote(inv.id)}
+                            onClick={() => setCreditNoteInvoice(inv)}
                             title="Creer un avoir"
                             className="p-1.5 rounded-lg text-foreground-muted hover:text-danger hover:bg-danger/10 transition-all"
                           >
                             <Ban className="w-4 h-4" />
+                          </button>
+                        )}
+                        {/* Relancer — only on issued (pending) invoices */}
+                        {inv.status === "issued" && (
+                          <button
+                            onClick={() => setReminderInvoice(inv)}
+                            title="Envoyer une relance"
+                            className="p-1.5 rounded-lg text-foreground-muted hover:text-orange-400 hover:bg-orange-500/10 transition-all"
+                          >
+                            <RefreshCcw className="w-4 h-4" />
                           </button>
                         )}
                       </div>
@@ -823,6 +1072,221 @@ export function InvoicesPage() {
         </div>
       )}
 
+      </>}
+
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/* ── RECONCILIATION VIEW ───────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {mainView === "reconciliation" && (
+        <div className="space-y-6">
+          {/* Period selector */}
+          <div className="bg-surface border border-border rounded-2xl p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Scale className="w-4 h-4 text-primary" />
+              <h3 className="text-sm font-heading font-bold text-foreground">
+                Reconciliation CDR / Factures
+              </h3>
+            </div>
+            <p className="text-xs text-foreground-muted mb-4">
+              Compare les CDR (Charge Detail Records) OCPI avec les factures generees sur la periode selectionnee.
+            </p>
+            <div className="flex items-end gap-4 flex-wrap">
+              <div>
+                <label className="block text-xs font-medium text-foreground-muted mb-1">Debut</label>
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted pointer-events-none" />
+                  <input
+                    type="date"
+                    value={reconPeriodStart}
+                    onChange={(e) => setReconPeriodStart(e.target.value)}
+                    className="pl-10 pr-3 py-2 bg-background border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-foreground-muted mb-1">Fin</label>
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted pointer-events-none" />
+                  <input
+                    type="date"
+                    value={reconPeriodEnd}
+                    onChange={(e) => setReconPeriodEnd(e.target.value)}
+                    className="pl-10 pr-3 py-2 bg-background border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Reconciliation summary */}
+          {cdrsLoading ? (
+            <div className="bg-surface border border-border rounded-2xl p-8 flex items-center justify-center gap-3">
+              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+              <span className="text-sm text-foreground-muted">Chargement des CDR...</span>
+            </div>
+          ) : reconciliation ? (
+            <>
+              {/* Summary cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-surface border border-border rounded-2xl p-5">
+                  <p className="text-xs text-foreground-muted mb-1">Total CDRs</p>
+                  <p className="text-xl font-heading font-bold text-foreground">{reconciliation.totalCdrs}</p>
+                  <p className="text-sm text-foreground-muted mt-1">
+                    {reconciliation.totalCdrAmount.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
+                  </p>
+                </div>
+                <div className="bg-surface border border-border rounded-2xl p-5">
+                  <p className="text-xs text-foreground-muted mb-1">Total facture</p>
+                  <p className="text-xl font-heading font-bold text-foreground">{reconciliation.totalInvoices}</p>
+                  <p className="text-sm text-foreground-muted mt-1">
+                    {reconciliation.totalInvoicedEuros.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
+                  </p>
+                </div>
+                <div className={cn(
+                  "bg-surface border rounded-2xl p-5",
+                  Math.abs(reconciliation.ecart) > 0.01
+                    ? "border-orange-500/40"
+                    : "border-status-available/40"
+                )}>
+                  <p className="text-xs text-foreground-muted mb-1">Ecart</p>
+                  <p className={cn(
+                    "text-xl font-heading font-bold",
+                    Math.abs(reconciliation.ecart) > 0.01 ? "text-orange-400" : "text-status-available"
+                  )}>
+                    {reconciliation.ecart.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}
+                  </p>
+                  <p className="text-xs mt-1">
+                    {Math.abs(reconciliation.ecart) <= 0.01 ? (
+                      <span className="text-status-available">Aucun ecart</span>
+                    ) : (
+                      <span className="text-orange-400">Ecart detecte</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              {/* CDRs without invoice */}
+              <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-orange-400" />
+                    <h4 className="text-sm font-heading font-bold text-foreground">CDRs sans facture</h4>
+                  </div>
+                  <span className={cn(
+                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold",
+                    reconciliation.cdrsWithoutInvoice.length > 0
+                      ? "bg-orange-500/10 text-orange-400"
+                      : "bg-emerald-500/10 text-status-available"
+                  )}>
+                    {reconciliation.cdrsWithoutInvoice.length}
+                  </span>
+                </div>
+                {reconciliation.cdrsWithoutInvoice.length === 0 ? (
+                  <div className="px-5 py-6 text-center text-sm text-foreground-muted">
+                    Tous les CDR sont rattaches a une facture.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[600px]">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="text-left text-xs font-semibold text-foreground-muted px-5 py-2">CDR ID</th>
+                          <th className="text-left text-xs font-semibold text-foreground-muted px-4 py-2">Token</th>
+                          <th className="text-left text-xs font-semibold text-foreground-muted px-4 py-2">Date</th>
+                          <th className="text-right text-xs font-semibold text-foreground-muted px-4 py-2">Energie (kWh)</th>
+                          <th className="text-right text-xs font-semibold text-foreground-muted px-5 py-2">Montant</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {reconciliation.cdrsWithoutInvoice.slice(0, 50).map((cdr) => (
+                          <tr key={cdr.id} className="hover:bg-surface-elevated/50 transition-colors">
+                            <td className="px-5 py-2 text-xs font-mono text-foreground truncate max-w-[120px]">{cdr.id.slice(0, 12)}...</td>
+                            <td className="px-4 py-2 text-xs text-foreground-muted">{cdr.cdr_token_uid ?? "—"}</td>
+                            <td className="px-4 py-2 text-xs text-foreground-muted whitespace-nowrap">
+                              {new Date(cdr.start_date_time).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" })}
+                            </td>
+                            <td className="px-4 py-2 text-xs text-foreground tabular-nums text-right">{(cdr.total_energy ?? 0).toFixed(2)}</td>
+                            <td className="px-5 py-2 text-xs text-foreground font-medium tabular-nums text-right">
+                              {(cdr.total_cost ?? 0).toLocaleString("fr-FR", { style: "currency", currency: cdr.currency || "EUR" })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {reconciliation.cdrsWithoutInvoice.length > 50 && (
+                      <div className="px-5 py-2 text-xs text-foreground-muted border-t border-border">
+                        ... et {reconciliation.cdrsWithoutInvoice.length - 50} de plus
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Invoices without CDR */}
+              <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-red-400" />
+                    <h4 className="text-sm font-heading font-bold text-foreground">Factures sans CDR correspondant</h4>
+                  </div>
+                  <span className={cn(
+                    "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold",
+                    reconciliation.invoicesWithoutCdr.length > 0
+                      ? "bg-red-500/10 text-red-400"
+                      : "bg-emerald-500/10 text-status-available"
+                  )}>
+                    {reconciliation.invoicesWithoutCdr.length}
+                  </span>
+                </div>
+                {reconciliation.invoicesWithoutCdr.length === 0 ? (
+                  <div className="px-5 py-6 text-center text-sm text-foreground-muted">
+                    Toutes les factures session ont un CDR correspondant.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[600px]">
+                      <thead>
+                        <tr className="border-b border-border">
+                          <th className="text-left text-xs font-semibold text-foreground-muted px-5 py-2">N° Facture</th>
+                          <th className="text-left text-xs font-semibold text-foreground-muted px-4 py-2">Client</th>
+                          <th className="text-left text-xs font-semibold text-foreground-muted px-4 py-2">Periode</th>
+                          <th className="text-right text-xs font-semibold text-foreground-muted px-4 py-2">TTC</th>
+                          <th className="text-left text-xs font-semibold text-foreground-muted px-5 py-2">Statut</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {reconciliation.invoicesWithoutCdr.slice(0, 50).map((inv) => (
+                          <tr key={inv.id} className="hover:bg-surface-elevated/50 transition-colors">
+                            <td className="px-5 py-2 text-xs font-mono text-foreground">{inv.invoice_number}</td>
+                            <td className="px-4 py-2 text-xs text-foreground-muted">
+                              {[inv.all_consumers?.first_name, inv.all_consumers?.last_name].filter(Boolean).join(" ") || "—"}
+                            </td>
+                            <td className="px-4 py-2 text-xs text-foreground-muted whitespace-nowrap">
+                              {formatPeriod(inv.period_start, inv.period_end)}
+                            </td>
+                            <td className="px-4 py-2 text-xs text-foreground font-medium tabular-nums text-right">
+                              {formatEuros(inv.total_cents)}
+                            </td>
+                            <td className="px-5 py-2">
+                              <StatusBadge status={inv.status} />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="bg-surface border border-border rounded-2xl p-8 text-center">
+              <Scale className="w-8 h-8 text-foreground-muted mx-auto mb-2" />
+              <p className="text-sm text-foreground-muted">Selectionnez une periode pour lancer la reconciliation.</p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Generate Invoices Modal ────────────────────────────── */}
       {showGenerateModal && (
         <GenerateInvoicesModal
@@ -846,6 +1310,47 @@ export function InvoicesPage() {
             }
           }}
         />
+      )}
+
+      {/* ── Credit Note Modal (Sprint 3) ─────────────────────────── */}
+      {creditNoteInvoice && (
+        <Suspense fallback={null}>
+          <CreditNoteModal
+            invoice={{
+              id: creditNoteInvoice.id,
+              invoice_number: creditNoteInvoice.invoice_number,
+              total_cents: creditNoteInvoice.total_cents,
+              currency: creditNoteInvoice.currency,
+              user_id: creditNoteInvoice.user_id,
+            }}
+            onClose={() => setCreditNoteInvoice(null)}
+            onCreated={() => {
+              setCreditNoteInvoice(null);
+              queryClient.invalidateQueries({ queryKey: ["invoices"] });
+            }}
+          />
+        </Suspense>
+      )}
+
+      {/* ── Payment Reminder Modal (Sprint 3) ────────────────────── */}
+      {reminderInvoice && (
+        <Suspense fallback={null}>
+          <PaymentReminderModal
+            invoice={{
+              id: reminderInvoice.id,
+              invoice_number: reminderInvoice.invoice_number,
+              total_cents: reminderInvoice.total_cents,
+              currency: reminderInvoice.currency,
+              user_id: reminderInvoice.user_id,
+              period_end: reminderInvoice.period_end,
+            }}
+            onClose={() => setReminderInvoice(null)}
+            onSent={() => {
+              setReminderInvoice(null);
+              queryClient.invalidateQueries({ queryKey: ["invoices"] });
+            }}
+          />
+        </Suspense>
       )}
     </div>
   );

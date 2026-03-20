@@ -4,16 +4,18 @@
 // ============================================================
 
 import { useState, useMemo, useCallback } from "react";
-import { Download, Plus, Upload } from "lucide-react";
+import { Download, Plus, Upload, RotateCcw, Tag } from "lucide-react";
 import { useStations } from "@/hooks/useStations";
 import { useCPOs } from "@/hooks/useCPOs";
 import { useTerritories } from "@/hooks/useTerritories";
 import { useCpo } from "@/contexts/CpoContext";
 import { useQueryClient } from "@tanstack/react-query";
+import { useOcppCommand } from "@/hooks/useOcppCommands";
 import { FilterBar } from "@/components/ui/FilterBar";
 import { StationTable } from "./StationTable";
 import { StationDetailView } from "./StationDetailView";
 import { StationFormModal } from "./StationFormModal";
+import { BatchActionBar } from "@/components/shared/BatchActionBar";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { DEFAULT_FILTERS, type StationFilters } from "@/types/filters";
@@ -44,6 +46,70 @@ export function StationsPage() {
   const [powerFilter, setPowerFilter] = useState<PowerFilter>("all");
   const [showImportModal, setShowImportModal] = useState(false);
   const [importStatus, setImportStatus] = useState<{ loading: boolean; message: string | null }>({ loading: false, message: null });
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showTariffModal, setShowTariffModal] = useState(false);
+  const [tariffValue, setTariffValue] = useState("");
+  const [batchStatus, setBatchStatus] = useState<{ loading: boolean; message: string | null }>({ loading: false, message: null });
+  const resetMutation = useOcppCommand();
+
+  const handleToggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleToggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === (filtered?.length ?? 0)) return new Set();
+      return new Set((filtered ?? []).map((s) => s.id));
+    });
+  }, [filtered]);
+
+  const handleBatchReset = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+    const confirmed = window.confirm(`Envoyer un Reset OCPP a ${selectedIds.size} station(s) ?`);
+    if (!confirmed) return;
+    setBatchStatus({ loading: true, message: null });
+    let success = 0;
+    let failed = 0;
+    for (const stationId of selectedIds) {
+      try {
+        await resetMutation.mutateAsync({ stationId, command: "Reset", params: { type: "Soft" } });
+        success++;
+      } catch {
+        failed++;
+      }
+    }
+    setBatchStatus({
+      loading: false,
+      message: `Reset: ${success} succes, ${failed} echec(s)`,
+    });
+    setSelectedIds(new Set());
+    setTimeout(() => setBatchStatus({ loading: false, message: null }), 4000);
+  }, [selectedIds, resetMutation]);
+
+  const handleBatchAssignTariff = useCallback(async () => {
+    if (!tariffValue.trim() || selectedIds.size === 0) return;
+    setBatchStatus({ loading: true, message: null });
+    try {
+      const { error } = await supabase
+        .from("stations")
+        .update({ tariff_group: tariffValue.trim() })
+        .in("id", Array.from(selectedIds));
+      if (error) throw error;
+      setBatchStatus({ loading: false, message: `Tarif "${tariffValue}" assigne a ${selectedIds.size} station(s).` });
+      queryClient.invalidateQueries({ queryKey: ["stations"] });
+      setSelectedIds(new Set());
+      setShowTariffModal(false);
+      setTariffValue("");
+    } catch (err) {
+      setBatchStatus({ loading: false, message: `Erreur : ${err instanceof Error ? err.message : "Erreur inconnue"}` });
+    }
+    setTimeout(() => setBatchStatus({ loading: false, message: null }), 4000);
+  }, [selectedIds, tariffValue, queryClient]);
 
   const handleStationUpdated = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["stations"] });

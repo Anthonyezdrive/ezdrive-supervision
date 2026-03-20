@@ -3,7 +3,7 @@
 // List → Detail view with tabs (Détails, Parties relayées, Diagnostic)
 // ============================================================
 
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import {
@@ -22,11 +22,17 @@ import {
   Filter,
   Calculator,
   AlertTriangle,
+  Plus,
+  Plug,
+  Wifi,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/contexts/ToastContext";
 import { useCpo } from "@/contexts/CpoContext";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { OcpiCredentialWizard } from "./OcpiCredentialWizard";
+import { OcpiEndpointTest } from "./OcpiEndpointTest";
+import { OcpiHandshakeModal } from "./OcpiHandshakeModal";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -135,6 +141,11 @@ export function OcpiPage() {
   const [colFilters, setColFilters] = useState<Record<string, string>>({
     subscription_id: "", name: "", party: "", role: "", other_party: "", other_party_role: "", protocol: "",
   });
+
+  // Wizard / Handshake / Endpoint test state
+  const [showWizard, setShowWizard] = useState(false);
+  const [handshakeSubId, setHandshakeSubId] = useState<string | null>(null);
+  const [testingSubId, setTestingSubId] = useState<string | null>(null);
 
   // ── Data ──
   const { data: credentials, isLoading, isError, refetch, dataUpdatedAt } = useQuery<OcpiCredential[]>({
@@ -546,7 +557,52 @@ export function OcpiPage() {
           <Globe className="w-5 h-5 text-primary" />
           Abonnements OCPI
         </h1>
+        <button
+          onClick={() => setShowWizard(true)}
+          className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white hover:bg-primary/90 rounded-xl text-sm font-semibold transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          Nouvelle connexion OCPI
+        </button>
       </div>
+
+      {/* Credential Wizard Modal */}
+      {showWizard && (
+        <OcpiCredentialWizard
+          cpoId={selectedCpoId}
+          onClose={() => setShowWizard(false)}
+          onSuccess={() => {
+            refetch();
+            toastSuccess("Connexion OCPI creee", "Le handshake a ete lance avec succes");
+          }}
+        />
+      )}
+
+      {/* Handshake Modal */}
+      {handshakeSubId && (() => {
+        const cred = credentials?.find((c) => c.id === handshakeSubId);
+        if (!cred) return null;
+        return (
+          <OcpiHandshakeModal
+            subscription={{
+              id: cred.id,
+              name: `${cred.country_code}/${cred.party_id} — ${cred.role}`,
+              token_a: cred.token_a,
+              token_b: cred.token_b,
+              versions_url: cred.versions_url,
+              status: cred.status,
+              country_code: cred.country_code,
+              party_id: cred.party_id,
+              role: cred.role,
+            }}
+            onClose={() => setHandshakeSubId(null)}
+            onSuccess={() => {
+              refetch();
+              toastSuccess("Handshake reussi", "La connexion OCPI a ete mise a jour");
+            }}
+          />
+        );
+      })()}
 
       {/* Tabs: Stories 86, 88, 89 */}
       <div className="flex gap-1 border-b border-border">
@@ -752,6 +808,7 @@ export function OcpiPage() {
                   <th className={thClass} onClick={() => handleSort("protocol")}>
                     Protocole <SortIcon col="protocol" />
                   </th>
+                  <th className={cn(thClass, "text-right")}>Actions</th>
                 </tr>
                 {/* Column filter inputs */}
                 <tr className="border-b border-border bg-surface-elevated/30">
@@ -788,12 +845,13 @@ export function OcpiPage() {
                       <option value="OCPI 2.2.1">OCPI 2.2.1</option>
                     </select>
                   </td>
+                  <td className="px-3 py-2" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {paginated.map((sub) => (
+                <React.Fragment key={sub.id}>
                   <tr
-                    key={sub.id}
                     onClick={() => setSelectedSubscription(sub)}
                     className="hover:bg-surface-elevated/50 transition-colors cursor-pointer"
                   >
@@ -818,7 +876,45 @@ export function OcpiPage() {
                     <td className="px-3 py-2.5 text-sm text-foreground-muted">
                       {sub.protocol}
                     </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setTestingSubId(testingSubId === sub.id ? null : sub.id); }}
+                          className="flex items-center gap-1 px-2.5 py-1.5 bg-surface-elevated border border-border rounded-lg text-xs font-medium hover:bg-surface transition-colors"
+                          title="Tester les endpoints"
+                        >
+                          <Wifi className="w-3 h-3" />
+                          Tester
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setHandshakeSubId(sub.id); }}
+                          className="flex items-center gap-1 px-2.5 py-1.5 bg-primary/10 text-primary border border-primary/20 rounded-lg text-xs font-medium hover:bg-primary/20 transition-colors"
+                          title="Re-handshake"
+                        >
+                          <Plug className="w-3 h-3" />
+                          Handshake
+                        </button>
+                      </div>
+                    </td>
                   </tr>
+                  {/* Endpoint test panel (inline, below the row) */}
+                  {testingSubId === sub.id && (
+                    <tr>
+                      <td colSpan={8} className="p-0">
+                        <div className="px-4 py-3 bg-surface-elevated/20">
+                          <OcpiEndpointTest
+                            subscription={{
+                              id: sub.id,
+                              versions_url: sub.other_url !== "—" ? sub.other_url : null,
+                              token_b: sub.other_token || null,
+                              name: sub.name,
+                            }}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
                 ))}
               </tbody>
             </table>

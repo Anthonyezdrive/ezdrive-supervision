@@ -31,7 +31,7 @@ export function useB2BCdrs(clientExternalIds: string[]) {
       let hasMore = true;
 
       while (hasMore) {
-        const { data, error } = await supabase
+        let query = supabase
           .from("ocpi_cdrs")
           .select(selectCols)
           .in("customer_external_id", clientExternalIds)
@@ -40,6 +40,15 @@ export function useB2BCdrs(clientExternalIds: string[]) {
           .order("start_date_time", { ascending: true })
           .range(from, from + PAGE - 1);
 
+        // Server-side JSONB filters — reduce data transferred
+        if (sites.length > 0) {
+          query = query.in("cdr_location->>name", sites);
+        }
+        if (tokens.length > 0) {
+          query = query.in("cdr_token->>uid", tokens);
+        }
+
+        const { data, error } = await query;
         if (error) throw error;
         const rows = (data ?? []) as B2BCdr[];
         allRows = allRows.concat(rows);
@@ -49,17 +58,9 @@ export function useB2BCdrs(clientExternalIds: string[]) {
 
       let result = allRows;
 
-      // Client-side filters for JSONB fields
-      if (sites.length > 0) {
-        result = result.filter((c) => sites.includes(getLocationName(c)));
-      }
+      // Client-side filter for nested JSONB arrays (can't easily filter server-side)
       if (bornes.length > 0) {
         result = result.filter((c) => bornes.includes(getChargePointId(c)));
-      }
-      if (tokens.length > 0) {
-        result = result.filter(
-          (c) => tokens.includes(c.cdr_token?.uid ?? "") || tokens.includes(c.auth_id ?? "")
-        );
       }
 
       return result;

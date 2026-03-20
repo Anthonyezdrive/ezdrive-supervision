@@ -17,11 +17,16 @@ import {
   ArrowLeft,
   Save,
   AlertCircle,
+  Globe,
+  RefreshCcw,
+  Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { apiPost, apiPut } from "@/lib/api";
 import type { Station } from "@/types/station";
+import { OcpiPushModal } from "@/components/ocpi/OcpiPushModal";
+import { LocationPhotoManager } from "@/components/locations/LocationPhotoManager";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -139,6 +144,10 @@ function LocationListView({
 }) {
   const [activeTab, setActiveTab] = useState<LocationTab>("normal");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showPushModal, setShowPushModal] = useState(false);
+  const [pushLocationId, setPushLocationId] = useState<string | undefined>(undefined);
+  const [syncingTokens, setSyncingTokens] = useState(false);
+  const [syncTokensResult, setSyncTokensResult] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   // Column search filters
@@ -189,6 +198,35 @@ function LocationListView({
     }
   }
 
+  async function handleSyncTokens() {
+    setSyncingTokens(true);
+    setSyncTokensResult(null);
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke("api", {
+        body: { action: "ocpi_sync_tokens" },
+      });
+      if (invokeError) throw invokeError;
+      const count = data?.synced_count ?? data?.count ?? 0;
+      setSyncTokensResult(`${count} token(s) synchronise(s)`);
+      setTimeout(() => setSyncTokensResult(null), 4000);
+    } catch (err) {
+      setSyncTokensResult(`Erreur: ${err instanceof Error ? err.message : "inconnue"}`);
+      setTimeout(() => setSyncTokensResult(null), 5000);
+    } finally {
+      setSyncingTokens(false);
+    }
+  }
+
+  function openPushModalForAll() {
+    setPushLocationId(undefined);
+    setShowPushModal(true);
+  }
+
+  function openPushModalForLocation(locationId: string) {
+    setPushLocationId(locationId);
+    setShowPushModal(true);
+  }
+
   return (
     <div className="space-y-0">
       {/* Header */}
@@ -200,14 +238,47 @@ function LocationListView({
           </h1>
           <ChevronDown className="w-5 h-5 text-foreground-muted" />
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          + Ajouter Nouveau
-          <ChevronDown className="w-3.5 h-3.5 ml-1" />
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Sync tokens */}
+          <div className="relative">
+            <button
+              onClick={handleSyncTokens}
+              disabled={syncingTokens}
+              className="flex items-center gap-1.5 px-3 py-2 border border-border text-foreground-muted rounded-xl text-sm font-medium hover:bg-surface-elevated hover:text-foreground transition-colors disabled:opacity-50"
+              title="Synchroniser les tokens OCPI"
+            >
+              {syncingTokens ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCcw className="w-4 h-4" />
+              )}
+              Sync tokens
+            </button>
+            {syncTokensResult && (
+              <div className="absolute top-full mt-1 right-0 whitespace-nowrap px-3 py-1.5 rounded-lg bg-surface-elevated border border-border text-xs text-foreground shadow-lg z-10">
+                {syncTokensResult}
+              </div>
+            )}
+          </div>
+          {/* Push all */}
+          <button
+            onClick={openPushModalForAll}
+            className="flex items-center gap-1.5 px-3 py-2 border border-primary/30 text-primary rounded-xl text-sm font-medium hover:bg-primary/10 transition-colors"
+            title="Pousser toutes les locations vers les partenaires OCPI"
+          >
+            <Globe className="w-4 h-4" />
+            Push toutes
+          </button>
+          {/* Add */}
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            + Ajouter Nouveau
+            <ChevronDown className="w-3.5 h-3.5 ml-1" />
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -295,6 +366,13 @@ function LocationListView({
                   <td className="px-3 py-2.5">
                     <div className="flex items-center justify-end gap-1">
                       <button
+                        onClick={() => openPushModalForLocation(row.id)}
+                        className="flex items-center gap-1 px-2 py-1 text-foreground-muted rounded-lg text-xs font-medium hover:bg-surface-elevated hover:text-primary transition-colors"
+                        title="Push OCPI"
+                      >
+                        <Send className="w-3 h-3" />
+                      </button>
+                      <button
                         onClick={() => onEdit(row.station)}
                         className="flex items-center gap-1 px-3 py-1 bg-primary/10 text-primary rounded-lg text-xs font-medium hover:bg-primary/20 transition-colors"
                       >
@@ -331,6 +409,13 @@ function LocationListView({
           }}
         />
       )}
+
+      {/* OCPI Push Modal */}
+      <OcpiPushModal
+        open={showPushModal}
+        onClose={() => setShowPushModal(false)}
+        locationId={pushLocationId}
+      />
     </div>
   );
 }
@@ -722,6 +807,21 @@ function LocationEditView({
             <CollapsibleSection title="Emplacement Paiement Portefeuille">
               <p className="text-sm text-foreground-muted py-4">Aucun emplacement de paiement configure.</p>
             </CollapsibleSection>
+
+            {/* Photos OCPI */}
+            <LocationPhotoManager
+              locationId={station.id}
+              existingPhotos={
+                (station as any).photos?.map((p: any) => ({
+                  url: typeof p === "string" ? p : p.url,
+                  category: (typeof p === "object" && p.category) || "LOCATION",
+                })) ?? []
+              }
+              onPhotosChange={(photos) => {
+                // Store photos on the station object for save
+                (station as any)._pendingPhotos = photos;
+              }}
+            />
           </div>
         </div>
       ) : (

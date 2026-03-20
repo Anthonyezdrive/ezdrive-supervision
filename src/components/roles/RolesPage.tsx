@@ -19,6 +19,7 @@ import {
   Globe,
   Radio,
   Lock,
+  Copy,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -134,12 +135,16 @@ function RoleCard({
   onToggle,
   onEdit,
   onDelete,
+  onClone,
+  isCloning,
 }: {
   role: Role;
   isExpanded: boolean;
   onToggle: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onClone: () => void;
+  isCloning: boolean;
 }) {
   const totalPerms = PERMISSION_GROUPS.flatMap((g) => g.permissions).length;
   const grantedPerms = role.permissions.length;
@@ -249,6 +254,15 @@ function RoleCard({
             >
               <Pencil className="w-3 h-3" />
               Modifier
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onClone(); }}
+              disabled={isCloning}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-foreground-muted hover:text-foreground bg-surface-elevated border border-border rounded-lg transition-colors disabled:opacity-50"
+              title="Dupliquer ce rôle"
+            >
+              <Copy className="w-3 h-3" />
+              Dupliquer
             </button>
             {role.is_system ? (
               <button
@@ -404,6 +418,33 @@ export function RolesPage() {
     },
     onError: (error: Error) => {
       setConfirmDeleteRole(null);
+      toastError("Erreur", error.message || "Une erreur est survenue");
+    },
+  });
+
+  // ── Clone role mutation ──
+  const cloneRoleMutation = useMutation({
+    mutationFn: async (role: Role) => {
+      const { data: result, error } = await supabase
+        .from("admin_roles")
+        .insert({
+          name: `Copie de ${role.name}`,
+          description: role.description,
+          color: role.color,
+          permissions: role.permissions,
+          is_system: false,
+          user_count: 0,
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      return result;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["roles"] });
+      toastSuccess("Rôle dupliqué", "Le rôle a été dupliqué avec succès");
+    },
+    onError: (error: Error) => {
       toastError("Erreur", error.message || "Une erreur est survenue");
     },
   });
@@ -708,6 +749,8 @@ export function RolesPage() {
                 }
                 onEdit={() => openEditRole(role)}
                 onDelete={() => setConfirmDeleteRole(role)}
+                onClone={() => cloneRoleMutation.mutate(role)}
+                isCloning={cloneRoleMutation.isPending}
               />
             ))
           )}

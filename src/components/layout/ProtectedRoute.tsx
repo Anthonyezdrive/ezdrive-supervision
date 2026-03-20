@@ -21,8 +21,9 @@ export function ProtectedRoute() {
     return <Navigate to="/login" replace />;
   }
 
-  // B2B clients can only access /b2b/* routes
-  if (isB2B && !location.pathname.startsWith("/b2b")) {
+  // B2B clients can only access /b2b/* routes + whitelisted auth routes
+  const b2bAllowedRoutes = ["/reset-password", "/stripe/onboarding/complete", "/stripe/onboarding/refresh"];
+  if (isB2B && !location.pathname.startsWith("/b2b") && !b2bAllowedRoutes.includes(location.pathname)) {
     return <Navigate to="/b2b/overview" replace />;
   }
 

@@ -1,6 +1,7 @@
-import { useMemo } from "react";
-import { BarChart2, Download, TrendingUp, AlertTriangle, CheckCircle } from "lucide-react";
+import { useState, useMemo, lazy, Suspense } from "react";
+import { BarChart2, Download, TrendingUp, AlertTriangle, CheckCircle, CalendarDays } from "lucide-react";
 import { useSLAByTerritory, useSLAByCPO } from "@/hooks/useSLAData";
+import type { SLADateRange } from "@/hooks/useSLAData";
 import { useStations } from "@/hooks/useStations";
 import { useCpo } from "@/contexts/CpoContext";
 import { downloadCSV, todayISO } from "@/lib/export";
@@ -8,6 +9,10 @@ import { cn } from "@/lib/utils";
 import { SLARowSkeleton, CardSkeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHelp } from "@/components/ui/PageHelp";
+
+const SlaTrendChart = lazy(() =>
+  import("./SlaTrendChart").then((m) => ({ default: m.SlaTrendChart }))
+);
 
 function AvailBar({ pct }: { pct: number }) {
   const color =
@@ -33,10 +38,49 @@ function AvailBar({ pct }: { pct: number }) {
   );
 }
 
+const DATE_PRESETS = [
+  { label: "7j", days: 7 },
+  { label: "30j", days: 30 },
+  { label: "90j", days: 90 },
+  { label: "1an", days: 365 },
+] as const;
+
+function daysAgoISO(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+function todayISODate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export function AnalyticsPage() {
   const { selectedCpoId } = useCpo();
-  const { data: territories = [], isLoading: loadTerr, isError: errTerr, refetch: refetchTerr } = useSLAByTerritory(selectedCpoId);
-  const { data: cpos = [], isLoading: loadCPO, isError: errCPO, refetch: refetchCPO } = useSLAByCPO(selectedCpoId);
+
+  const [activePreset, setActivePreset] = useState<number | null>(30);
+  const [dateRange, setDateRange] = useState<SLADateRange>({
+    from: daysAgoISO(30),
+    to: todayISODate(),
+  });
+
+  function handlePreset(days: number) {
+    setActivePreset(days);
+    setDateRange({ from: daysAgoISO(days), to: todayISODate() });
+  }
+
+  function handleCustomFrom(value: string) {
+    setActivePreset(null);
+    setDateRange((prev) => ({ ...prev, from: value }));
+  }
+
+  function handleCustomTo(value: string) {
+    setActivePreset(null);
+    setDateRange((prev) => ({ ...prev, to: value }));
+  }
+
+  const { data: territories = [], isLoading: loadTerr, isError: errTerr, refetch: refetchTerr } = useSLAByTerritory(selectedCpoId, dateRange);
+  const { data: cpos = [], isLoading: loadCPO, isError: errCPO, refetch: refetchCPO } = useSLAByCPO(selectedCpoId, dateRange);
   const { data: stations = [] } = useStations(selectedCpoId);
 
   // Global SLA
@@ -120,6 +164,45 @@ export function AnalyticsPage() {
             <Download className="w-4 h-4" />
             Bornes CSV
           </button>
+        </div>
+      </div>
+
+      {/* Date range selector */}
+      <div className="flex flex-wrap items-center gap-3 bg-surface border border-border rounded-2xl px-4 py-3">
+        <CalendarDays className="w-4 h-4 text-foreground-muted shrink-0" />
+        <span className="text-xs text-foreground-muted font-medium">Période :</span>
+        <div className="flex gap-1">
+          {DATE_PRESETS.map((p) => (
+            <button
+              key={p.days}
+              onClick={() => handlePreset(p.days)}
+              className={cn(
+                "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                activePreset === p.days
+                  ? "bg-primary text-white"
+                  : "bg-surface-elevated text-foreground-muted hover:text-foreground"
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="h-5 w-px bg-border mx-1" />
+        <div className="flex items-center gap-2 text-xs">
+          <label className="text-foreground-muted">Du</label>
+          <input
+            type="date"
+            value={dateRange.from ?? ""}
+            onChange={(e) => handleCustomFrom(e.target.value)}
+            className="bg-surface-elevated border border-border rounded-lg px-2 py-1.5 text-xs text-foreground"
+          />
+          <label className="text-foreground-muted">au</label>
+          <input
+            type="date"
+            value={dateRange.to ?? ""}
+            onChange={(e) => handleCustomTo(e.target.value)}
+            className="bg-surface-elevated border border-border rounded-lg px-2 py-1.5 text-xs text-foreground"
+          />
         </div>
       </div>
 
@@ -300,6 +383,29 @@ export function AnalyticsPage() {
                   Aucune donnée
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Tendance SLA historique */}
+          <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-border flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-primary" />
+              <h2 className="text-sm font-semibold">Tendance SLA historique</h2>
+            </div>
+            <div className="px-5 py-4">
+              <Suspense
+                fallback={
+                  <div className="flex items-center justify-center h-64 text-foreground-muted text-sm">
+                    Chargement du graphique...
+                  </div>
+                }
+              >
+                <SlaTrendChart
+                  cpoId={selectedCpoId}
+                  from={dateRange.from}
+                  to={dateRange.to}
+                />
+              </Suspense>
             </div>
           </div>
         </>

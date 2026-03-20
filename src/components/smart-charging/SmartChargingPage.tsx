@@ -34,6 +34,8 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { RealtimeLoadChart } from "./RealtimeLoadChart";
+import { LoadHistoryChart } from "./LoadHistoryChart";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -637,6 +639,12 @@ function GroupDetailView({
           )}
         </div>
       </div>
+
+      {/* Charge en temps r\u00e9el */}
+      <RealtimeLoadChart groupId={group.id} />
+
+      {/* Historique de charge */}
+      <LoadHistoryChart groupId={group.id} />
 
       {/* Two-column: D\u00e9tails + Param\u00e8tres */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -1,6 +1,6 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Building2,
   Upload,
@@ -18,10 +18,17 @@ import {
   ShoppingCart,
   Bell,
   Nfc,
+  Euro,
+  ChevronDown,
+  Wallet,
+  FileText,
+  Info,
+  Save,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/lib/supabase";
 import { useB2BClientUsers, useUpdateB2BClientSelf, useUploadB2BLogo } from "@/hooks/useB2BCompany";
+import { useReimbursementRuns, useReimbursementLineItems } from "@/hooks/useReimbursements";
 import { PageHelp } from "@/components/ui/PageHelp";
 import type { B2BClient } from "@/types/b2b";
 
@@ -334,6 +341,9 @@ export function B2BCompanyPage() {
         )}
       </div>
 
+      {/* Story 55: Budget & Rapports */}
+      <B2BBudgetReportsSection clientId={activeClient.id} activeClient={activeClient} />
+
       {/* Story 81: Change Password */}
       <B2BPasswordSection />
 
@@ -345,6 +355,166 @@ export function B2BCompanyPage() {
 
       {/* Story 84: Notifications */}
       <B2BNotificationsSection clientName={activeClient.name} />
+
+      {/* Story 85: Reimbursements */}
+      <B2BReimbursementSection clientId={activeClient.id} />
+    </div>
+  );
+}
+
+// ── Story 55: Budget & Reports Section ──────────────────────────
+
+function B2BBudgetReportsSection({ clientId, activeClient }: { clientId: string; activeClient: B2BClient }) {
+  const qc = useQueryClient();
+
+  const [monthlyBudget, setMonthlyBudget] = useState<number>(activeClient?.monthly_budget ?? 0);
+  const [budgetAlertEnabled, setBudgetAlertEnabled] = useState<boolean>(activeClient?.budget_alert_enabled ?? false);
+  const [budgetBlockEnabled, setBudgetBlockEnabled] = useState<boolean>(activeClient?.budget_block_enabled ?? false);
+  const [monthlyReportEmail, setMonthlyReportEmail] = useState<boolean>(activeClient?.monthly_report_email ?? false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
+
+  // Sync local state when activeClient changes
+  useEffect(() => {
+    setMonthlyBudget(activeClient?.monthly_budget ?? 0);
+    setBudgetAlertEnabled(activeClient?.budget_alert_enabled ?? false);
+    setBudgetBlockEnabled(activeClient?.budget_block_enabled ?? false);
+    setMonthlyReportEmail(activeClient?.monthly_report_email ?? false);
+  }, [activeClient]);
+
+  const saveBudgetSettings = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from("b2b_clients")
+        .update({
+          monthly_budget: monthlyBudget,
+          budget_alert_enabled: budgetAlertEnabled,
+          budget_block_enabled: budgetBlockEnabled,
+          monthly_report_email: monthlyReportEmail,
+        })
+        .eq("id", clientId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setSaveStatus("success");
+      qc.invalidateQueries({ queryKey: ["b2b-client"] });
+      setTimeout(() => setSaveStatus("idle"), 3000);
+    },
+    onError: () => {
+      setSaveStatus("error");
+      setTimeout(() => setSaveStatus("idle"), 3000);
+    },
+  });
+
+  async function handleSave() {
+    setSaveStatus("loading");
+    await saveBudgetSettings.mutateAsync();
+  }
+
+  const toggleClass =
+    "relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none cursor-pointer";
+  const toggleDotClass =
+    "inline-block h-4 w-4 transform rounded-full bg-white transition-transform";
+
+  return (
+    <div className="bg-surface border border-border rounded-2xl p-6 space-y-6">
+      <div className="flex items-center gap-3 mb-2">
+        <Wallet className="w-5 h-5" style={{ color: "#9ACC0E" }} />
+        <h3 className="text-base font-heading font-bold text-foreground">
+          Budget & Rapports
+        </h3>
+      </div>
+
+      {/* Budget section */}
+      <div className="space-y-4">
+        <h4 className="text-sm font-semibold text-foreground-muted uppercase tracking-wider">
+          Budget
+        </h4>
+
+        <div className="max-w-sm">
+          <label className="text-xs text-foreground-muted mb-1 block">
+            Plafond mensuel (&euro;)
+          </label>
+          <input
+            type="number"
+            min={0}
+            step={100}
+            value={monthlyBudget}
+            onChange={(e) => setMonthlyBudget(Number(e.target.value))}
+            className="w-full px-3 py-2.5 bg-surface-elevated border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-border-focus transition-colors"
+            placeholder="0"
+          />
+        </div>
+
+        <div className="flex items-center justify-between py-2">
+          <span className="text-sm text-foreground">Alerte &agrave; 80% du budget</span>
+          <button
+            type="button"
+            onClick={() => setBudgetAlertEnabled(!budgetAlertEnabled)}
+            className={`${toggleClass} ${budgetAlertEnabled ? "bg-primary" : "bg-white/10"}`}
+          >
+            <span className={`${toggleDotClass} ${budgetAlertEnabled ? "translate-x-6" : "translate-x-1"}`} />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between py-2 border-t border-border/50">
+          <span className="text-sm text-foreground">Bloquer les sessions &agrave; 100%</span>
+          <button
+            type="button"
+            onClick={() => setBudgetBlockEnabled(!budgetBlockEnabled)}
+            className={`${toggleClass} ${budgetBlockEnabled ? "bg-primary" : "bg-white/10"}`}
+          >
+            <span className={`${toggleDotClass} ${budgetBlockEnabled ? "translate-x-6" : "translate-x-1"}`} />
+          </button>
+        </div>
+      </div>
+
+      {/* Separator */}
+      <div className="border-t border-border" />
+
+      {/* Monthly report section */}
+      <div className="space-y-4">
+        <h4 className="text-sm font-semibold text-foreground-muted uppercase tracking-wider">
+          Rapport mensuel
+        </h4>
+
+        <div className="flex items-center justify-between py-2">
+          <span className="text-sm text-foreground">Recevoir un rapport mensuel par email</span>
+          <button
+            type="button"
+            onClick={() => setMonthlyReportEmail(!monthlyReportEmail)}
+            className={`${toggleClass} ${monthlyReportEmail ? "bg-primary" : "bg-white/10"}`}
+          >
+            <span className={`${toggleDotClass} ${monthlyReportEmail ? "translate-x-6" : "translate-x-1"}`} />
+          </button>
+        </div>
+
+        <div className="flex items-start gap-2 px-3 py-2.5 bg-surface-elevated/50 border border-border/50 rounded-xl">
+          <Info className="w-4 h-4 text-foreground-muted shrink-0 mt-0.5" />
+          <p className="text-xs text-foreground-muted">
+            Un rapport PDF sera envoy&eacute; le 1er de chaque mois &agrave; l'adresse de votre compte.
+          </p>
+        </div>
+      </div>
+
+      {/* Save button */}
+      <button
+        onClick={handleSave}
+        disabled={saveStatus === "loading"}
+        className="flex items-center gap-2 px-4 py-2.5 bg-primary/10 text-primary border border-primary/20 rounded-xl text-sm font-medium hover:bg-primary/20 transition-colors disabled:opacity-50"
+      >
+        {saveStatus === "loading" ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Save className="w-4 h-4" />
+        )}
+        Enregistrer
+      </button>
+      {saveStatus === "success" && (
+        <p className="text-xs text-emerald-400">Param&egrave;tres enregistr&eacute;s avec succ&egrave;s</p>
+      )}
+      {saveStatus === "error" && (
+        <p className="text-xs text-red-400">Erreur lors de l'enregistrement</p>
+      )}
     </div>
   );
 }
@@ -544,6 +714,146 @@ function B2BNotificationsSection({ clientName }: { clientName: string }) {
       ) : (
         <p className="text-sm text-foreground-muted">Aucune notification récente</p>
       )}
+    </div>
+  );
+}
+
+// ── Story 85: Reimbursements Section ────────────────────────────
+
+function B2BReimbursementSection({ clientId }: { clientId: string }) {
+  const { data: runs, isLoading } = useReimbursementRuns(clientId);
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+
+  const statusConfig: Record<string, { label: string; bg: string; text: string; border: string }> = {
+    pending: { label: "En attente", bg: "bg-yellow-500/10", text: "text-yellow-400", border: "border-yellow-500/25" },
+    calculated: { label: "Calculé", bg: "bg-blue-500/10", text: "text-blue-400", border: "border-blue-500/25" },
+    approved: { label: "Approuvé", bg: "bg-emerald-500/10", text: "text-emerald-400", border: "border-emerald-500/25" },
+    paid: { label: "Payé", bg: "bg-green-500/10", text: "text-green-400", border: "border-green-500/25" },
+    rejected: { label: "Rejeté", bg: "bg-red-500/10", text: "text-red-400", border: "border-red-500/25" },
+  };
+
+  function toggleExpand(runId: string) {
+    setExpandedRunId((prev) => (prev === runId ? null : runId));
+  }
+
+  return (
+    <div className="bg-surface border border-border rounded-2xl p-6 space-y-4">
+      <div className="flex items-center gap-3 mb-2">
+        <Euro className="w-5 h-5" style={{ color: "#2ECC71" }} />
+        <h3 className="text-base font-heading font-bold text-foreground">Remboursements employés</h3>
+        {runs && runs.length > 0 && (
+          <span className="text-xs text-foreground-muted bg-foreground-muted/10 rounded-full px-2.5 py-1">
+            {runs.length} période{runs.length !== 1 ? "s" : ""}
+          </span>
+        )}
+      </div>
+      {isLoading ? (
+        <div className="space-y-2">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-14 bg-surface-elevated rounded-xl animate-pulse" />
+          ))}
+        </div>
+      ) : runs && runs.length > 0 ? (
+        <div className="space-y-2">
+          {runs.map((run) => {
+            const sc = statusConfig[run.status] ?? statusConfig.pending;
+            const isExpanded = expandedRunId === run.id;
+            return (
+              <div key={run.id} className="border border-border/50 rounded-xl overflow-hidden">
+                <button
+                  onClick={() => toggleExpand(run.id)}
+                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-elevated/50 transition-colors text-left"
+                >
+                  <div className="flex items-center gap-4 min-w-0 flex-1">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground">
+                        {new Date(run.period_start).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" })}
+                        {" — "}
+                        {new Date(run.period_end).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" })}
+                      </p>
+                      <p className="text-xs text-foreground-muted">
+                        {run.total_drivers} conducteur{run.total_drivers !== 1 ? "s" : ""} · {run.total_kwh.toFixed(1)} kWh
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-sm font-semibold text-foreground">
+                      {(run.total_amount_cents / 100).toFixed(2)} EUR
+                    </span>
+                    <span className={`inline-flex items-center rounded-lg border px-2 py-0.5 text-xs font-semibold ${sc.bg} ${sc.text} ${sc.border}`}>
+                      {sc.label}
+                    </span>
+                    <ChevronDown className={`w-4 h-4 text-foreground-muted transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                  </div>
+                </button>
+                {isExpanded && <ReimbursementRunDetail runId={run.id} />}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-sm text-foreground-muted">Aucun remboursement pour cette période</p>
+      )}
+    </div>
+  );
+}
+
+function ReimbursementRunDetail({ runId }: { runId: string }) {
+  const { data: items, isLoading } = useReimbursementLineItems(runId);
+
+  if (isLoading) {
+    return (
+      <div className="px-4 pb-4 space-y-2">
+        {[1, 2].map((i) => (
+          <div key={i} className="h-10 bg-surface-elevated rounded-lg animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  if (!items || items.length === 0) {
+    return (
+      <div className="px-4 pb-4">
+        <p className="text-xs text-foreground-muted">Aucun détail disponible</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 pb-4 border-t border-border/50">
+      <div className="overflow-x-auto">
+        <table className="w-full mt-2">
+          <thead>
+            <tr className="text-left">
+              <th className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground-muted">Conducteur</th>
+              <th className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground-muted text-right">Sessions</th>
+              <th className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground-muted text-right">kWh</th>
+              <th className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground-muted text-right">Montant</th>
+              <th className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground-muted">Type</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.id} className="border-t border-border/30">
+                <td className="px-2 py-2 text-sm text-foreground">{item.driver_name ?? item.driver_email ?? "—"}</td>
+                <td className="px-2 py-2 text-sm text-foreground text-right font-mono">{item.session_count}</td>
+                <td className="px-2 py-2 text-sm text-foreground text-right font-mono">{item.total_kwh.toFixed(1)}</td>
+                <td className="px-2 py-2 text-sm text-foreground text-right font-mono">
+                  {(item.amount_cents / 100).toFixed(2)} EUR
+                  {item.capped && (
+                    <span className="ml-1 text-[10px] text-yellow-400 font-semibold">CAP</span>
+                  )}
+                </td>
+                <td className="px-2 py-2">
+                  <span className="text-xs text-foreground-muted bg-foreground-muted/10 rounded px-1.5 py-0.5">
+                    {item.charging_type}
+                  </span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

@@ -14,6 +14,12 @@ import {
   ArrowLeft,
   X,
   AlertCircle,
+  FileText,
+  Upload,
+  Download,
+  Scale,
+  Paperclip,
+  Trash2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -54,6 +60,26 @@ interface Agreement {
 
 interface NetworkRef { id: string; name: string }
 interface ContractRef { id: string; name: string }
+
+interface OcpiCdr {
+  id: string;
+  start_date_time: string;
+  end_date_time: string | null;
+  location_id: string | null;
+  evse_uid: string | null;
+  total_energy: number | null;
+  total_cost: number | null;
+  currency: string | null;
+  auth_id: string | null;
+  cdr_token_uid: string | null;
+  created_at: string;
+}
+
+interface ContractFile {
+  name: string;
+  created_at: string;
+  url: string;
+}
 
 const EMPTY_AGREEMENT = {
   status: "active" as Agreement["status"],
@@ -115,7 +141,7 @@ export function AgreementsPage() {
   const [editing, setEditing] = useState<Agreement | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Agreement | null>(null);
   const [form, setForm] = useState(EMPTY_AGREEMENT);
-  const [detailTab, setDetailTab] = useState<"details" | "billing">("details");
+  const [detailTab, setDetailTab] = useState<"details" | "billing" | "reconciliation" | "contrats">("details");
 
   // List state
   const [filterTab, setFilterTab] = useState<FilterTab>("all");
@@ -136,6 +162,152 @@ export function AgreementsPage() {
     valid_to: "",
     professional_contact: "",
   });
+
+  // ── Reconciliation state ──
+  const [reconDateFrom, setReconDateFrom] = useState(() => {
+    const d = new Date(); d.setMonth(d.getMonth() - 1); d.setDate(1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [reconDateTo, setReconDateTo] = useState(() => {
+    const d = new Date(); d.setDate(0); // last day of previous month
+    return d.toISOString().slice(0, 10);
+  });
+  const [reconCdrs, setReconCdrs] = useState<OcpiCdr[]>([]);
+  const [reconLoading, setReconLoading] = useState(false);
+  const [reconQueried, setReconQueried] = useState(false);
+
+  // ── Contract upload state ──
+  const [contractFiles, setContractFiles] = useState<ContractFile[]>([]);
+  const [contractsLoading, setContractsLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  // ── Reconciliation helpers ──
+  const setReconMonth = useCallback((monthsAgo: number) => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - monthsAgo);
+    const from = new Date(d.getFullYear(), d.getMonth(), 1);
+    const to = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    setReconDateFrom(from.toISOString().slice(0, 10));
+    setReconDateTo(to.toISOString().slice(0, 10));
+    setReconQueried(false);
+  }, []);
+
+  const fetchReconCdrs = useCallback(async (agreement: Agreement) => {
+    setReconLoading(true);
+    setReconQueried(true);
+    try {
+      // Match CDRs by the partner's network (emsp side)
+      let query = supabase.from("ocpi_cdrs").select("*")
+        .gte("start_date_time", reconDateFrom)
+        .lte("start_date_time", reconDateTo + "T23:59:59");
+      // Filter by partner network if available
+      if (agreement.emsp_network_id) {
+        query = query.eq("emsp_network_id", agreement.emsp_network_id);
+      }
+      const { data, error } = await query.order("start_date_time", { ascending: false }).limit(500);
+      if (error) {
+        console.error("CDR fetch error:", error);
+        setReconCdrs([]);
+      } else {
+        setReconCdrs((data ?? []) as OcpiCdr[]);
+      }
+    } catch (err) {
+      console.error("CDR fetch error:", err);
+      setReconCdrs([]);
+    } finally {
+      setReconLoading(false);
+    }
+  }, [reconDateFrom, reconDateTo]);
+
+  const reconSummary = useMemo(() => {
+    const count = reconCdrs.length;
+    const totalAmount = reconCdrs.reduce((sum, c) => sum + (c.total_cost ?? 0), 0);
+    const totalEnergy = reconCdrs.reduce((sum, c) => sum + (c.total_energy ?? 0), 0);
+    // Expected reimbursement = total amount (1:1 unless specific agreement terms)
+    const expectedAmount = totalAmount;
+    const diff = Math.abs(totalAmount - expectedAmount);
+    const pct = expectedAmount > 0 ? (diff / expectedAmount) * 100 : 0;
+    const isConform = pct <= 1;
+    return { count, totalAmount, totalEnergy, expectedAmount, diff, pct, isConform };
+  }, [reconCdrs]);
+
+  const exportReconCsv = useCallback(() => {
+    if (reconCdrs.length === 0) return;
+    const headers = ["ID", "Date debut", "Date fin", "Location", "EVSE", "Energie (kWh)", "Cout", "Devise", "Token UID"];
+    const rows = reconCdrs.map((c) => [
+      c.id,
+      c.start_date_time,
+      c.end_date_time ?? "",
+      c.location_id ?? "",
+      c.evse_uid ?? "",
+      String(c.total_energy ?? 0),
+      String(c.total_cost ?? 0),
+      c.currency ?? "EUR",
+      c.cdr_token_uid ?? "",
+    ]);
+    const csv = [headers, ...rows].map((r) => r.map((v) => `"${v}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `reconciliation_${reconDateFrom}_${reconDateTo}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [reconCdrs, reconDateFrom, reconDateTo]);
+
+  // ── Contract file helpers ──
+  const fetchContractFiles = useCallback(async (agreementId: string) => {
+    setContractsLoading(true);
+    try {
+      const { data, error } = await supabase.storage.from("roaming-contracts").list(agreementId, { limit: 50 });
+      if (error) { console.error("List contracts error:", error); setContractFiles([]); return; }
+      const files: ContractFile[] = (data ?? []).map((f) => ({
+        name: f.name,
+        created_at: f.created_at ?? "",
+        url: supabase.storage.from("roaming-contracts").getPublicUrl(`${agreementId}/${f.name}`).data.publicUrl,
+      }));
+      setContractFiles(files);
+    } catch (err) {
+      console.error("List contracts error:", err);
+      setContractFiles([]);
+    } finally {
+      setContractsLoading(false);
+    }
+  }, []);
+
+  const uploadContract = useCallback(async (agreementId: string, file: File) => {
+    if (file.size > 10 * 1024 * 1024) {
+      toastError("Fichier trop volumineux", "La taille maximale est de 10 Mo.");
+      return;
+    }
+    if (file.type !== "application/pdf") {
+      toastError("Format invalide", "Seuls les fichiers PDF sont acceptés.");
+      return;
+    }
+    setUploading(true);
+    try {
+      const path = `${agreementId}/${file.name}`;
+      const { error } = await supabase.storage.from("roaming-contracts").upload(path, file, { upsert: true });
+      if (error) throw error;
+      toastSuccess("Contrat uploadé", file.name);
+      fetchContractFiles(agreementId);
+    } catch (err: any) {
+      toastError("Erreur upload", err.message ?? "Erreur inconnue");
+    } finally {
+      setUploading(false);
+    }
+  }, [toastSuccess, toastError, fetchContractFiles]);
+
+  const deleteContract = useCallback(async (agreementId: string, fileName: string) => {
+    try {
+      const { error } = await supabase.storage.from("roaming-contracts").remove([`${agreementId}/${fileName}`]);
+      if (error) throw error;
+      toastSuccess("Fichier supprimé", fileName);
+      fetchContractFiles(agreementId);
+    } catch (err: any) {
+      toastError("Erreur", err.message ?? "Erreur inconnue");
+    }
+  }, [toastSuccess, toastError, fetchContractFiles]);
 
   // ── Related data for dropdowns ──
   const { data: cpoNetworks, isError: _isErrorCpoNetworks } = useQuery<NetworkRef[]>({
@@ -507,20 +679,25 @@ export function AgreementsPage() {
 
         {/* Tabs */}
         <div className="flex gap-1 border-b border-border">
-          <button
-            onClick={() => setDetailTab("details")}
-            className={cn("px-4 py-2.5 text-sm font-medium relative", detailTab === "details" ? "text-primary" : "text-foreground-muted hover:text-foreground transition-colors")}
-          >
-            Détails
-            {detailTab === "details" && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />}
-          </button>
-          <button
-            onClick={() => setDetailTab("billing")}
-            className={cn("px-4 py-2.5 text-sm font-medium relative", detailTab === "billing" ? "text-primary" : "text-foreground-muted hover:text-foreground transition-colors")}
-          >
-            Règles de facturation en gros
-            {detailTab === "billing" && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />}
-          </button>
+          {([
+            { key: "details" as const, label: "Détails" },
+            { key: "billing" as const, label: "Règles de facturation en gros" },
+            { key: "reconciliation" as const, label: "Réconciliation CDR", icon: Scale },
+            { key: "contrats" as const, label: "Contrats", icon: FileText },
+          ]).map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => {
+                setDetailTab(tab.key);
+                if (tab.key === "contrats") fetchContractFiles(a.id);
+              }}
+              className={cn("px-4 py-2.5 text-sm font-medium relative flex items-center gap-1.5", detailTab === tab.key ? "text-primary" : "text-foreground-muted hover:text-foreground transition-colors")}
+            >
+              {tab.icon && <tab.icon className="w-3.5 h-3.5" />}
+              {tab.label}
+              {detailTab === tab.key && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />}
+            </button>
+          ))}
         </div>
 
         {/* Billing tab content */}
@@ -528,6 +705,232 @@ export function AgreementsPage() {
           <div className="bg-surface border border-border rounded-2xl p-6">
             <h2 className="text-lg font-semibold text-foreground mb-4">Règles de facturation en gros</h2>
             <p className="text-foreground-muted text-sm">Les règles de facturation associées à cet accord sont gérées dans la page Remboursement.</p>
+          </div>
+        )}
+
+        {/* Reconciliation tab content */}
+        {detailTab === "reconciliation" && (
+          <div className="space-y-5">
+            {/* Period selector */}
+            <div className="bg-surface border border-border rounded-2xl p-6">
+              <h2 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                <Scale className="w-5 h-5 text-primary" />
+                Réconciliation CDR
+              </h2>
+              <div className="flex flex-wrap items-end gap-4">
+                <div>
+                  <label className="block text-xs text-foreground-muted mb-1">Du</label>
+                  <input
+                    type="date"
+                    value={reconDateFrom}
+                    onChange={(e) => { setReconDateFrom(e.target.value); setReconQueried(false); }}
+                    className="px-3 py-2 bg-surface-elevated border border-border rounded-lg text-sm text-foreground focus:outline-none focus:border-primary/50"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-foreground-muted mb-1">Au</label>
+                  <input
+                    type="date"
+                    value={reconDateTo}
+                    onChange={(e) => { setReconDateTo(e.target.value); setReconQueried(false); }}
+                    className="px-3 py-2 bg-surface-elevated border border-border rounded-lg text-sm text-foreground focus:outline-none focus:border-primary/50"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setReconMonth(1)} className="px-3 py-2 text-xs font-medium bg-surface-elevated border border-border rounded-lg text-foreground-muted hover:text-foreground hover:border-primary/50 transition-colors">Mois dernier</button>
+                  <button onClick={() => setReconMonth(2)} className="px-3 py-2 text-xs font-medium bg-surface-elevated border border-border rounded-lg text-foreground-muted hover:text-foreground hover:border-primary/50 transition-colors">M-2</button>
+                  <button onClick={() => setReconMonth(3)} className="px-3 py-2 text-xs font-medium bg-surface-elevated border border-border rounded-lg text-foreground-muted hover:text-foreground hover:border-primary/50 transition-colors">M-3</button>
+                  <button onClick={() => {
+                    const now = new Date();
+                    setReconDateFrom(new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10));
+                    setReconDateTo(now.toISOString().slice(0, 10));
+                    setReconQueried(false);
+                  }} className="px-3 py-2 text-xs font-medium bg-surface-elevated border border-border rounded-lg text-foreground-muted hover:text-foreground hover:border-primary/50 transition-colors">Mois en cours</button>
+                </div>
+                <button
+                  onClick={() => fetchReconCdrs(a)}
+                  disabled={reconLoading}
+                  className="px-5 py-2 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                >
+                  {reconLoading ? "Chargement..." : "Analyser"}
+                </button>
+              </div>
+            </div>
+
+            {/* Summary cards */}
+            {reconQueried && !reconLoading && (
+              <>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-surface border border-border rounded-2xl p-5">
+                    <p className="text-xs text-foreground-muted uppercase tracking-wide mb-1">Total CDRs du partenaire</p>
+                    <p className="text-2xl font-bold text-foreground">{reconSummary.count}</p>
+                    <p className="text-sm text-foreground-muted mt-1">{reconSummary.totalAmount.toFixed(2)} EUR</p>
+                  </div>
+                  <div className="bg-surface border border-border rounded-2xl p-5">
+                    <p className="text-xs text-foreground-muted uppercase tracking-wide mb-1">Montant remboursement attendu</p>
+                    <p className="text-2xl font-bold text-foreground">{reconSummary.expectedAmount.toFixed(2)} EUR</p>
+                    <p className="text-sm text-foreground-muted mt-1">{reconSummary.totalEnergy.toFixed(2)} kWh total</p>
+                  </div>
+                  <div className="bg-surface border border-border rounded-2xl p-5">
+                    <p className="text-xs text-foreground-muted uppercase tracking-wide mb-1">Statut</p>
+                    {reconSummary.count === 0 ? (
+                      <span className="inline-flex items-center px-2.5 py-1 rounded text-sm font-semibold bg-gray-500/15 text-gray-400 border border-gray-500/25">Aucun CDR</span>
+                    ) : reconSummary.isConform ? (
+                      <span className="inline-flex items-center px-2.5 py-1 rounded text-sm font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">Conforme</span>
+                    ) : reconSummary.diff < 50 ? (
+                      <span className="inline-flex items-center px-2.5 py-1 rounded text-sm font-semibold bg-orange-500/15 text-orange-400 border border-orange-500/25">Ecart de {reconSummary.diff.toFixed(2)} EUR</span>
+                    ) : (
+                      <span className="inline-flex items-center px-2.5 py-1 rounded text-sm font-semibold bg-red-500/15 text-red-400 border border-red-500/25">Ecart de {reconSummary.diff.toFixed(2)} EUR</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Export button */}
+                {reconCdrs.length > 0 && (
+                  <div className="flex justify-end">
+                    <button
+                      onClick={exportReconCsv}
+                      className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-surface border border-border rounded-xl text-foreground-muted hover:text-foreground hover:border-primary/50 transition-colors"
+                    >
+                      <Download className="w-4 h-4" />
+                      Exporter CSV
+                    </button>
+                  </div>
+                )}
+
+                {/* CDR Table */}
+                {reconCdrs.length > 0 && (
+                  <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b border-border">
+                            <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-foreground-muted uppercase tracking-wider">Date</th>
+                            <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-foreground-muted uppercase tracking-wider">Location</th>
+                            <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-foreground-muted uppercase tracking-wider">EVSE</th>
+                            <th className="px-3 py-2.5 text-right text-[11px] font-semibold text-foreground-muted uppercase tracking-wider">Energie (kWh)</th>
+                            <th className="px-3 py-2.5 text-right text-[11px] font-semibold text-foreground-muted uppercase tracking-wider">Cout</th>
+                            <th className="px-3 py-2.5 text-left text-[11px] font-semibold text-foreground-muted uppercase tracking-wider">Token UID</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {reconCdrs.map((cdr) => (
+                            <tr key={cdr.id} className="hover:bg-surface-elevated/50 transition-colors">
+                              <td className="px-3 py-2.5 text-sm text-foreground whitespace-nowrap">
+                                {new Date(cdr.start_date_time).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                              </td>
+                              <td className="px-3 py-2.5 text-sm text-foreground-muted truncate max-w-[160px]">{cdr.location_id ?? "—"}</td>
+                              <td className="px-3 py-2.5 text-sm text-foreground-muted truncate max-w-[120px]">{cdr.evse_uid ?? "—"}</td>
+                              <td className="px-3 py-2.5 text-sm text-foreground text-right">{(cdr.total_energy ?? 0).toFixed(3)}</td>
+                              <td className="px-3 py-2.5 text-sm text-foreground font-medium text-right">{(cdr.total_cost ?? 0).toFixed(2)} {cdr.currency ?? "EUR"}</td>
+                              <td className="px-3 py-2.5 text-sm text-foreground-muted font-mono text-xs truncate max-w-[140px]">{cdr.cdr_token_uid ?? "—"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {reconCdrs.length >= 500 && (
+                      <div className="px-4 py-2 border-t border-border text-xs text-foreground-muted text-center">
+                        Limité à 500 résultats. Réduisez la période pour voir tous les CDRs.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {reconCdrs.length === 0 && (
+                  <div className="bg-surface border border-border rounded-2xl p-8 text-center">
+                    <FileText className="w-10 h-10 mx-auto text-foreground-muted/40 mb-3" />
+                    <p className="text-foreground-muted text-sm">Aucun CDR trouvé pour cette période et ce partenaire.</p>
+                  </div>
+                )}
+              </>
+            )}
+
+            {!reconQueried && !reconLoading && (
+              <div className="bg-surface border border-border rounded-2xl p-8 text-center">
+                <Scale className="w-10 h-10 mx-auto text-foreground-muted/40 mb-3" />
+                <p className="text-foreground-muted text-sm">Sélectionnez une période et cliquez sur "Analyser" pour lancer la réconciliation CDR.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Contracts tab content */}
+        {detailTab === "contrats" && (
+          <div className="space-y-5">
+            <div className="bg-surface border border-border rounded-2xl p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-primary" />
+                  Contrats attachés
+                </h2>
+                <label className="flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 transition-colors cursor-pointer">
+                  <Paperclip className="w-4 h-4" />
+                  {uploading ? "Upload..." : "Joindre contrat"}
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    className="hidden"
+                    disabled={uploading}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) uploadContract(a.id, file);
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
+              </div>
+
+              <p className="text-xs text-foreground-muted mb-4">Fichiers PDF uniquement, 10 Mo maximum.</p>
+
+              {contractsLoading ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-4 p-3 bg-surface-elevated/30 rounded-xl">
+                      <Skeleton className="h-5 w-5 rounded" />
+                      <Skeleton className="h-4 w-48" />
+                      <Skeleton className="h-4 w-24 ml-auto" />
+                    </div>
+                  ))}
+                </div>
+              ) : contractFiles.length === 0 ? (
+                <div className="p-8 text-center border border-dashed border-border rounded-xl">
+                  <Upload className="w-10 h-10 mx-auto text-foreground-muted/40 mb-3" />
+                  <p className="text-foreground-muted text-sm">Aucun contrat attaché à cet accord.</p>
+                  <p className="text-foreground-muted/60 text-xs mt-1">Utilisez le bouton "Joindre contrat" pour ajouter un fichier PDF.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {contractFiles.map((file) => (
+                    <div key={file.name} className="flex items-center gap-3 p-3 bg-surface-elevated/30 border border-border/50 rounded-xl hover:border-border transition-colors group">
+                      <FileText className="w-5 h-5 text-red-400 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-foreground font-medium truncate">{file.name}</p>
+                        {file.created_at && (
+                          <p className="text-xs text-foreground-muted">{new Date(file.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" })}</p>
+                        )}
+                      </div>
+                      <a
+                        href={file.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-2 rounded-lg text-foreground-muted hover:text-primary hover:bg-primary/10 transition-colors"
+                        title="Télécharger"
+                      >
+                        <Download className="w-4 h-4" />
+                      </a>
+                      <button
+                        onClick={() => deleteContract(a.id, file.name)}
+                        className="p-2 rounded-lg text-foreground-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                        title="Supprimer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 

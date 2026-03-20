@@ -118,8 +118,8 @@ export function CpoProvider({ children }: { children: ReactNode }) {
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  // Derived values
-  const rootCpo = cpos.find((c) => c.level === 0) ?? null;
+  // Derived values (memoized to avoid re-renders)
+  const rootCpo = useMemo(() => cpos.find((c) => c.level === 0) ?? null, [cpos]);
 
   const level1Cpos = useMemo(() => {
     const l1 = cpos.filter((c) => c.level === 1);
@@ -130,8 +130,10 @@ export function CpoProvider({ children }: { children: ReactNode }) {
     return l1;
   }, [cpos, isRestricted, userCpoId]);
 
-  const selectedCpo =
-    cpos.find((c) => c.id === selectedCpoId) ?? null;
+  const selectedCpo = useMemo(
+    () => cpos.find((c) => c.id === selectedCpoId) ?? null,
+    [cpos, selectedCpoId],
+  );
 
   // Actions
   const selectCpo = useCallback(
@@ -154,22 +156,27 @@ export function CpoProvider({ children }: { children: ReactNode }) {
     [cpos],
   );
 
+  // Memoize the context value to prevent full-tree re-renders
+  // Only re-creates when actual state/data changes
+  const contextValue = useMemo<CpoState>(
+    () => ({
+      selectedCpoId,
+      selectedCpo,
+      cpos,
+      rootCpo,
+      level1Cpos,
+      loading: isLoading,
+      selectCpo,
+      isSelected,
+      childrenOf,
+      userCpoId,
+      isRestricted,
+    }),
+    [selectedCpoId, selectedCpo, cpos, rootCpo, level1Cpos, isLoading, selectCpo, isSelected, childrenOf, userCpoId, isRestricted],
+  );
+
   return (
-    <CpoContext.Provider
-      value={{
-        selectedCpoId,
-        selectedCpo,
-        cpos,
-        rootCpo,
-        level1Cpos,
-        loading: isLoading,
-        selectCpo,
-        isSelected,
-        childrenOf,
-        userCpoId,
-        isRestricted,
-      }}
-    >
+    <CpoContext.Provider value={contextValue}>
       {children}
     </CpoContext.Provider>
   );

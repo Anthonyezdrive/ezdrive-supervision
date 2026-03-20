@@ -26,15 +26,26 @@ export interface SLACPO {
   availability_pct: number;
 }
 
-export function useSLAByTerritory(cpoId?: string | null) {
+export interface SLADateRange {
+  from?: string; // ISO date string YYYY-MM-DD
+  to?: string;   // ISO date string YYYY-MM-DD
+}
+
+export function useSLAByTerritory(cpoId?: string | null, dateRange?: SLADateRange) {
   return useQuery<SLATerritory[]>({
-    queryKey: ["sla_by_territory", cpoId ?? "all"],
+    queryKey: ["sla_by_territory", cpoId ?? "all", dateRange?.from ?? "none", dateRange?.to ?? "none"],
     queryFn: async () => {
       let query = supabase
         .from("sla_by_territory")
         .select("*");
       if (cpoId) {
         query = query.eq("cpo_id", cpoId);
+      }
+      if (dateRange?.from) {
+        query = query.gte("stat_date", dateRange.from);
+      }
+      if (dateRange?.to) {
+        query = query.lte("stat_date", dateRange.to);
       }
       const { data, error } = await query;
       if (error) throw error;
@@ -44,13 +55,19 @@ export function useSLAByTerritory(cpoId?: string | null) {
   });
 }
 
-export function useSLAByCPO(cpoId?: string | null) {
+export function useSLAByCPO(cpoId?: string | null, dateRange?: SLADateRange) {
   return useQuery<SLACPO[]>({
-    queryKey: ["sla_by_cpo", cpoId ?? "all"],
+    queryKey: ["sla_by_cpo", cpoId ?? "all", dateRange?.from ?? "none", dateRange?.to ?? "none"],
     queryFn: async () => {
       let query = supabase.from("sla_by_cpo").select("*");
       if (cpoId) {
         query = query.eq("cpo_id", cpoId);
+      }
+      if (dateRange?.from) {
+        query = query.gte("stat_date", dateRange.from);
+      }
+      if (dateRange?.to) {
+        query = query.lte("stat_date", dateRange.to);
       }
       const { data, error } = await query;
       if (error) throw error;

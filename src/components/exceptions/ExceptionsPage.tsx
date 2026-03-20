@@ -3,7 +3,7 @@
 // Manage whitelist/blacklist rules for drivers & tokens
 // ============================================================
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ShieldAlert,
@@ -19,6 +19,10 @@ import {
   Filter,
   Clock,
   Pencil,
+  Upload,
+  FileSpreadsheet,
+  Loader2,
+  X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -150,6 +154,116 @@ export function ExceptionsPage() {
   // ── ConfirmDialog states ──
   const [confirmDeleteGroup, setConfirmDeleteGroup] = useState<ExceptionGroup | null>(null);
   const [confirmDeleteRule, setConfirmDeleteRule] = useState<ExceptionRule | null>(null);
+
+  // ── CSV Import states ──
+  const [csvModalOpen, setCsvModalOpen] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvPreview, setCsvPreview] = useState<string[]>([]);
+  const [csvAllUids, setCsvAllUids] = useState<string[]>([]);
+  const [csvImporting, setCsvImporting] = useState(false);
+  const [csvResult, setCsvResult] = useState<{ created: number; duplicates: number } | null>(null);
+  const [csvError, setCsvError] = useState<string | null>(null);
+  const csvFileInputRef = useRef<HTMLInputElement>(null);
+
+  const parseCsvContent = useCallback((content: string): string[] => {
+    const lines = content.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length === 0) return [];
+    // Check if first line is a header (contains "uid" case-insensitive)
+    const firstLine = lines[0].toLowerCase();
+    const startIndex = firstLine === "uid" || firstLine.includes("uid") ? 1 : 0;
+    const uids: string[] = [];
+    for (let i = startIndex; i < lines.length; i++) {
+      // Take first column if CSV has multiple columns
+      const value = lines[i].split(",")[0].trim().replace(/^["']|["']$/g, "");
+      if (value) uids.push(value);
+    }
+    return uids;
+  }, []);
+
+  function handleCsvFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    setCsvResult(null);
+    setCsvError(null);
+    if (!file) {
+      setCsvFile(null);
+      setCsvPreview([]);
+      setCsvAllUids([]);
+      return;
+    }
+    setCsvFile(file);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const text = evt.target?.result as string;
+        const uids = parseCsvContent(text);
+        if (uids.length === 0) {
+          setCsvError("Aucun UID trouvé dans le fichier. Vérifiez le format.");
+          setCsvPreview([]);
+          setCsvAllUids([]);
+          return;
+        }
+        setCsvAllUids(uids);
+        setCsvPreview(uids.slice(0, 5));
+        setCsvError(null);
+      } catch {
+        setCsvError("Erreur de lecture du fichier CSV.");
+        setCsvPreview([]);
+        setCsvAllUids([]);
+      }
+    };
+    reader.onerror = () => {
+      setCsvError("Impossible de lire le fichier.");
+    };
+    reader.readAsText(file);
+  }
+
+  async function handleCsvImport() {
+    if (csvAllUids.length === 0) return;
+    setCsvImporting(true);
+    setCsvError(null);
+    setCsvResult(null);
+    try {
+      const rows = csvAllUids.map((uid) => ({
+        uid,
+        type: "whitelist" as const,
+        status: "active" as const,
+        created_at: new Date().toISOString(),
+      }));
+
+      // Insert with upsert to handle duplicates gracefully
+      const { data, error } = await supabase
+        .from("exceptions")
+        .upsert(rows, { onConflict: "uid", ignoreDuplicates: true })
+        .select();
+
+      if (error) throw error;
+
+      const created = data?.length ?? 0;
+      const duplicates = csvAllUids.length - created;
+      setCsvResult({ created, duplicates });
+      queryClient.invalidateQueries({ queryKey: ["exception-rules"] });
+      toastSuccess(
+        "Import terminé",
+        `${created} règle${created > 1 ? "s" : ""} créée${created > 1 ? "s" : ""}${duplicates > 0 ? `, ${duplicates} doublon${duplicates > 1 ? "s" : ""} ignoré${duplicates > 1 ? "s" : ""}` : ""}`
+      );
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Erreur lors de l'import";
+      setCsvError(message);
+      toastError("Erreur d'import", message);
+    } finally {
+      setCsvImporting(false);
+    }
+  }
+
+  function closeCsvModal() {
+    setCsvModalOpen(false);
+    setCsvFile(null);
+    setCsvPreview([]);
+    setCsvAllUids([]);
+    setCsvResult(null);
+    setCsvError(null);
+    if (csvFileInputRef.current) csvFileInputRef.current.value = "";
+  }
 
   // ── Data fetching ──
   const { data: groups, isLoading: groupsLoading } = useQuery<ExceptionGroup[]>({
@@ -408,6 +522,13 @@ export function ExceptionsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setCsvModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-surface-elevated text-foreground border border-border rounded-xl text-sm font-semibold hover:bg-surface-elevated/80 transition-colors"
+          >
+            <Upload className="w-4 h-4" />
+            Importer CSV
+          </button>
           <button
             onClick={openCreateGroup}
             className="flex items-center gap-2 px-4 py-2.5 bg-surface-elevated text-foreground border border-border rounded-xl text-sm font-semibold hover:bg-surface-elevated/80 transition-colors"
@@ -875,6 +996,130 @@ export function ExceptionsPage() {
         variant="danger"
         loading={deleteRuleMutation.isPending}
       />
+
+      {/* ── CSV Import Modal ── */}
+      {csvModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeCsvModal} />
+          <div className="relative w-full max-w-lg mx-4 bg-surface border border-border rounded-2xl shadow-2xl">
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                  <FileSpreadsheet className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold text-foreground">Importer CSV — Whitelist</h2>
+                  <p className="text-xs text-foreground-muted mt-0.5">Ajout en masse de règles d'exception</p>
+                </div>
+              </div>
+              <button
+                onClick={closeCsvModal}
+                className="p-2 text-foreground-muted hover:text-foreground hover:bg-surface-elevated rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal body */}
+            <div className="px-6 py-5 space-y-4">
+              {/* Description */}
+              <div className="p-3 bg-primary/5 border border-primary/15 rounded-xl">
+                <p className="text-xs text-foreground leading-relaxed">
+                  <span className="font-semibold">Format attendu :</span> une colonne <code className="px-1.5 py-0.5 bg-surface-elevated border border-border rounded text-[11px] font-mono">uid</code> par ligne (identifiant token/RFID).
+                  La première ligne peut être un en-tête.
+                </p>
+              </div>
+
+              {/* File input */}
+              <div>
+                <label className="block text-xs font-semibold text-foreground-muted mb-1.5">Fichier CSV</label>
+                <input
+                  ref={csvFileInputRef}
+                  type="file"
+                  accept=".csv"
+                  onChange={handleCsvFileChange}
+                  className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-lg text-sm text-foreground file:mr-3 file:px-3 file:py-1 file:rounded-lg file:border-0 file:bg-primary/10 file:text-primary file:text-xs file:font-semibold file:cursor-pointer focus:outline-none focus:border-primary/50"
+                />
+              </div>
+
+              {/* Preview */}
+              {csvPreview.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-foreground-muted">
+                      Aperçu ({csvAllUids.length} UID{csvAllUids.length > 1 ? "s" : ""} détecté{csvAllUids.length > 1 ? "s" : ""})
+                    </label>
+                    {csvAllUids.length > 5 && (
+                      <span className="text-[10px] text-foreground-muted">+{csvAllUids.length - 5} autres</span>
+                    )}
+                  </div>
+                  <div className="bg-surface-elevated border border-border rounded-lg divide-y divide-border">
+                    {csvPreview.map((uid, i) => (
+                      <div key={i} className="flex items-center gap-2 px-3 py-2">
+                        <div className="w-5 h-5 rounded-md bg-emerald-500/10 flex items-center justify-center shrink-0">
+                          <span className="text-[10px] font-bold text-emerald-400">{i + 1}</span>
+                        </div>
+                        <code className="text-xs font-mono text-foreground truncate">{uid}</code>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Result */}
+              {csvResult && (
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/25 rounded-xl flex items-start gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <p className="text-sm text-emerald-400">
+                    <span className="font-semibold">{csvResult.created}</span> règle{csvResult.created > 1 ? "s" : ""} créée{csvResult.created > 1 ? "s" : ""}
+                    {csvResult.duplicates > 0 && (
+                      <>, <span className="font-semibold">{csvResult.duplicates}</span> doublon{csvResult.duplicates > 1 ? "s" : ""} ignoré{csvResult.duplicates > 1 ? "s" : ""}</>
+                    )}
+                  </p>
+                </div>
+              )}
+
+              {/* Error */}
+              {csvError && (
+                <div className="p-3 bg-red-500/10 border border-red-500/25 rounded-xl flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-400">{csvError}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Modal footer */}
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border">
+              <button
+                onClick={closeCsvModal}
+                className="px-4 py-2 text-sm text-foreground-muted hover:text-foreground border border-border rounded-xl transition-colors"
+              >
+                {csvResult ? "Fermer" : "Annuler"}
+              </button>
+              {!csvResult && (
+                <button
+                  onClick={handleCsvImport}
+                  disabled={csvAllUids.length === 0 || csvImporting}
+                  className="flex items-center gap-2 px-5 py-2 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {csvImporting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Import en cours...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4" />
+                      Importer {csvAllUids.length > 0 ? `(${csvAllUids.length})` : ""}
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -67,6 +67,7 @@ const NAV_SECTIONS: NavSection[] = [
       { to: "/dashboard", label: "Business Overview", icon: LayoutDashboard, requiredPermissions: ["stations.view", "billing.view"] },
       { to: "/map", label: "Carte", icon: Map, requiredPermissions: ["stations.view"] },
       { to: "/analytics", label: "Analytics SLA", icon: BarChart2, requiredPermissions: ["stations.view"] },
+      { to: "/advanced-analytics", label: "Analytics avancés", icon: PieChart, requiredPermissions: ["stations.view", "billing.view"] },
     ],
   },
   {
@@ -135,6 +136,12 @@ const NAV_SECTIONS: NavSection[] = [
         label: "Moyens de paiement",
         items: [
           { to: "/payment-methods", label: "Tokens & Abonnements", icon: CreditCard, requiredPermissions: ["customers.view"] },
+        ],
+      },
+      {
+        label: "Accès",
+        items: [
+          { to: "/access-groups", label: "Groupes d'accès", icon: Shield, requiredPermissions: ["customers.view"] },
         ],
       },
     ],

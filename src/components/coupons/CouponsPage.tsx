@@ -21,6 +21,8 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
+  Eye,
+  Loader2 as Loader2Icon,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -141,7 +143,7 @@ function CouponsTableSkeleton({ rows = 8 }: { rows?: number }) {
   return (
     <div className="bg-surface border border-border rounded-2xl overflow-hidden">
       <div className="border-b border-border px-4 py-3 flex gap-6">
-        {Array.from({ length: 7 }).map((_, i) => (
+        {Array.from({ length: 8 }).map((_, i) => (
           <Skeleton key={i} className="h-3 w-20" />
         ))}
       </div>
@@ -153,6 +155,7 @@ function CouponsTableSkeleton({ rows = 8 }: { rows?: number }) {
             <Skeleton className="h-4 w-20" />
             <Skeleton className="h-4 w-24" />
             <Skeleton className="h-6 w-16 rounded-full" />
+            <Skeleton className="h-4 w-12" />
             <Skeleton className="h-4 w-28" />
             <Skeleton className="h-4 w-20" />
           </div>
@@ -171,6 +174,7 @@ export function CouponsPage() {
   const [editing, setEditing] = useState<Coupon | null>(null);
   const [form, setForm] = useState(EMPTY_COUPON);
   const [confirmDelete, setConfirmDelete] = useState<Coupon | null>(null);
+  const [usageCoupon, setUsageCoupon] = useState<Coupon | null>(null);
 
   // ── Mutations ──
   const createMutation = useMutation({
@@ -503,6 +507,7 @@ export function CouponsPage() {
                   <th className={thClass} onClick={() => handleSort("status")}>
                     Statut <SortIcon col="status" />
                   </th>
+                  <th className={thClass}>Utilisations</th>
                   <th className={thClass}>Conducteur</th>
                   <th className={thClass} onClick={() => handleSort("created_at")}>
                     Créé le <SortIcon col="created_at" />
@@ -542,6 +547,17 @@ export function CouponsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <CouponStatusBadge status={coupon.status} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => setUsageCoupon(coupon)}
+                        className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-semibold text-foreground-muted hover:text-primary hover:bg-primary/10 transition-colors"
+                        title="Voir les utilisations"
+                      >
+                        <Eye className="w-3 h-3" />
+                        {coupon.used_count ?? 0}
+                        {coupon.max_uses ? ` / ${coupon.max_uses}` : ""}
+                      </button>
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-sm text-foreground-muted truncate max-w-[150px]">
@@ -731,6 +747,13 @@ export function CouponsPage() {
         </form>
       </SlideOver>
 
+      {/* ── Coupon Usage SlideOver ── */}
+      <CouponUsageSlideOver
+        coupon={usageCoupon}
+        open={!!usageCoupon}
+        onClose={() => setUsageCoupon(null)}
+      />
+
       {/* ── Confirm Delete Dialog ── */}
       <ConfirmDialog
         open={!!confirmDelete}
@@ -743,5 +766,118 @@ export function CouponsPage() {
         loading={deleteMutation.isPending}
       />
     </div>
+  );
+}
+
+// ── Coupon Usage SlideOver ────────────────────────────────────
+
+function CouponUsageSlideOver({
+  coupon,
+  open,
+  onClose,
+}: {
+  coupon: Coupon | null;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const { data: usageData, isLoading: usageLoading } = useQuery<any[] | null>({
+    queryKey: ["coupon-usages", coupon?.id],
+    enabled: !!coupon && open,
+    retry: false,
+    queryFn: async () => {
+      if (!coupon) return [];
+      try {
+        // Try with profile join
+        const { data, error } = await supabase
+          .from("coupon_usages")
+          .select("*, profiles:user_id(full_name, email)")
+          .eq("coupon_id", coupon.id)
+          .order("created_at", { ascending: false });
+        if (error) {
+          // Try without join
+          const { data: data2, error: error2 } = await supabase
+            .from("coupon_usages")
+            .select("*")
+            .eq("coupon_id", coupon.id)
+            .order("created_at", { ascending: false });
+          if (error2) {
+            console.warn("[CouponsPage] coupon_usages:", error2.message);
+            return null; // null indicates table not available
+          }
+          return data2 ?? [];
+        }
+        return data ?? [];
+      } catch {
+        return null;
+      }
+    },
+  });
+
+  if (!open || !coupon) return null;
+
+  const isUnavailable = usageData === null;
+  const items = usageData ?? [];
+
+  return (
+    <SlideOver open={open} onClose={onClose} title={`Utilisations — ${coupon.code}`} subtitle={`${coupon.used_count ?? 0} utilisation(s)`}>
+      <div className="p-6">
+        {usageLoading && (
+          <div className="flex items-center justify-center py-12">
+            <Loader2Icon className="w-6 h-6 text-primary animate-spin" />
+          </div>
+        )}
+
+        {!usageLoading && isUnavailable && (
+          <div className="bg-foreground-muted/5 border border-border rounded-xl p-5 text-center">
+            <Ticket className="w-8 h-8 text-foreground-muted/40 mx-auto mb-2" />
+            <p className="text-sm text-foreground-muted">Suivi des utilisations non disponible</p>
+            <p className="text-xs text-foreground-muted/60 mt-1">La table coupon_usages n'existe pas encore.</p>
+          </div>
+        )}
+
+        {!usageLoading && !isUnavailable && items.length === 0 && (
+          <div className="bg-foreground-muted/5 border border-border rounded-xl p-5 text-center">
+            <Ticket className="w-8 h-8 text-foreground-muted/40 mx-auto mb-2" />
+            <p className="text-sm text-foreground-muted">Aucune utilisation enregistrée</p>
+          </div>
+        )}
+
+        {!usageLoading && !isUnavailable && items.length > 0 && (
+          <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-foreground-muted uppercase">Utilisateur</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-foreground-muted uppercase">Date</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-foreground-muted uppercase">Montant</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {items.map((usage: any, idx: number) => (
+                  <tr key={usage.id ?? idx} className="hover:bg-surface-elevated/50 transition-colors">
+                    <td className="px-4 py-3">
+                      <p className="text-sm font-medium text-foreground">
+                        {usage.profiles?.full_name ?? usage.user_name ?? "—"}
+                      </p>
+                      <p className="text-xs text-foreground-muted">
+                        {usage.profiles?.email ?? usage.user_email ?? ""}
+                      </p>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-foreground-muted whitespace-nowrap">
+                      {usage.created_at
+                        ? new Date(usage.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-foreground text-right tabular-nums font-semibold">
+                      {usage.amount != null ? `${Number(usage.amount).toFixed(2)} \u20AC` : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </SlideOver>
   );
 }

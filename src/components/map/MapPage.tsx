@@ -1,13 +1,35 @@
-import { useEffect, useRef, useState, useMemo } from "react";
+import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap, useMapEvents } from "react-leaflet";
 import type { LatLngBoundsExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { Search, X, MapPin, Zap } from "lucide-react";
 import { useStations } from "@/hooks/useStations";
+import { useCPOs } from "@/hooks/useCPOs";
+import { useTerritories } from "@/hooks/useTerritories";
 import { useCpo } from "@/contexts/CpoContext";
 import { OCPP_STATUS_CONFIG } from "@/lib/constants";
 import { StationDetailDrawer } from "@/components/stations/StationDetailDrawer";
 import type { Station, OCPPStatus } from "@/types/station";
 import { PageHelp } from "@/components/ui/PageHelp";
+
+// ── Nominatim geocoding result ──────────────────────────────────────
+interface NominatimResult {
+  place_id: number;
+  display_name: string;
+  lat: string;
+  lon: string;
+}
+
+// ── FlyTo helper (child of MapContainer) ────────────────────────────
+function FlyToLocation({ target }: { target: { lat: number; lng: number } | null }) {
+  const map = useMap();
+  useEffect(() => {
+    if (target) {
+      map.flyTo([target.lat, target.lng], 14);
+    }
+  }, [map, target]);
+  return null;
+}
 
 // Auto-fit map to show all stations
 function AutoFitBounds({ bounds }: { bounds: LatLngBoundsExpression | null }) {
@@ -77,22 +99,110 @@ function ZoomTracker({ onZoom }: { onZoom: (z: number) => void }) {
   return null;
 }
 
+// ── Power type filter ───────────────────────────────────────────────
+type PowerFilter = "all" | "ac" | "dc";
+
 const STATUS_FILTERS: OCPPStatus[] = ["Available", "Charging", "Faulted", "Unknown"];
 
 export function MapPage() {
   const { selectedCpoId } = useCpo();
   const { data: stations = [], isLoading } = useStations(selectedCpoId);
+  const { data: cpos = [] } = useCPOs();
+  const { data: territories = [] } = useTerritories();
+
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [statusFilter, setStatusFilter] = useState<OCPPStatus | null>(null);
   const [zoom, setZoom] = useState(9);
 
+  // ── New filter state ──────────────────────────────────────────────
+  const [cpoFilter, setCpoFilter] = useState<string | null>(null);
+  const [territoryFilter, setTerritoryFilter] = useState<string | null>(null);
+  const [powerFilter, setPowerFilter] = useState<PowerFilter>("all");
+
+  // ── Address search state ──────────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<NominatimResult[]>([]);
+  const [showResults, setShowResults] = useState(false);
+  const [flyTarget, setFlyTarget] = useState<{ lat: number; lng: number } | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setShowResults(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Debounced geocoding search
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchQuery(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (value.trim().length < 3) {
+      setSearchResults([]);
+      setShowResults(false);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(value)}&format=json&limit=5`,
+          { headers: { "Accept-Language": "fr" } }
+        );
+        const data: NominatimResult[] = await res.json();
+        setSearchResults(data);
+        setShowResults(data.length > 0);
+      } catch {
+        setSearchResults([]);
+        setShowResults(false);
+      }
+    }, 300);
+  }, []);
+
+  const handleSelectResult = useCallback((result: NominatimResult) => {
+    const lat = parseFloat(result.lat);
+    const lng = parseFloat(result.lon);
+    setFlyTarget({ lat, lng });
+    setSearchQuery(result.display_name);
+    setShowResults(false);
+    setSearchResults([]);
+  }, []);
+
+  const clearSearch = useCallback(() => {
+    setSearchQuery("");
+    setSearchResults([]);
+    setShowResults(false);
+  }, []);
+
+  // ── Filtering pipeline ────────────────────────────────────────────
   const mappableStations = stations.filter(
     (s) => s.latitude != null && s.longitude != null
   );
 
-  const filteredStations = statusFilter
-    ? mappableStations.filter((s) => s.ocpp_status === statusFilter)
-    : mappableStations;
+  const filteredStations = useMemo(() => {
+    let result = mappableStations;
+
+    if (statusFilter) {
+      result = result.filter((s) => s.ocpp_status === statusFilter);
+    }
+    if (cpoFilter) {
+      result = result.filter((s) => s.cpo_id === cpoFilter);
+    }
+    if (territoryFilter) {
+      result = result.filter((s) => s.territory_id === territoryFilter);
+    }
+    if (powerFilter === "ac") {
+      result = result.filter((s) => s.max_power_kw != null && s.max_power_kw <= 22);
+    } else if (powerFilter === "dc") {
+      result = result.filter((s) => s.max_power_kw != null && s.max_power_kw > 22);
+    }
+
+    return result;
+  }, [mappableStations, statusFilter, cpoFilter, territoryFilter, powerFilter]);
 
   const bounds: LatLngBoundsExpression | null =
     mappableStations.length > 0
@@ -113,46 +223,135 @@ export function MapPage() {
           ]}
         />
       </div>
-      <div className="px-6 py-4 border-b border-border flex items-center justify-between shrink-0 flex-wrap gap-3">
-        <div>
-          <h1 className="font-heading font-bold text-xl">Carte</h1>
-          <p className="text-sm text-foreground-muted">
-            {mappableStations.length} bornes géolocalisées · refresh 30s
-          </p>
+      <div className="px-6 py-4 border-b border-border shrink-0 space-y-3">
+        {/* Row 1: title + status pills */}
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h1 className="font-heading font-bold text-xl">Carte</h1>
+            <p className="text-sm text-foreground-muted">
+              {filteredStations.length}/{mappableStations.length} bornes affichées · refresh 30s
+            </p>
+          </div>
+
+          {/* Status filter pills */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => setStatusFilter(null)}
+              className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
+                statusFilter === null
+                  ? "bg-primary/15 text-primary border-primary/30"
+                  : "text-foreground-muted border-border hover:border-foreground-muted"
+              }`}
+            >
+              Toutes ({mappableStations.length})
+            </button>
+            {STATUS_FILTERS.map((s) => {
+              const cfg = OCPP_STATUS_CONFIG[s];
+              const count = mappableStations.filter((st) => st.ocpp_status === s).length;
+              return (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(statusFilter === s ? null : s)}
+                  className="px-3 py-1 rounded-full text-xs font-medium border transition-all"
+                  style={{
+                    backgroundColor:
+                      statusFilter === s ? `${cfg.color}22` : "transparent",
+                    color: statusFilter === s ? cfg.color : "#8892B0",
+                    borderColor:
+                      statusFilter === s ? cfg.color : "rgba(255,255,255,0.12)",
+                  }}
+                >
+                  {cfg.label} ({count})
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        {/* Status filter pills */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => setStatusFilter(null)}
-            className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
-              statusFilter === null
-                ? "bg-primary/15 text-primary border-primary/30"
-                : "text-foreground-muted border-border hover:border-foreground-muted"
-            }`}
-          >
-            Toutes ({mappableStations.length})
-          </button>
-          {STATUS_FILTERS.map((s) => {
-            const cfg = OCPP_STATUS_CONFIG[s];
-            const count = mappableStations.filter((st) => st.ocpp_status === s).length;
-            return (
-              <button
-                key={s}
-                onClick={() => setStatusFilter(statusFilter === s ? null : s)}
-                className="px-3 py-1 rounded-full text-xs font-medium border transition-all"
-                style={{
-                  backgroundColor:
-                    statusFilter === s ? `${cfg.color}22` : "transparent",
-                  color: statusFilter === s ? cfg.color : "#8892B0",
-                  borderColor:
-                    statusFilter === s ? cfg.color : "rgba(255,255,255,0.12)",
-                }}
-              >
-                {cfg.label} ({count})
+        {/* Row 2: search bar + CPO / territory / power filters */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Address search */}
+          <div ref={searchContainerRef} className="relative flex-1 min-w-[220px] max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              onFocus={() => { if (searchResults.length > 0) setShowResults(true); }}
+              placeholder="Rechercher une adresse ou ville..."
+              className="w-full pl-9 pr-8 py-1.5 rounded-lg bg-card border border-border text-sm text-foreground placeholder:text-foreground-muted focus:outline-none focus:ring-1 focus:ring-primary/50"
+            />
+            {searchQuery && (
+              <button onClick={clearSearch} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-foreground-muted hover:text-foreground">
+                <X className="w-3.5 h-3.5" />
               </button>
-            );
-          })}
+            )}
+            {/* Dropdown results */}
+            {showResults && searchResults.length > 0 && (
+              <div
+                className="absolute top-full left-0 right-0 mt-1 rounded-lg border border-border bg-card shadow-xl z-[2000] overflow-hidden"
+              >
+                {searchResults.map((r) => (
+                  <button
+                    key={r.place_id}
+                    onClick={() => handleSelectResult(r)}
+                    className="w-full text-left px-3 py-2 text-xs text-foreground hover:bg-primary/10 flex items-start gap-2 border-b border-border last:border-b-0 transition-colors"
+                  >
+                    <MapPin className="w-3.5 h-3.5 text-foreground-muted shrink-0 mt-0.5" />
+                    <span className="line-clamp-2">{r.display_name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* CPO filter */}
+          <select
+            value={cpoFilter ?? ""}
+            onChange={(e) => setCpoFilter(e.target.value || null)}
+            className="px-3 py-1.5 rounded-lg bg-card border border-border text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 min-w-[140px]"
+          >
+            <option value="">Tous les CPO</option>
+            {cpos.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+
+          {/* Territory filter */}
+          <select
+            value={territoryFilter ?? ""}
+            onChange={(e) => setTerritoryFilter(e.target.value || null)}
+            className="px-3 py-1.5 rounded-lg bg-card border border-border text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 min-w-[140px]"
+          >
+            <option value="">Tous les territoires</option>
+            {territories.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+          </select>
+
+          {/* Power type toggle */}
+          <div className="flex items-center gap-1 bg-card border border-border rounded-lg p-0.5">
+            {([
+              { key: "all" as PowerFilter, label: "Tous" },
+              { key: "ac" as PowerFilter, label: "AC" },
+              { key: "dc" as PowerFilter, label: "DC" },
+            ]).map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setPowerFilter(key)}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-all flex items-center gap-1 ${
+                  powerFilter === key
+                    ? "bg-primary/15 text-primary"
+                    : "text-foreground-muted hover:text-foreground"
+                }`}
+              >
+                {key !== "all" && <Zap className="w-3 h-3" />}
+                {label}
+                {key === "ac" && " ≤22kW"}
+                {key === "dc" && " >22kW"}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -179,6 +378,7 @@ export function MapPage() {
             />
             <AutoFitBounds bounds={bounds} />
             <ZoomTracker onZoom={setZoom} />
+            <FlyToLocation target={flyTarget} />
 
             {clusterStations(filteredStations, zoom).map((cluster, idx) => {
               const isCluster = cluster.stations.length > 1;

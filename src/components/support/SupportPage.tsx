@@ -1,13 +1,26 @@
 // ============================================================
 // EZDrive — Support Page
-// Tickets, useful links, API documentation
+// Tickets with assignment, comments, SLA tracking + useful links + API docs
 // ============================================================
 
 import { useState, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/lib/supabase";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import {
+  useTickets,
+  useTicketComments,
+  useProfiles,
+  useCreateTicket,
+  useUpdateTicket,
+  useAssignTicket,
+  useAddComment,
+  useCloseTicket,
+  getSLABadge,
+  getFirstResponseTime,
+  relativeTime,
+} from "@/hooks/useTickets";
+import type { Ticket, TicketComment } from "@/hooks/useTickets";
 import {
   LifeBuoy,
   Plus,
@@ -21,7 +34,10 @@ import {
   CheckCircle2,
   Clock,
   Search,
-  ChevronDown,
+  Send,
+  User,
+  UserPlus,
+  Timer,
   Github,
   Globe,
   Database,
@@ -32,22 +48,6 @@ import {
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────
-
-interface Ticket {
-  id: string;
-  title: string;
-  description: string;
-  category: string;
-  priority: string;
-  status: string;
-  station_id: string | null;
-  created_by: string;
-  assigned_to: string | null;
-  resolved_at: string | null;
-  resolution_notes: string | null;
-  created_at: string;
-  updated_at: string;
-}
 
 type Tab = "tickets" | "links" | "api";
 
@@ -159,61 +159,35 @@ export function SupportPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
+  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
 
-  // Fetch tickets
-  const { data: tickets, isLoading } = useQuery<Ticket[]>({
-    queryKey: ["support-tickets"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("support_tickets")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (error) { console.warn("Tickets:", error.message); return []; }
-      return (data ?? []) as Ticket[];
-    },
-  });
+  // Queries via hook
+  const { data: tickets, isLoading } = useTickets();
+  const { data: profiles } = useProfiles();
 
-  // Create ticket
-  const createMutation = useMutation({
-    mutationFn: async (data: { title: string; description: string; category: string; priority: string; station_id?: string }) => {
-      const { error } = await supabase.from("support_tickets").insert({
-        ...data,
-        created_by: user?.id,
-        station_id: data.station_id || null,
-      });
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["support-tickets"] });
-      setShowCreate(false);
-    },
-  });
+  // Mutations via hooks
+  const createMutation = useCreateTicket();
+  const updateTicketMutation = useUpdateTicket();
+  const assignMutation = useAssignTicket();
+  const closeMutation = useCloseTicket();
 
-  // Update ticket status
-  const updateStatusMutation = useMutation({
-    mutationFn: async ({ id, status, notes }: { id: string; status: string; notes?: string }) => {
-      const updates: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
-      if (status === "resolved") {
-        updates.resolved_at = new Date().toISOString();
-        if (notes) updates.resolution_notes = notes;
-      }
-      const { error } = await supabase.from("support_tickets").update(updates).eq("id", id);
-      if (error) throw error;
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["support-tickets"] }),
-  });
-
+  // Client-side filtering
   const filtered = useMemo(() => {
     if (!tickets) return [];
     return tickets.filter((t) => {
       if (statusFilter !== "all" && t.status !== statusFilter) return false;
+      if (assigneeFilter !== "all") {
+        if (assigneeFilter === "unassigned" && t.assigned_to) return false;
+        if (assigneeFilter !== "unassigned" && t.assigned_to !== assigneeFilter) return false;
+      }
       if (search) {
         const q = search.toLowerCase();
         return t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q);
       }
       return true;
     });
-  }, [tickets, statusFilter, search]);
+  }, [tickets, statusFilter, assigneeFilter, search]);
 
   const kpis = useMemo(() => {
     if (!tickets) return { total: 0, open: 0, inProgress: 0, resolved: 0 };
@@ -232,6 +206,13 @@ export function SupportPage() {
     { key: "links", label: "Liens utiles", icon: ExternalLink },
     { key: "api", label: "Documentation API", icon: BookOpen },
   ];
+
+  /** Get display name for a user id */
+  const getProfileName = (userId: string | null): string => {
+    if (!userId || !profiles) return "Non assigné";
+    const p = profiles.find((pr) => pr.id === userId);
+    return p?.full_name || p?.email || userId.slice(0, 8);
+  };
 
   return (
     <div className="space-y-6">
@@ -293,8 +274,8 @@ export function SupportPage() {
           </div>
 
           {/* Filters */}
-          <div className="flex gap-3">
-            <div className="relative flex-1 max-w-md">
+          <div className="flex gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[200px] max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
               <input type="text" placeholder="Rechercher un ticket..." value={search} onChange={(e) => setSearch(e.target.value)} className={cn(inputClass, "pl-9")} />
             </div>
@@ -305,11 +286,18 @@ export function SupportPage() {
               <option value="resolved">Résolus</option>
               <option value="closed">Fermés</option>
             </select>
+            <select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)} className="px-3 py-2 bg-surface border border-border rounded-xl text-sm text-foreground">
+              <option value="all">Tous les assignés</option>
+              <option value="unassigned">Non assigné</option>
+              {profiles?.map((p) => (
+                <option key={p.id} value={p.id}>{p.full_name || p.email || p.id.slice(0, 8)}</option>
+              ))}
+            </select>
           </div>
 
           {/* Ticket List */}
           {isLoading ? (
-            <div className="space-y-3">{[1,2,3].map((i) => <div key={i} className="h-20 bg-surface border border-border rounded-xl animate-pulse" />)}</div>
+            <div className="space-y-3">{[1, 2, 3].map((i) => <div key={i} className="h-20 bg-surface border border-border rounded-xl animate-pulse" />)}</div>
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 bg-surface border border-border rounded-2xl">
               <LifeBuoy className="w-8 h-8 text-foreground-muted/40 mb-2" />
@@ -322,11 +310,17 @@ export function SupportPage() {
                 const statusCfg = STATUS_CONFIG[ticket.status] ?? STATUS_CONFIG.open;
                 const priorityCfg = PRIORITY_CONFIG[ticket.priority] ?? PRIORITY_CONFIG.medium;
                 const StatusIcon = statusCfg.icon;
+                const slaBadge = ticket.status !== "closed" && ticket.status !== "resolved" ? getSLABadge(ticket.created_at) : null;
+
                 return (
-                  <div key={ticket.id} className="bg-surface border border-border rounded-xl p-4 hover:border-primary/20 transition-colors">
+                  <div
+                    key={ticket.id}
+                    className="bg-surface border border-border rounded-xl p-4 hover:border-primary/20 transition-colors cursor-pointer"
+                    onClick={() => setSelectedTicket(ticket)}
+                  >
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <StatusIcon className={cn("w-4 h-4 shrink-0", statusCfg.color)} />
                           <h3 className="font-medium text-foreground text-sm truncate">{ticket.title}</h3>
                           <span className={cn("inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border", statusCfg.bg)}>
@@ -335,34 +329,49 @@ export function SupportPage() {
                           <span className={cn("text-[10px] font-semibold", priorityCfg.color)}>
                             {priorityCfg.label}
                           </span>
+                          {/* SLA badge */}
+                          {slaBadge && (
+                            <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border", slaBadge.bg, slaBadge.color)}>
+                              <Timer className="w-3 h-3" />
+                              {slaBadge.label}
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-foreground-muted line-clamp-2">{ticket.description}</p>
-                        <div className="flex items-center gap-3 mt-2">
+                        <div className="flex items-center gap-3 mt-2 flex-wrap">
                           <span className="text-[10px] text-foreground-muted bg-surface-elevated px-1.5 py-0.5 rounded">{ticket.category}</span>
                           <span className="text-[10px] text-foreground-muted">
                             {new Date(ticket.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                           </span>
+                          {ticket.assigned_to && (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-foreground-muted bg-surface-elevated px-1.5 py-0.5 rounded">
+                              <User className="w-3 h-3" />
+                              {getProfileName(ticket.assigned_to)}
+                            </span>
+                          )}
                           {ticket.resolution_notes && (
                             <span className="text-[10px] text-emerald-400">Résolu : {ticket.resolution_notes}</span>
                           )}
                         </div>
                       </div>
-                      {ticket.status === "open" && (
-                        <button
-                          onClick={() => updateStatusMutation.mutate({ id: ticket.id, status: "in_progress" })}
-                          className="px-2 py-1 text-[10px] font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg hover:bg-amber-500/20 transition-colors whitespace-nowrap"
-                        >
-                          Prendre en charge
-                        </button>
-                      )}
-                      {ticket.status === "in_progress" && (
-                        <button
-                          onClick={() => updateStatusMutation.mutate({ id: ticket.id, status: "resolved", notes: "Résolu" })}
-                          className="px-2 py-1 text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-colors whitespace-nowrap"
-                        >
-                          Marquer résolu
-                        </button>
-                      )}
+                      <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        {ticket.status === "open" && (
+                          <button
+                            onClick={() => updateTicketMutation.mutate({ id: ticket.id, status: "in_progress" })}
+                            className="px-2 py-1 text-[10px] font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg hover:bg-amber-500/20 transition-colors whitespace-nowrap"
+                          >
+                            Prendre en charge
+                          </button>
+                        )}
+                        {ticket.status === "in_progress" && (
+                          <button
+                            onClick={() => updateTicketMutation.mutate({ id: ticket.id, status: "resolved", resolution_notes: "Résolu" })}
+                            className="px-2 py-1 text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-colors whitespace-nowrap"
+                          >
+                            Marquer résolu
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
@@ -445,23 +454,47 @@ export function SupportPage() {
       )}
 
       {/* Create Ticket Modal */}
-      {showCreate && <CreateTicketModal onClose={() => setShowCreate(false)} onSubmit={(data) => createMutation.mutate(data)} isLoading={createMutation.isPending} error={(createMutation.error as Error | null)?.message ?? null} />}
+      {showCreate && (
+        <CreateTicketModal
+          profiles={profiles ?? []}
+          onClose={() => setShowCreate(false)}
+          onSubmit={(data) => createMutation.mutate({ ...data, created_by: user?.id ?? "" })}
+          isLoading={createMutation.isPending}
+          error={(createMutation.error as Error | null)?.message ?? null}
+        />
+      )}
+
+      {/* Ticket Detail SlideOver */}
+      {selectedTicket && (
+        <TicketDetailSlideOver
+          ticket={selectedTicket}
+          profiles={profiles ?? []}
+          userId={user?.id ?? ""}
+          getProfileName={getProfileName}
+          onClose={() => setSelectedTicket(null)}
+          onAssign={(ticketId, userId) => assignMutation.mutate({ id: ticketId, assigned_to: userId })}
+          onStatusChange={(ticketId, status, notes) => updateTicketMutation.mutate({ id: ticketId, status, resolution_notes: notes })}
+          onCloseTicket={(ticketId, notes) => closeMutation.mutate({ id: ticketId, resolution_notes: notes })}
+        />
+      )}
     </div>
   );
 }
 
 // ── Create Ticket Modal ────────────────────────────────────
 
-function CreateTicketModal({ onClose, onSubmit, isLoading, error }: {
+function CreateTicketModal({ onClose, onSubmit, isLoading, error, profiles }: {
   onClose: () => void;
-  onSubmit: (data: { title: string; description: string; category: string; priority: string }) => void;
+  onSubmit: (data: { title: string; description: string; category: string; priority: string; assigned_to?: string }) => void;
   isLoading: boolean;
   error: string | null;
+  profiles: { id: string; full_name: string | null; email: string | null }[];
 }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("general");
   const [priority, setPriority] = useState("medium");
+  const [assignedTo, setAssignedTo] = useState("");
 
   const inputClass = "w-full px-3 py-2.5 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-primary/50 transition-colors";
 
@@ -476,7 +509,21 @@ function CreateTicketModal({ onClose, onSubmit, isLoading, error }: {
               <X className="w-5 h-5 text-foreground-muted" />
             </button>
           </div>
-          <form onSubmit={(e) => { e.preventDefault(); if (title.trim() && description.trim()) onSubmit({ title, description, category, priority }); }} className="p-5 space-y-4">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (title.trim() && description.trim()) {
+                onSubmit({
+                  title,
+                  description,
+                  category,
+                  priority,
+                  ...(assignedTo ? { assigned_to: assignedTo } : {}),
+                });
+              }
+            }}
+            className="p-5 space-y-4"
+          >
             <div>
               <label className="block text-xs text-foreground-muted mb-1.5">Titre *</label>
               <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Borne hors ligne depuis 24h" className={inputClass} />
@@ -502,6 +549,19 @@ function CreateTicketModal({ onClose, onSubmit, isLoading, error }: {
                 </select>
               </div>
             </div>
+            {/* Assignment dropdown */}
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1.5">Assigné à</label>
+              <div className="relative">
+                <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
+                <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className={cn(inputClass, "pl-9")}>
+                  <option value="">Non assigné</option>
+                  {profiles.map((p) => (
+                    <option key={p.id} value={p.id}>{p.full_name || p.email || p.id.slice(0, 8)}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
             {error && <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>}
             <div className="flex gap-3 pt-2">
               <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-xl text-sm text-foreground-muted hover:text-foreground transition-colors">Annuler</button>
@@ -511,6 +571,245 @@ function CreateTicketModal({ onClose, onSubmit, isLoading, error }: {
               </button>
             </div>
           </form>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Ticket Detail SlideOver ────────────────────────────────
+
+function TicketDetailSlideOver({
+  ticket,
+  profiles,
+  userId,
+  getProfileName,
+  onClose,
+  onAssign,
+  onStatusChange,
+  onCloseTicket,
+}: {
+  ticket: Ticket;
+  profiles: { id: string; full_name: string | null; email: string | null }[];
+  userId: string;
+  getProfileName: (id: string | null) => string;
+  onClose: () => void;
+  onAssign: (ticketId: string, userId: string | null) => void;
+  onStatusChange: (ticketId: string, status: string, notes?: string) => void;
+  onCloseTicket: (ticketId: string, notes?: string) => void;
+}) {
+  const [newComment, setNewComment] = useState("");
+  const [assignTo, setAssignTo] = useState(ticket.assigned_to ?? "");
+
+  const { data: comments, isLoading: commentsLoading } = useTicketComments(ticket.id);
+  const addCommentMutation = useAddComment();
+
+  const statusCfg = STATUS_CONFIG[ticket.status] ?? STATUS_CONFIG.open;
+  const priorityCfg = PRIORITY_CONFIG[ticket.priority] ?? PRIORITY_CONFIG.medium;
+  const slaBadge = ticket.status !== "closed" && ticket.status !== "resolved" ? getSLABadge(ticket.created_at) : null;
+  const firstResponse = comments ? getFirstResponseTime(ticket.created_at, comments) : null;
+
+  const handleAddComment = () => {
+    if (!newComment.trim()) return;
+    addCommentMutation.mutate(
+      { ticket_id: ticket.id, user_id: userId, content: newComment.trim() },
+      { onSuccess: () => setNewComment("") }
+    );
+  };
+
+  const handleAssignChange = (value: string) => {
+    setAssignTo(value);
+    onAssign(ticket.id, value || null);
+  };
+
+  const inputClass = "w-full px-3 py-2.5 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-primary/50 transition-colors";
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
+      <div className="fixed inset-y-0 right-0 w-full max-w-xl bg-surface border-l border-border z-50 flex flex-col shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b border-border shrink-0">
+          <div className="flex-1 min-w-0">
+            <h2 className="font-heading font-bold text-lg text-foreground truncate">{ticket.title}</h2>
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              <span className={cn("inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border", statusCfg.bg)}>
+                {statusCfg.label}
+              </span>
+              <span className={cn("text-[10px] font-semibold", priorityCfg.color)}>
+                {priorityCfg.label}
+              </span>
+              {slaBadge && (
+                <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border", slaBadge.bg, slaBadge.color)}>
+                  <Timer className="w-3 h-3" />
+                  {slaBadge.label}
+                </span>
+              )}
+              {firstResponse && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border bg-purple-500/10 border-purple-500/20 text-purple-400">
+                  <MessageSquare className="w-3 h-3" />
+                  1re réponse: {firstResponse}
+                </span>
+              )}
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 hover:bg-surface-elevated rounded-lg transition-colors ml-3 shrink-0">
+            <X className="w-5 h-5 text-foreground-muted" />
+          </button>
+        </div>
+
+        {/* Body — scrollable */}
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+          {/* Description */}
+          <div>
+            <h4 className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Description</h4>
+            <p className="text-sm text-foreground leading-relaxed">{ticket.description}</p>
+          </div>
+
+          {/* Info grid */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-surface-elevated border border-border rounded-xl p-3">
+              <p className="text-[10px] text-foreground-muted uppercase tracking-wider mb-1">Catégorie</p>
+              <p className="text-sm text-foreground">{CATEGORIES.find((c) => c.value === ticket.category)?.label ?? ticket.category}</p>
+            </div>
+            <div className="bg-surface-elevated border border-border rounded-xl p-3">
+              <p className="text-[10px] text-foreground-muted uppercase tracking-wider mb-1">Créé le</p>
+              <p className="text-sm text-foreground">
+                {new Date(ticket.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </p>
+            </div>
+          </div>
+
+          {/* Assignment */}
+          <div>
+            <h4 className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Assigné à</h4>
+            <div className="relative">
+              <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
+              <select
+                value={assignTo}
+                onChange={(e) => handleAssignChange(e.target.value)}
+                className={cn(inputClass, "pl-9")}
+              >
+                <option value="">Non assigné</option>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>{p.full_name || p.email || p.id.slice(0, 8)}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Status actions */}
+          {ticket.status !== "closed" && (
+            <div>
+              <h4 className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Actions</h4>
+              <div className="flex gap-2 flex-wrap">
+                {ticket.status === "open" && (
+                  <button
+                    onClick={() => onStatusChange(ticket.id, "in_progress")}
+                    className="px-3 py-1.5 text-xs font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg hover:bg-amber-500/20 transition-colors"
+                  >
+                    Prendre en charge
+                  </button>
+                )}
+                {ticket.status === "in_progress" && (
+                  <button
+                    onClick={() => onStatusChange(ticket.id, "resolved", "Résolu")}
+                    className="px-3 py-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-colors"
+                  >
+                    Marquer résolu
+                  </button>
+                )}
+                {(ticket.status === "resolved" || ticket.status === "in_progress" || ticket.status === "open") && (
+                  <button
+                    onClick={() => onCloseTicket(ticket.id, "Fermé manuellement")}
+                    className="px-3 py-1.5 text-xs font-medium text-foreground-muted bg-foreground-muted/10 border border-foreground-muted/20 rounded-lg hover:bg-foreground-muted/20 transition-colors"
+                  >
+                    Fermer le ticket
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Resolution notes */}
+          {ticket.resolution_notes && (
+            <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-3">
+              <p className="text-[10px] text-emerald-400 uppercase tracking-wider font-semibold mb-1">Notes de résolution</p>
+              <p className="text-sm text-foreground">{ticket.resolution_notes}</p>
+            </div>
+          )}
+
+          {/* Comments thread */}
+          <div>
+            <h4 className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-3">
+              Commentaires {comments && comments.length > 0 && `(${comments.length})`}
+            </h4>
+
+            {commentsLoading ? (
+              <div className="flex items-center gap-2 text-sm text-foreground-muted py-4">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Chargement...
+              </div>
+            ) : !comments || comments.length === 0 ? (
+              <p className="text-sm text-foreground-muted/60 py-4">Aucun commentaire pour le moment.</p>
+            ) : (
+              <div className="relative pl-6">
+                {/* Timeline vertical line */}
+                <div className="absolute left-[9px] top-2 bottom-2 w-px bg-border" />
+                <div className="space-y-4">
+                  {comments.map((comment) => {
+                    const authorName = comment.profiles?.full_name || comment.profiles?.email || "Utilisateur";
+                    const initial = authorName.charAt(0).toUpperCase();
+
+                    return (
+                      <div key={comment.id} className="relative">
+                        {/* Timeline dot */}
+                        <div className="absolute -left-6 top-1 w-[18px] h-[18px] rounded-full bg-surface border-2 border-primary/40 flex items-center justify-center">
+                          <span className="text-[8px] font-bold text-primary">{initial}</span>
+                        </div>
+                        {/* Comment card */}
+                        <div className="bg-surface-elevated border border-border rounded-xl p-3">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-xs font-semibold text-foreground">{authorName}</span>
+                            <span className="text-[10px] text-foreground-muted">{relativeTime(comment.created_at)}</span>
+                          </div>
+                          <p className="text-sm text-foreground leading-relaxed">{comment.content}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Add comment — pinned at bottom */}
+        <div className="border-t border-border p-4 shrink-0">
+          <div className="flex gap-2">
+            <textarea
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder="Ajouter un commentaire..."
+              rows={2}
+              className={cn(inputClass, "resize-none flex-1")}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  handleAddComment();
+                }
+              }}
+            />
+            <button
+              onClick={handleAddComment}
+              disabled={!newComment.trim() || addCommentMutation.isPending}
+              className="self-end px-4 py-2.5 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-1.5"
+            >
+              {addCommentMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              Ajouter
+            </button>
+          </div>
+          <p className="text-[10px] text-foreground-muted mt-1">Ctrl+Enter pour envoyer</p>
         </div>
       </div>
     </>

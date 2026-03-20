@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { LayoutDashboard, FileText, Radio, UserCheck, Building2 } from "lucide-react";
+import { LayoutDashboard, FileText, Radio, UserCheck, Building2, List, Truck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -19,8 +19,10 @@ interface B2BTab {
 const B2B_TABS: B2BTab[] = [
   { to: "/b2b/overview", label: "Vue d'ensemble", icon: LayoutDashboard }, // all roles
   { to: "/b2b/monthly", label: "Rapport mensuel", icon: FileText, minRole: "manager" },
+  { to: "/b2b/sessions", label: "Sessions", icon: List, minRole: "manager" },
   { to: "/b2b/chargepoints", label: "Par borne", icon: Radio, minRole: "manager" },
   { to: "/b2b/drivers", label: "Par conducteur", icon: UserCheck, minRole: "manager" },
+  { to: "/b2b/fleet", label: "Flotte & Tokens", icon: Truck, minRole: "admin" },
   { to: "/b2b/company", label: "Mon Entreprise", icon: Building2, minRole: "admin" },
 ];
 
@@ -32,7 +34,7 @@ function B2BLayoutInner() {
   const { b2bRole, isEmployee, driverExternalId, tokenUids } = useB2BRole();
   const { selectedClientId, setSelectedClientId } = useB2BFilters();
   const location = useLocation();
-  const isCompanyPage = location.pathname.includes("/b2b/company");
+  const isCompanyPage = location.pathname.includes("/b2b/company") || location.pathname.includes("/b2b/fleet");
 
   // Admin: fetch all clients; B2B user: fetch own
   const { data: allClients } = useB2BClients();
@@ -125,7 +127,7 @@ function B2BLayoutInner() {
       <div className="flex items-center gap-1 border-b border-border overflow-x-auto">
         {B2B_TABS.filter((tab) => {
           if (!tab.minRole) return true;
-          return (ROLE_LEVEL[b2bRole] ?? 3) >= (ROLE_LEVEL[tab.minRole] ?? 1);
+          return (ROLE_LEVEL[b2bRole] ?? 1) >= (ROLE_LEVEL[tab.minRole] ?? 1);
         }).map((tab) => (
           <NavLink
             key={tab.to}

@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -5,65 +6,93 @@ import { ToastProvider } from "@/contexts/ToastContext";
 import { CpoProvider } from "@/contexts/CpoContext";
 import { AppShell } from "@/components/layout/AppShell";
 import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
+
+// ── Lazy helper for named exports ────────────────────────
+const lazyNamed = <T extends Record<string, unknown>>(
+  factory: () => Promise<T>,
+  name: keyof T
+) => lazy(() => factory().then((m) => ({ default: m[name] as React.ComponentType })));
+
+// ── Auth & Public (lightweight, loaded eagerly for fast first paint) ──
 import { LoginPage } from "@/components/auth/LoginPage";
-// ── Home ─────────────────────────────────────────────────
-import { DashboardPage } from "@/components/dashboard/DashboardPage";
-import { MapPage } from "@/components/map/MapPage";
-import { AnalyticsPage } from "@/components/analytics/AnalyticsPage";
-// ── CPO > Assets ─────────────────────────────────────────
-import { StationsPage } from "@/components/stations/StationsPage";
-import { LocationsPage } from "@/components/locations/LocationsPage";
-import { MonitoringPage } from "@/components/monitoring/MonitoringPage";
-import { SmartChargingPage } from "@/components/smart-charging/SmartChargingPage";
-import { EnergyMixPage } from "@/components/energy-mix/EnergyMixPage";
-// ── CPO > Network ────────────────────────────────────────
-import { CpoOverviewPage } from "@/components/cpo-overview/CpoOverviewPage";
-import { CpoNetworksPage } from "@/components/cpo-networks/CpoNetworksPage";
-// CpoContracts fusionné dans CpoNetworksPage (onglet Contrats CPO → détail contrat)
-// ── CPO > Billing (fusionné) ─────────────────────────────
-import { BillingPage } from "@/components/billing/BillingPage";
-import { BillingProfilesPage } from "@/components/billing/BillingProfilesPage";
-import { TariffsPage } from "@/components/tariffs/TariffsPage";
-import { RoamingContractsPage } from "@/components/roaming-contracts/RoamingContractsPage";
-// ── CPO > Roaming ────────────────────────────────────────
-import { OcpiPage } from "@/components/ocpi/OcpiPage";
-// ── eMSP > Network ───────────────────────────────────────
-import { EmspNetworksPage } from "@/components/emsp-networks/EmspNetworksPage";
-// EmspContracts et eMSPs fusionnés dans EmspNetworksPage (onglets Contrats eMSP / eMSPs)
-// ── eMSP > Customers ─────────────────────────────────────
-import { CustomersPage } from "@/components/customers/CustomersPage";
-import { DriversPage } from "@/components/drivers/DriversPage";
-// ── eMSP > Moyens de paiement (fusionné) ─────────────────
-import { PaymentMethodsPage } from "@/components/payment-methods/PaymentMethodsPage";
-// ── Automation ───────────────────────────────────────────
-import { ExceptionsPage } from "@/components/exceptions/ExceptionsPage";
-// ── Admin ────────────────────────────────────────────────
-import { B2BAdminPage } from "@/components/admin/B2BAdminPage";
-import { UsersPage } from "@/components/users/UsersPage";
-import { RolesPage } from "@/components/roles/RolesPage";
-import { AdminConfigPage } from "@/components/admin-config/AdminConfigPage";
-import { ValidateTokenPage } from "@/components/validate-token/ValidateTokenPage";
-import { SupportPage } from "@/components/support/SupportPage";
-import { InterventionsPage } from "@/components/technician/InterventionsPage";
-// ── Portail B2B ──────────────────────────────────────────
-import { B2BLayout } from "@/components/b2b/B2BLayout";
-import { B2BOverviewPage } from "@/components/b2b/B2BOverviewPage";
-import { B2BMonthlyPage } from "@/components/b2b/B2BMonthlyPage";
-import { B2BChargepointsPage } from "@/components/b2b/B2BChargepointsPage";
-import { B2BDriversPage } from "@/components/b2b/B2BDriversPage";
-import { B2BCompanyPage } from "@/components/b2b/B2BCompanyPage";
-// ── Auth & Public ────────────────────────────────────────
 import { B2BLoginPage } from "@/components/auth/B2BLoginPage";
-import { ResetPasswordPage } from "@/components/auth/ResetPasswordPage";
-import { StripeOnboardingCompletePage } from "@/components/stripe/StripeOnboardingCompletePage";
-import { StripeOnboardingRefreshPage } from "@/components/stripe/StripeOnboardingRefreshPage";
-import { B2BLandingPage } from "@/components/commercial/B2BLandingPage";
+
+// ── Home ─────────────────────────────────────────────────
+const DashboardPage = lazyNamed(() => import("@/components/dashboard/DashboardPage"), "DashboardPage");
+const MapPage = lazyNamed(() => import("@/components/map/MapPage"), "MapPage");
+const AnalyticsPage = lazyNamed(() => import("@/components/analytics/AnalyticsPage"), "AnalyticsPage");
+// ── CPO > Assets ─────────────────────────────────────────
+const StationsPage = lazyNamed(() => import("@/components/stations/StationsPage"), "StationsPage");
+const LocationsPage = lazyNamed(() => import("@/components/locations/LocationsPage"), "LocationsPage");
+const MonitoringPage = lazyNamed(() => import("@/components/monitoring/MonitoringPage"), "MonitoringPage");
+const SmartChargingPage = lazyNamed(() => import("@/components/smart-charging/SmartChargingPage"), "SmartChargingPage");
+const EnergyMixPage = lazyNamed(() => import("@/components/energy-mix/EnergyMixPage"), "EnergyMixPage");
+// ── CPO > Network ────────────────────────────────────────
+const CpoOverviewPage = lazyNamed(() => import("@/components/cpo-overview/CpoOverviewPage"), "CpoOverviewPage");
+const CpoNetworksPage = lazyNamed(() => import("@/components/cpo-networks/CpoNetworksPage"), "CpoNetworksPage");
+// ── CPO > Billing (fusionné) ─────────────────────────────
+const BillingPage = lazyNamed(() => import("@/components/billing/BillingPage"), "BillingPage");
+const BillingProfilesPage = lazyNamed(() => import("@/components/billing/BillingProfilesPage"), "BillingProfilesPage");
+const TariffsPage = lazyNamed(() => import("@/components/tariffs/TariffsPage"), "TariffsPage");
+const RoamingContractsPage = lazyNamed(() => import("@/components/roaming-contracts/RoamingContractsPage"), "RoamingContractsPage");
+// ── CPO > Roaming ────────────────────────────────────────
+const OcpiPage = lazyNamed(() => import("@/components/ocpi/OcpiPage"), "OcpiPage");
+// ── eMSP > Network ───────────────────────────────────────
+const EmspNetworksPage = lazyNamed(() => import("@/components/emsp-networks/EmspNetworksPage"), "EmspNetworksPage");
+// ── eMSP > Customers ─────────────────────────────────────
+const CustomersPage = lazyNamed(() => import("@/components/customers/CustomersPage"), "CustomersPage");
+const DriversPage = lazyNamed(() => import("@/components/drivers/DriversPage"), "DriversPage");
+// ── eMSP > Moyens de paiement (fusionné) ─────────────────
+const PaymentMethodsPage = lazyNamed(() => import("@/components/payment-methods/PaymentMethodsPage"), "PaymentMethodsPage");
+// ── Automation ───────────────────────────────────────────
+const ExceptionsPage = lazyNamed(() => import("@/components/exceptions/ExceptionsPage"), "ExceptionsPage");
+// ── Admin ────────────────────────────────────────────────
+const B2BAdminPage = lazyNamed(() => import("@/components/admin/B2BAdminPage"), "B2BAdminPage");
+const UsersPage = lazyNamed(() => import("@/components/users/UsersPage"), "UsersPage");
+const RolesPage = lazyNamed(() => import("@/components/roles/RolesPage"), "RolesPage");
+const AdminConfigPage = lazyNamed(() => import("@/components/admin-config/AdminConfigPage"), "AdminConfigPage");
+const ValidateTokenPage = lazyNamed(() => import("@/components/validate-token/ValidateTokenPage"), "ValidateTokenPage");
+const SupportPage = lazyNamed(() => import("@/components/support/SupportPage"), "SupportPage");
+const InterventionsPage = lazyNamed(() => import("@/components/technician/InterventionsPage"), "InterventionsPage");
+// ── Portail B2B ──────────────────────────────────────────
+const B2BLayout = lazyNamed(() => import("@/components/b2b/B2BLayout"), "B2BLayout");
+const B2BOverviewPage = lazyNamed(() => import("@/components/b2b/B2BOverviewPage"), "B2BOverviewPage");
+const B2BMonthlyPage = lazyNamed(() => import("@/components/b2b/B2BMonthlyPage"), "B2BMonthlyPage");
+const B2BChargepointsPage = lazyNamed(() => import("@/components/b2b/B2BChargepointsPage"), "B2BChargepointsPage");
+const B2BDriversPage = lazyNamed(() => import("@/components/b2b/B2BDriversPage"), "B2BDriversPage");
+const B2BCompanyPage = lazyNamed(() => import("@/components/b2b/B2BCompanyPage"), "B2BCompanyPage");
+const B2BSessionsPage = lazyNamed(() => import("@/components/b2b/B2BSessionsPage"), "B2BSessionsPage");
+const B2BFleetPage = lazyNamed(() => import("@/components/b2b/B2BFleetPage"), "B2BFleetPage");
+// ── Auth & Public (lazy) ─────────────────────────────────
+const ResetPasswordPage = lazyNamed(() => import("@/components/auth/ResetPasswordPage"), "ResetPasswordPage");
+const StripeOnboardingCompletePage = lazyNamed(() => import("@/components/stripe/StripeOnboardingCompletePage"), "StripeOnboardingCompletePage");
+const StripeOnboardingRefreshPage = lazyNamed(() => import("@/components/stripe/StripeOnboardingRefreshPage"), "StripeOnboardingRefreshPage");
+const B2BLandingPage = lazyNamed(() => import("@/components/commercial/B2BLandingPage"), "B2BLandingPage");
+const DirectPayPage = lazy(() => import("@/components/direct-pay/DirectPayPage"));
+// ── Nouvelles pages (améliorations GFX/ROAD) ──────────
+const AccessGroupsPage = lazy(() => import("@/components/access-groups/AccessGroupsPage"));
+const AdvancedAnalyticsPage = lazy(() => import("@/components/analytics/AdvancedAnalyticsPage"));
+
+// ── Loading fallback ─────────────────────────────────────
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center min-h-[60vh]">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+        <p className="text-xs text-foreground-muted animate-pulse">Chargement…</p>
+      </div>
+    </div>
+  );
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 2,
       refetchOnWindowFocus: true,
+      staleTime: 2 * 60 * 1000,     // 2 min — évite refetch inutile à chaque navigation
+      gcTime: 10 * 60 * 1000,       // 10 min — garde le cache en mémoire plus longtemps
+      refetchOnMount: "always",      // refetch si stale au mount (comportement normal)
     },
   },
 });
@@ -75,6 +104,7 @@ export default function App() {
         <ToastProvider>
         <CpoProvider>
         <BrowserRouter>
+          <Suspense fallback={<PageLoader />}>
           <Routes>
             {/* Public routes */}
             <Route path="/login" element={<LoginPage />} />
@@ -83,6 +113,7 @@ export default function App() {
             <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/stripe/onboarding/complete" element={<StripeOnboardingCompletePage />} />
             <Route path="/stripe/onboarding/refresh" element={<StripeOnboardingRefreshPage />} />
+            <Route path="/charge/:identity/:evseUid?" element={<DirectPayPage />} />
 
             {/* Protected routes */}
             <Route element={<ProtectedRoute />}>
@@ -93,6 +124,7 @@ export default function App() {
                 <Route path="/dashboard" element={<DashboardPage />} />
                 <Route path="/map" element={<MapPage />} />
                 <Route path="/analytics" element={<AnalyticsPage />} />
+                <Route path="/advanced-analytics" element={<AdvancedAnalyticsPage />} />
 
                 {/* ── CPO > Overview ── */}
                 <Route path="/cpo-overview" element={<CpoOverviewPage />} />
@@ -129,6 +161,9 @@ export default function App() {
                 {/* ── eMSP > Moyens de paiement ── */}
                 <Route path="/payment-methods" element={<PaymentMethodsPage />} />
 
+                {/* ── eMSP > Groupes d'accès ── */}
+                <Route path="/access-groups" element={<AccessGroupsPage />} />
+
                 {/* ── Automation ── */}
                 <Route path="/exceptions" element={<ExceptionsPage />} />
 
@@ -160,13 +195,19 @@ export default function App() {
                   <Route index element={<B2BOverviewPage />} />
                   <Route path="overview" element={<B2BOverviewPage />} />
                   <Route path="monthly" element={<B2BMonthlyPage />} />
+                  <Route path="sessions" element={<B2BSessionsPage />} />
                   <Route path="chargepoints" element={<B2BChargepointsPage />} />
                   <Route path="drivers" element={<B2BDriversPage />} />
+                  <Route path="fleet" element={<B2BFleetPage />} />
                   <Route path="company" element={<B2BCompanyPage />} />
                 </Route>
               </Route>
             </Route>
+
+            {/* Catch-all: redirect unknown routes to dashboard */}
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
+          </Suspense>
         </BrowserRouter>
         </CpoProvider>
         </ToastProvider>
