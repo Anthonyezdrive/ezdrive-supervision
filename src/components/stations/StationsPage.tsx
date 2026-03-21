@@ -57,6 +57,7 @@ export function StationsPage() {
       if (filters.cpo && s.cpo_code !== filters.cpo) return false;
       if (filters.territory && s.territory_code !== filters.territory) return false;
       if (filters.status && s.ocpp_status !== filters.status) return false;
+      if (filters.source && s.source !== filters.source) return false;
       // Power filter
       if (powerFilter !== "all") {
         const pw = s.max_power_kw ?? 0;

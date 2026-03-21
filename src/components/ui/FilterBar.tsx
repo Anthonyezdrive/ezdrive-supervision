@@ -75,6 +75,20 @@ export function FilterBar({
         ))}
       </select>
 
+      {/* Source filter */}
+      <select
+        className={selectClass}
+        value={filters.source ?? "all"}
+        onChange={(e) =>
+          onFiltersChange({ ...filters, source: e.target.value === "all" ? undefined : e.target.value })
+        }
+      >
+        <option value="all">Toutes les sources</option>
+        <option value="road">Road.io</option>
+        <option value="gfx">GreenFlux</option>
+        <option value="ocpp">OCPP natif</option>
+      </select>
+
       {/* Status filter */}
       {showStatusFilter && (
         <select
