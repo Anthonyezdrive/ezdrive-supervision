@@ -59,6 +59,12 @@ export interface Station {
   deploy_state: DeployState;
   heartbeat_interval: number | null;
   iso_15118_enabled: boolean;
+  // Road enriched fields (migration 058)
+  setup_status?: string | null;
+  access_group_ids?: string[] | null;
+  roaming_credential_ids?: string[] | null;
+  ocpp_charging_station_id?: string | null;
+  numeric_identity?: number | null;
 }
 
 export interface StationStatusEntry {
