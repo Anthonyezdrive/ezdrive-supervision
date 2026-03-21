@@ -40,6 +40,8 @@ import {
   FileText,
   NotebookPen,
   AlertCircle,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { cn, formatRelativeTime } from "@/lib/utils";
@@ -331,7 +333,15 @@ export function StationDetailView({ station, onBack, onEdit, onDeleted }: Props)
               <Radio className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <h1 className="font-heading text-xl font-bold text-foreground">{station.gfx_id ?? station.name}</h1>
+              <div className="flex items-center gap-2">
+                <h1 className="font-heading text-xl font-bold text-foreground">{station.gfx_id ?? station.name}</h1>
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                  station.source === 'road' ? 'bg-blue-500/15 text-blue-400 border border-blue-500/25' :
+                  'bg-purple-500/15 text-purple-400 border border-purple-500/25'
+                }`}>
+                  {station.source === 'road' ? 'Road.io' : 'GreenFlux'}
+                </span>
+              </div>
               <p className="text-sm text-foreground-muted">{subtitle}</p>
             </div>
           </div>
@@ -1818,6 +1828,57 @@ function DetailsTab({
             <DetailField label="Remarques" value="\u2014" />
             <DetailField label="Informations d'entretien" value="\u2014" />
           </div>
+
+          {/* Road.io enriched fields */}
+          {station.source === "road" && (
+            <div className="px-6 pb-5 border-t border-border pt-4">
+              <h4 className="text-sm font-semibold text-foreground mb-3">Informations Road.io</h4>
+              <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm">
+                {station.ocpp_charging_station_id && (
+                  <div>
+                    <span className="text-foreground-muted text-xs">OCPP Identity</span>
+                    <p className="font-mono text-foreground">{station.ocpp_charging_station_id}</p>
+                  </div>
+                )}
+                {station.numeric_identity && (
+                  <div>
+                    <span className="text-foreground-muted text-xs">ID numérique</span>
+                    <p className="text-foreground">{station.numeric_identity}</p>
+                  </div>
+                )}
+                {station.setup_status && (
+                  <div>
+                    <span className="text-foreground-muted text-xs">Setup</span>
+                    <p><span className={`inline-flex px-2 py-0.5 rounded text-xs ${
+                      station.setup_status === "COMPLETED" ? "bg-emerald-500/15 text-emerald-400" : "bg-yellow-500/15 text-yellow-400"
+                    }`}>{station.setup_status}</span></p>
+                  </div>
+                )}
+                {station.charger_type && (
+                  <div>
+                    <span className="text-foreground-muted text-xs">Type</span>
+                    <p><span className={`inline-flex px-2 py-0.5 rounded text-xs ${
+                      station.charger_type === "Public" ? "bg-blue-500/15 text-blue-400" : "bg-gray-500/15 text-gray-400"
+                    }`}>{station.charger_type}</span></p>
+                  </div>
+                )}
+                <div>
+                  <span className="text-foreground-muted text-xs">Connectivité</span>
+                  {station.connectivity_status === "Online" ? (
+                    <p className="flex items-center gap-1 text-emerald-400"><Wifi className="h-3 w-3" /> Online</p>
+                  ) : (
+                    <p className="flex items-center gap-1 text-red-400"><WifiOff className="h-3 w-3" /> Hors ligne</p>
+                  )}
+                </div>
+                {station.roaming_credential_ids && Array.isArray(station.roaming_credential_ids) && station.roaming_credential_ids.length > 0 && (
+                  <div>
+                    <span className="text-foreground-muted text-xs">Roaming actif</span>
+                    <p className="text-foreground">{station.roaming_credential_ids.length} connexion(s)</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Footer timestamps */}
           <div className="px-6 py-3 border-t border-border flex items-center justify-between text-xs text-foreground-muted">
