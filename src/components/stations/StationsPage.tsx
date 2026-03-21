@@ -51,31 +51,6 @@ export function StationsPage() {
     setShowCreateModal(false);
   }, [queryClient]);
 
-  function handleExport() {
-    const rows = (filtered ?? []).map((s) => ({
-      "ID GFX": s.gfx_id,
-      Nom: s.name,
-      Adresse: s.address ?? "",
-      Ville: s.city ?? "",
-      Territoire: s.territory_name ?? "",
-      CPO: s.cpo_name ?? "",
-      Statut: s.ocpp_status,
-      Connexion: s.connectivity_status ?? "",
-      "En ligne": s.is_online ? "Oui" : "Non",
-      "Puissance (kW)": s.max_power_kw ?? "",
-      Fabricant: s.charge_point_vendor ?? "",
-      Modele: s.charge_point_model ?? "",
-      Firmware: s.firmware_version ?? "",
-      Protocole: s.protocol_version ?? "",
-      "Type borne": s.charger_type ?? "",
-      Vitesse: s.charging_speed ?? "",
-      "Remote Start/Stop": s.remote_manageable ? "Oui" : "Non",
-      "Heures dans statut": s.hours_in_status != null ? Math.round(s.hours_in_status) : "",
-      "Derniere sync": s.last_synced_at ?? "",
-    }));
-    downloadCSV(rows, `ezdrive-bornes-${todayISO()}.csv`);
-  }
-
   const filtered = useMemo(() => {
     if (!stations) return [];
     return stations.filter((s) => {
@@ -102,6 +77,31 @@ export function StationsPage() {
       return true;
     });
   }, [stations, filters, powerFilter]);
+
+  function handleExport() {
+    const rows = (filtered ?? []).map((s) => ({
+      "ID GFX": s.gfx_id,
+      Nom: s.name,
+      Adresse: s.address ?? "",
+      Ville: s.city ?? "",
+      Territoire: s.territory_name ?? "",
+      CPO: s.cpo_name ?? "",
+      Statut: s.ocpp_status,
+      Connexion: s.connectivity_status ?? "",
+      "En ligne": s.is_online ? "Oui" : "Non",
+      "Puissance (kW)": s.max_power_kw ?? "",
+      Fabricant: s.charge_point_vendor ?? "",
+      Modele: s.charge_point_model ?? "",
+      Firmware: s.firmware_version ?? "",
+      Protocole: s.protocol_version ?? "",
+      "Type borne": s.charger_type ?? "",
+      Vitesse: s.charging_speed ?? "",
+      "Remote Start/Stop": s.remote_manageable ? "Oui" : "Non",
+      "Heures dans statut": s.hours_in_status != null ? Math.round(s.hours_in_status) : "",
+      "Derniere sync": s.last_synced_at ?? "",
+    }));
+    downloadCSV(rows, `ezdrive-bornes-${todayISO()}.csv`);
+  }
 
   // Level 2: Station detail (full page, GreenFlux-style)
   if (selectedStation) {
