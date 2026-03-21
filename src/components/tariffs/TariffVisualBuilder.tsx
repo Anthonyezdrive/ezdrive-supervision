@@ -54,13 +54,25 @@ interface TariffValue {
   elements: TariffElement[];
 }
 
+interface OcpiTariff {
+  elements?: Array<{
+    price_components?: Array<{
+      type?: string;
+      price?: number;
+      step_size?: number;
+      vat?: number;
+    }>;
+    restrictions?: Record<string, unknown>;
+  }>;
+}
+
 export interface TariffVisualBuilderProps {
-  value: any;
-  onChange: (value: any) => void;
+  value: OcpiTariff | OcpiTariff[] | null;
+  onChange: (value: OcpiTariff) => void;
   showJsonToggle?: boolean;
 }
 
-function normalizeValue(value: any): TariffValue {
+function normalizeValue(value: OcpiTariff | OcpiTariff[] | null): TariffValue {
   if (!value) return { elements: [] };
   // If it's already the right shape
   if (value.elements && Array.isArray(value.elements)) return value as TariffValue;
@@ -93,9 +105,10 @@ export function TariffVisualBuilder({
   const elements = tariff.elements;
 
   // Sync JSON text when value changes externally
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (jsonMode) {
-      setJsonText(JSON.stringify(tariff, null, 2));
+      setJsonText(JSON.stringify(normalizeValue(value), null, 2));
     }
   }, [value, jsonMode]);
 
@@ -136,7 +149,7 @@ export function TariffVisualBuilder({
     elementIndex: number,
     compIndex: number,
     field: keyof PriceComponent,
-    val: any
+    val: string | number
   ) {
     const newElements = [...elements];
     const el = { ...newElements[elementIndex] };
@@ -158,7 +171,7 @@ export function TariffVisualBuilder({
   function updateRestriction(
     elementIndex: number,
     field: keyof Restrictions,
-    val: any
+    val: string[] | string | undefined
   ) {
     const newElements = [...elements];
     const el = { ...newElements[elementIndex] };
@@ -192,8 +205,8 @@ export function TariffVisualBuilder({
       const parsed = JSON.parse(text);
       const normalized = normalizeValue(parsed);
       onChange(normalized);
-    } catch (e: any) {
-      setJsonError("JSON invalide : " + e.message);
+    } catch (e: unknown) {
+      setJsonError("JSON invalide : " + (e instanceof Error ? e.message : String(e)));
     }
   }
 

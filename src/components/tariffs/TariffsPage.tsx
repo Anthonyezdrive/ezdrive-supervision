@@ -187,7 +187,7 @@ export function TariffsPage() {
   // ── Duplicate tariff mutation ──
   const duplicateMutation = useMutation({
     mutationFn: async (tariff: OcpiTariff) => {
-      const { id, created_at, ...rest } = tariff;
+      const { id: _id, created_at: _created_at, ...rest } = tariff;
       const newTariffId = tariff.tariff_id + "-COPY-" + Date.now().toString(36).slice(-4).toUpperCase();
       const { error } = await supabase.from("ocpi_tariffs").insert({ ...rest, tariff_id: newTariffId });
       if (error) throw error;
@@ -636,7 +636,7 @@ function StationTariffsTable({
                     <div className="flex flex-wrap gap-1">
                       {components.map((c, i) => (
                         <span
-                          key={i}
+                          key={`${c.type}-${c.price}`}
                           className={cn(
                             "px-2 py-0.5 rounded text-[10px] font-medium",
                             c.type === "ENERGY" ? "bg-primary/10 text-primary" :
@@ -791,7 +791,7 @@ function OcpiTariffsTable({
                     <div className="flex flex-wrap gap-1">
                       {components.map((c, i) => (
                         <span
-                          key={i}
+                          key={`${c.type}-${c.price}`}
                           className={cn(
                             "px-2 py-0.5 rounded text-[10px] font-medium",
                             c.type === "ENERGY" ? "bg-primary/10 text-primary" :

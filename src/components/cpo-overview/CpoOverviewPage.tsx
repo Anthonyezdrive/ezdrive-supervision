@@ -166,7 +166,8 @@ export function CpoOverviewPage() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["interventions"] });
+      queryClient.invalidateQueries({ queryKey: ["interventions-list"] });
+      queryClient.invalidateQueries({ queryKey: ["intervention-detail"] });
       setInterventionStation(null);
       setInterventionForm({ title: "", description: "", category: "panne", priority: "medium" });
     },
@@ -184,6 +185,18 @@ export function CpoOverviewPage() {
       localStorage.removeItem(key);
     } else {
       localStorage.setItem(key, new Date().toISOString());
+      // Clean up old acknowledgments (keep last 30 days)
+      const ACK_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+      try {
+        const ackKeys = Object.keys(localStorage).filter(k => k.startsWith("ack-"));
+        const now = Date.now();
+        ackKeys.forEach(k => {
+          const val = localStorage.getItem(k);
+          if (val && now - new Date(val).getTime() > ACK_TTL_MS) {
+            localStorage.removeItem(k);
+          }
+        });
+      } catch { /* ignore */ }
     }
     forceAckRefresh();
   }, [forceAckRefresh]);

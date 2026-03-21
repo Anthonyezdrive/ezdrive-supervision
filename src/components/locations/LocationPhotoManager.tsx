@@ -3,7 +3,7 @@
 // Wraps PhotoUpload with OCPI category support per photo
 // ============================================================
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import {
   Image,
   Upload,
@@ -75,6 +75,10 @@ export function LocationPhotoManager({
   const [hoveredPhoto, setHoveredPhoto] = useState<string | null>(null);
   const [openCategoryFor, setOpenCategoryFor] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Ref to track current photos and avoid stale closure on concurrent uploads
+  const photosRef = useRef(photos);
+  useEffect(() => { photosRef.current = photos; }, [photos]);
 
   const folder = locationId;
 
@@ -199,7 +203,7 @@ export function LocationPhotoManager({
     }
 
     if (newPhotos.length > 0) {
-      updatePhotos([...photos, ...newPhotos]);
+      updatePhotos([...photosRef.current, ...newPhotos]);
     }
   };
 

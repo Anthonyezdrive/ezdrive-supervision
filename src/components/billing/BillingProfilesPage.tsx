@@ -149,7 +149,7 @@ function ProfilesTab() {
   const [editProfile, setEditProfile] = useState<BillingProfile | null>(null);
   const [showForm, setShowForm] = useState(false);
 
-  const { data: profiles, isLoading } = useQuery({
+  const { data: profiles, isLoading, isError, refetch } = useQuery({
     queryKey: ["billing-profiles"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -245,6 +245,16 @@ function ProfilesTab() {
         </button>
       </div>
 
+      {/* Error state */}
+      {isError && (
+        <div className="bg-danger/10 border border-danger/30 rounded-2xl p-4 flex items-center justify-between">
+          <p className="text-danger text-sm">Erreur de chargement des donnees</p>
+          <button onClick={() => refetch()} className="text-sm text-danger hover:underline" type="button">
+            Reessayer
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       {isLoading ? (
         <div className="flex items-center justify-center py-16">
@@ -322,6 +332,7 @@ function ProfilesTab() {
       {/* Slide-over form */}
       {showForm && (
         <ProfileForm
+          key={editProfile?.id ?? "new"}
           profile={editProfile}
           onClose={() => {
             setShowForm(false);

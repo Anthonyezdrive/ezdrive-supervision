@@ -82,6 +82,7 @@ export function useRegisterPartner() {
       const { data, error } = await supabase
         .from("ocpi_credentials")
         .insert({
+          name: params.name,
           role: params.role,
           country_code: params.country_code,
           party_id: params.party_id,
@@ -89,7 +90,7 @@ export function useRegisterPartner() {
           token_a: params.token_a,
           token_b: params.token_b,
           status: "PENDING",
-          platform: "PROD",
+          platform: import.meta.env.PROD ? "PROD" : "TEST",
           cpo_id: params.cpo_id ?? null,
           gireve_country_code: params.country_code,
           gireve_party_id: params.party_id,

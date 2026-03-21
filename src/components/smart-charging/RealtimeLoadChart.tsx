@@ -46,7 +46,7 @@ function getGaugeLabel(ratio: number) {
 // ══════════════════════════════════════════════════════════════
 
 export function RealtimeLoadChart({ groupId }: { groupId: string }) {
-  const { capacityKw, currentLoadKw, evses, history30min, isLoading } =
+  const { capacityKw, currentLoadKw, evses, history30min, hasData, isLoading } =
     useSmartChargingRealtime(groupId);
 
   const ratio = capacityKw > 0 ? currentLoadKw / capacityKw : 0;
@@ -193,59 +193,67 @@ export function RealtimeLoadChart({ groupId }: { groupId: string }) {
           <h3 className="text-sm font-semibold text-foreground mb-2">
             Dernières 30 minutes
           </h3>
-          <div className="h-32">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={history30min} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
-                <defs>
-                  <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#9ACC0E" stopOpacity={0.3} />
-                    <stop offset="100%" stopColor="#9ACC0E" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis
-                  dataKey="time"
-                  tick={{ fontSize: 10, fill: "#8B8FA3" }}
-                  axisLine={false}
-                  tickLine={false}
-                  interval="preserveStartEnd"
-                />
-                <YAxis
-                  tick={{ fontSize: 10, fill: "#8B8FA3" }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={35}
-                  domain={[0, Math.max(capacityKw * 1.1, 1)]}
-                />
-                <Tooltip
-                  contentStyle={TOOLTIP_STYLE}
-                  formatter={(value: number) => [`${value} kW`, "Charge"]}
-                  labelFormatter={(label: string) => `${label}`}
-                />
-                {/* Capacity reference line */}
-                <ReferenceLine
-                  y={capacityKw}
-                  stroke="#EF4444"
-                  strokeDasharray="6 3"
-                  strokeWidth={1.5}
-                  label={{
-                    value: `${capacityKw} kW max`,
-                    position: "right",
-                    fill: "#EF4444",
-                    fontSize: 10,
-                  }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="loadKw"
-                  stroke="#9ACC0E"
-                  strokeWidth={2}
-                  fill="url(#sparkGrad)"
-                  dot={false}
-                  animationDuration={400}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+          {!hasData ? (
+            <div className="h-32 flex items-center justify-center">
+              <p className="text-sm text-foreground-muted italic">
+                Données insuffisantes
+              </p>
+            </div>
+          ) : (
+            <div className="h-32">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={history30min} margin={{ top: 5, right: 5, bottom: 0, left: 0 }}>
+                  <defs>
+                    <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#9ACC0E" stopOpacity={0.3} />
+                      <stop offset="100%" stopColor="#9ACC0E" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis
+                    dataKey="time"
+                    tick={{ fontSize: 10, fill: "#8B8FA3" }}
+                    axisLine={false}
+                    tickLine={false}
+                    interval="preserveStartEnd"
+                  />
+                  <YAxis
+                    tick={{ fontSize: 10, fill: "#8B8FA3" }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={35}
+                    domain={[0, Math.max(capacityKw * 1.1, 1)]}
+                  />
+                  <Tooltip
+                    contentStyle={TOOLTIP_STYLE}
+                    formatter={(value: number) => [`${value} kW`, "Charge"]}
+                    labelFormatter={(label: string) => `${label}`}
+                  />
+                  {/* Capacity reference line */}
+                  <ReferenceLine
+                    y={capacityKw}
+                    stroke="#EF4444"
+                    strokeDasharray="6 3"
+                    strokeWidth={1.5}
+                    label={{
+                      value: `${capacityKw} kW max`,
+                      position: "right",
+                      fill: "#EF4444",
+                      fontSize: 10,
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="loadKw"
+                    stroke="#9ACC0E"
+                    strokeWidth={2}
+                    fill="url(#sparkGrad)"
+                    dot={false}
+                    animationDuration={400}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
       </div>
     </div>

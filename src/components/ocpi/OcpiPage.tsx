@@ -210,7 +210,7 @@ export function OcpiPage() {
   }, [credentials]);
 
   // ── CPO parties for "Parties relayées" tab ──
-  const { data: cpoParties, isError: _isCpoPartiesError } = useQuery({
+  const { data: cpoParties } = useQuery({
     queryKey: ["ocpi-cpo-parties"],
     queryFn: async () => {
       const { data, error } = await supabase.from("cpos").select("id, name, external_id, country_code, gfx_id").order("name");
@@ -228,6 +228,10 @@ export function OcpiPage() {
         method: "POST",
         headers: { Authorization: `Bearer ${session?.access_token}`, "Content-Type": "application/json" },
       });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `HTTP ${res.status}`);
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -244,6 +248,10 @@ export function OcpiPage() {
         method: "POST",
         headers: { Authorization: `Bearer ${session?.access_token}`, "Content-Type": "application/json" },
       });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || `HTTP ${res.status}`);
+      }
       return res.json();
     },
     onSuccess: () => {

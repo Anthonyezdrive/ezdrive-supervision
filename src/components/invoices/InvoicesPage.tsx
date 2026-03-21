@@ -35,7 +35,7 @@ import { cn } from "@/lib/utils";
 import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { apiDownload, apiPost } from "@/lib/api";
 import { todayISO } from "@/lib/export";
-// ErrorState not needed — query never throws (returns [] on error)
+// Error state handled inline with isError + refetch
 
 // Lazy-loaded Sprint 3 billing components
 const CreditNoteModal = lazy(() =>
@@ -147,6 +147,14 @@ const PAGE_SIZE = 20;
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function csvEscape(value: string | number | null | undefined): string {
+  const str = String(value ?? "");
+  if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
 
 function formatEuros(cents: number): string {
   return (cents / 100).toLocaleString("fr-FR", {
@@ -451,14 +459,14 @@ export function InvoicesPage() {
     const header = "Date,Numero,Client,Montant HT,TVA,Montant TTC,Compte,Journal\n";
     const rows = invoices.map((inv) =>
       [
-        inv.issued_at ?? inv.created_at,
-        inv.invoice_number,
-        [inv.all_consumers?.first_name, inv.all_consumers?.last_name].filter(Boolean).join(" ") || "",
-        (inv.subtotal_cents / 100).toFixed(2),
-        (inv.vat_cents / 100).toFixed(2),
-        (inv.total_cents / 100).toFixed(2),
-        "706100",
-        "VE",
+        csvEscape(inv.issued_at ?? inv.created_at),
+        csvEscape(inv.invoice_number),
+        csvEscape([inv.all_consumers?.first_name, inv.all_consumers?.last_name].filter(Boolean).join(" ") || ""),
+        csvEscape((inv.subtotal_cents / 100).toFixed(2)),
+        csvEscape((inv.vat_cents / 100).toFixed(2)),
+        csvEscape((inv.total_cents / 100).toFixed(2)),
+        csvEscape("706100"),
+        csvEscape("VE"),
       ].join(",")
     );
     const csv = header + rows.join("\n");
@@ -603,16 +611,16 @@ export function InvoicesPage() {
     const header = "N° Facture,Client,Email,Type,Période,HT,TVA,TTC,Statut,Date\n";
     const rows = invoices.map((inv) =>
       [
-        inv.invoice_number,
-        [inv.all_consumers?.first_name, inv.all_consumers?.last_name].filter(Boolean).join(" ") || "",
-        inv.all_consumers?.email ?? "",
-        inv.type,
-        `${inv.period_start} - ${inv.period_end}`,
-        (inv.subtotal_cents / 100).toFixed(2),
-        (inv.vat_cents / 100).toFixed(2),
-        (inv.total_cents / 100).toFixed(2),
-        inv.status,
-        inv.issued_at ?? inv.created_at,
+        csvEscape(inv.invoice_number),
+        csvEscape([inv.all_consumers?.first_name, inv.all_consumers?.last_name].filter(Boolean).join(" ") || ""),
+        csvEscape(inv.all_consumers?.email ?? ""),
+        csvEscape(inv.type),
+        csvEscape(`${inv.period_start} - ${inv.period_end}`),
+        csvEscape((inv.subtotal_cents / 100).toFixed(2)),
+        csvEscape((inv.vat_cents / 100).toFixed(2)),
+        csvEscape((inv.total_cents / 100).toFixed(2)),
+        csvEscape(inv.status),
+        csvEscape(inv.issued_at ?? inv.created_at),
       ].join(",")
     );
     const csv = header + rows.join("\n");
@@ -647,12 +655,26 @@ export function InvoicesPage() {
 
   // --- Render ---------------------------------------------------------
 
-  // isError should never happen now (query catches all errors), but just in case:
-  void isError;
-  void refetch;
-
   return (
     <div className="space-y-6">
+      {/* ── Error banner ──────────────────────────────────────────── */}
+      {isError && (
+        <div className="bg-danger/10 border border-danger/30 rounded-2xl p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-danger" />
+            <span className="text-sm font-medium text-danger">
+              Erreur de chargement des factures
+            </span>
+          </div>
+          <button
+            onClick={() => refetch()}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl bg-danger/10 text-danger hover:bg-danger/20 transition-colors"
+          >
+            <RefreshCcw className="w-4 h-4" />
+            Reessayer
+          </button>
+        </div>
+      )}
       {/* ── Header ─────────────────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>

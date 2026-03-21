@@ -62,6 +62,9 @@ export function useReimbursementConfig(clientId: string | null) {
 export function useReimbursementRuns(clientId?: string) {
   return useQuery({
     queryKey: ["reimbursement-runs", clientId],
+    // Only fetch when clientId is provided to avoid loading ALL runs during
+    // initial render when clientId may still be undefined (e.g. loading state).
+    enabled: clientId !== undefined,
     queryFn: async () => {
       let query = supabase
         .from("reimbursement_runs")

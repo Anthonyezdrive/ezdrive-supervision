@@ -4,7 +4,7 @@
 // progress feedback. Designed for the dark theme.
 // ============================================================
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Camera, Upload, X, Loader2, Trash2, ImageIcon } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -40,6 +40,10 @@ export function PhotoUpload({
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [hoveredPhoto, setHoveredPhoto] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Ref to track current photos and avoid stale closure on concurrent uploads
+  const photosRef = useRef(photos);
+  useEffect(() => { photosRef.current = photos; }, [photos]);
 
   // ---- helpers ----
 
@@ -158,7 +162,7 @@ export function PhotoUpload({
     }
 
     if (newUrls.length > 0) {
-      updatePhotos([...photos, ...newUrls]);
+      updatePhotos([...photosRef.current, ...newUrls]);
     }
   };
 

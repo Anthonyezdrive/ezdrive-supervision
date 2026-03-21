@@ -40,6 +40,7 @@ export function OcpiEndpointTest({ subscription }: Props) {
   const [selectedModule, setSelectedModule] = useState<string>("locations");
   const [results, setResults] = useState<Record<string, EndpointTestResult>>({});
   const [testingModule, setTestingModule] = useState<string | null>(null);
+  const [testingAll, setTestingAll] = useState(false);
 
   const testMutation = useTestEndpoint();
 
@@ -77,8 +78,13 @@ export function OcpiEndpointTest({ subscription }: Props) {
   };
 
   const handleTestAll = async () => {
-    for (const mod of MODULES) {
-      await handleTest(mod.key);
+    setTestingAll(true);
+    try {
+      for (const mod of MODULES) {
+        await handleTest(mod.key);
+      }
+    } finally {
+      setTestingAll(false);
     }
   };
 
@@ -168,7 +174,7 @@ export function OcpiEndpointTest({ subscription }: Props) {
                   e.stopPropagation();
                   handleTest(mod.key);
                 }}
-                disabled={!subscription.token_b || !baseUrl || isTesting}
+                disabled={!subscription.token_b || !baseUrl || isTesting || testingAll}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-surface-elevated border border-border rounded-lg text-xs font-medium hover:bg-surface transition-colors disabled:opacity-50 shrink-0"
               >
                 {isTesting ? (

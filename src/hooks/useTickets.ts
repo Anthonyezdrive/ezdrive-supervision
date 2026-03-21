@@ -14,12 +14,13 @@ export interface Ticket {
   description: string;
   category: string;
   priority: string;
-  status: string;
+  status: "open" | "in_progress" | "closed" | "archived" | string;
   station_id: string | null;
   created_by: string;
   assigned_to: string | null;
   resolved_at: string | null;
   resolution_notes: string | null;
+  deleted_at?: string;
   created_at: string;
   updated_at: string;
 }

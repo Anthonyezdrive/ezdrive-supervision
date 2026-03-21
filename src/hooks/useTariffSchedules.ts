@@ -64,7 +64,7 @@ export function useCreateTariffSchedule() {
       if (error) throw error;
       return data;
     },
-    onSuccess: (_, vars) => qc.invalidateQueries({ queryKey: ["tariff-schedules", vars.tariff_id] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["tariff-schedules"] }),
   });
 }
 

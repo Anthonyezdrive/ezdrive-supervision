@@ -305,6 +305,13 @@ export function CustomersPage() {
       let from = 0;
       let hasMore = true;
 
+      // Resolve CPO name once before the loop to avoid N+1 queries
+      let cpoName: string | null = null;
+      if (selectedCpoId) {
+        const { data: cpo } = await supabase.from("cpos").select("name").eq("id", selectedCpoId).single();
+        cpoName = cpo?.name ?? null;
+      }
+
       while (hasMore) {
         let query = supabase
           .from("all_consumers")
@@ -312,13 +319,9 @@ export function CustomersPage() {
           .order("total_sessions", { ascending: false })
           .range(from, from + PAGE - 1);
 
-        // Filter by selected CPO name
-        if (selectedCpoId) {
-          // all_consumers uses cpo_name instead of cpo_id — resolve name first
-          const { data: cpo } = await supabase.from("cpos").select("name").eq("id", selectedCpoId).single();
-          if (cpo?.name) {
-            query = query.eq("cpo_name", cpo.name);
-          }
+        // Filter by selected CPO name (resolved once above)
+        if (cpoName) {
+          query = query.eq("cpo_name", cpoName);
         }
 
         const { data, error } = await query;

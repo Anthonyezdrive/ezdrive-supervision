@@ -83,7 +83,8 @@ export function OcpiHandshakeModal({ subscription, onClose, onSuccess }: Props) 
 
     try {
       // Step 1: connecting
-      await new Promise((r) => setTimeout(r, 300)); // UX delay
+      // Brief UX pause for step transition visibility
+      await new Promise((r) => setTimeout(r, 100));
 
       setLogs((prev) =>
         prev.map((l, i) =>

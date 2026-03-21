@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -258,50 +258,26 @@ export function SubscriptionsPage() {
   const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   // Reset to page 0 when filters change
-  useMemo(() => setPage(0), [statusFilter, search]);
+  useEffect(() => { setPage(0); }, [statusFilter, search]);
 
-  // --- Stripe Sync: Create Product + Price in Stripe for an offer ---
+  // Stripe API calls moved server-side for security
   async function syncOfferToStripe(offer: SubscriptionOffer) {
     if (offer.stripe_price_id) return; // Already synced
     setSyncingOfferId(offer.id);
     try {
-      // Create Stripe Product
-      const productRes = await fetch("https://api.stripe.com/v1/products", {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${import.meta.env.VITE_STRIPE_SECRET_KEY}`, "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ name: offer.name, description: offer.description || `Abonnement ${offer.name}`, "metadata[offer_id]": offer.id }),
+      const { data, error } = await supabase.functions.invoke("stripe-sync", {
+        body: {
+          action: "sync-product",
+          offer_id: offer.id,
+          name: offer.name,
+          description: offer.description || `Abonnement ${offer.name}`,
+          price_cents: offer.price_cents,
+          billing_period: offer.billing_period,
+        },
       });
-      // If no VITE_STRIPE_SECRET_KEY, use Supabase RPC instead
-      if (!import.meta.env.VITE_STRIPE_SECRET_KEY) {
-        // Fallback: just mark in DB that it needs manual Stripe sync
-        await supabase.from("subscription_offers").update({ stripe_product_id: "PENDING_SYNC" }).eq("id", offer.id);
-        queryClient.invalidateQueries({ queryKey: ["subscription-offers"] });
-        setSyncingOfferId(null);
-        return;
-      }
-      const product = await productRes.json();
-      if (product.error) throw new Error(product.error.message);
 
-      // Create Stripe Price
-      const interval = offer.billing_period === "yearly" ? "year" : offer.billing_period === "weekly" ? "week" : "month";
-      const priceRes = await fetch("https://api.stripe.com/v1/prices", {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${import.meta.env.VITE_STRIPE_SECRET_KEY}`, "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          product: product.id,
-          "unit_amount": String(offer.price_cents),
-          currency: "eur",
-          "recurring[interval]": interval,
-        }),
-      });
-      const price = await priceRes.json();
-      if (price.error) throw new Error(price.error.message);
-
-      // Save Stripe IDs back to DB
-      await supabase.from("subscription_offers").update({
-        stripe_product_id: product.id,
-        stripe_price_id: price.id,
-      }).eq("id", offer.id);
+      if (error) throw new Error(error.message ?? "Erreur lors de la synchronisation Stripe");
+      if (data?.error) throw new Error(data.error);
 
       queryClient.invalidateQueries({ queryKey: ["subscription-offers"] });
     } catch (err) {
@@ -312,16 +288,16 @@ export function SubscriptionsPage() {
     }
   }
 
-  // --- Cancel subscription ---
+  // Stripe API calls moved server-side for security
   async function cancelSubscription(subId: string, stripeSubId: string | null) {
     setCancellingSubId(subId);
     try {
-      // Cancel in Stripe if exists
-      if (stripeSubId && import.meta.env.VITE_STRIPE_SECRET_KEY) {
-        await fetch(`https://api.stripe.com/v1/subscriptions/${stripeSubId}`, {
-          method: "DELETE",
-          headers: { "Authorization": `Bearer ${import.meta.env.VITE_STRIPE_SECRET_KEY}` },
+      // Cancel in Stripe via edge function if exists
+      if (stripeSubId) {
+        const { error } = await supabase.functions.invoke("stripe-sync", {
+          body: { action: "cancel-subscription", stripe_subscription_id: stripeSubId },
         });
+        if (error) console.error("Stripe cancel error:", error.message);
       }
       // Update in DB
       await supabase.from("user_subscriptions").update({

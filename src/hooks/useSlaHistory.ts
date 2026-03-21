@@ -121,7 +121,7 @@ function bucketDate(dateStr: string, granularity: SlaGranularity): string {
     d.setDate(diff);
     return d.toISOString().slice(0, 10);
   }
-  return dateStr;
+  return new Date(dateStr).toISOString().slice(0, 10);
 }
 
 function generateMockSlaHistory(

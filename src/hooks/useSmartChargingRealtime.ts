@@ -22,7 +22,25 @@ interface SmartChargingRealtimeData {
   currentLoadKw: number;
   evses: EvseRealtimeRow[];
   history30min: HistoryPoint[];
+  hasData: boolean;
   isLoading: boolean;
+}
+
+/** Row shape returned by the joined query on smart_charging_group_evses */
+interface GroupEvseJoinedRow {
+  chargepoint_id: string;
+  ocpp_chargepoints: {
+    id: string;
+    chargepoint_identity: string;
+    is_connected: boolean;
+  } | null;
+}
+
+/** Active session row from ocpp_transactions */
+interface ActiveSessionRow {
+  chargepoint_id: string;
+  meter_value_wh: number | null;
+  current_power_w: number | null;
 }
 
 export function useSmartChargingRealtime(groupId: string): SmartChargingRealtimeData {
@@ -47,12 +65,12 @@ export function useSmartChargingRealtime(groupId: string): SmartChargingRealtime
 
       if (evseError) throw evseError;
 
-      const chargepointIds = (groupEvses ?? [])
-        .map((e: any) => e.ocpp_chargepoints?.id ?? e.chargepoint_id)
+      const chargepointIds = (groupEvses ?? [] as GroupEvseJoinedRow[])
+        .map((e: GroupEvseJoinedRow) => e.ocpp_chargepoints?.id ?? e.chargepoint_id)
         .filter(Boolean);
 
       // 3. Get active transactions for those chargepoints
-      let activeSessions: any[] = [];
+      let activeSessions: ActiveSessionRow[] = [];
       if (chargepointIds.length > 0) {
         const { data: txData } = await supabase
           .from("ocpp_transactions")
@@ -71,7 +89,7 @@ export function useSmartChargingRealtime(groupId: string): SmartChargingRealtime
       }
 
       // 4. Build EVSE list
-      const evses: EvseRealtimeRow[] = (groupEvses ?? []).map((row: any) => {
+      const evses: EvseRealtimeRow[] = (groupEvses ?? [] as GroupEvseJoinedRow[]).map((row: GroupEvseJoinedRow) => {
         const cp = row.ocpp_chargepoints;
         const cpId = cp?.id ?? row.chargepoint_id;
         const identity = cp?.chargepoint_identity ?? "Inconnu";
@@ -106,6 +124,7 @@ export function useSmartChargingRealtime(groupId: string): SmartChargingRealtime
           for (const mv of meterData) {
             const ts = new Date(mv.timestamp);
             const minuteKey = `${ts.getHours().toString().padStart(2, "0")}:${ts.getMinutes().toString().padStart(2, "0")}`;
+            // OCPP MeterValues: value_wh is actually watts despite column name
             const powerKw = (mv.value_wh ?? 0) / 1000;
             byMinute.set(minuteKey, (byMinute.get(minuteKey) ?? 0) + powerKw);
           }
@@ -116,26 +135,13 @@ export function useSmartChargingRealtime(groupId: string): SmartChargingRealtime
         }
       }
 
-      // If no real history, generate simulated points for display
-      if (history30min.length === 0) {
-        const now = Date.now();
-        for (let i = 30; i >= 0; i -= 1) {
-          const ts = new Date(now - i * 60 * 1000);
-          const minuteKey = `${ts.getHours().toString().padStart(2, "0")}:${ts.getMinutes().toString().padStart(2, "0")}`;
-          // Simulate slight variation around currentLoadKw
-          const variation = currentLoadKw > 0
-            ? currentLoadKw + (Math.random() - 0.5) * capacityKw * 0.1
-            : Math.random() * capacityKw * 0.3;
-          history30min.push({
-            time: minuteKey,
-            loadKw: Math.max(0, Math.round(variation * 100) / 100),
-          });
-        }
-      }
-
-      return { capacityKw, currentLoadKw, evses, history30min };
+      return { capacityKw, currentLoadKw, evses, history30min, hasData: history30min.length > 0 };
     },
     refetchInterval: 10_000,
+    // Prevent redundant refetches on component re-renders within the 10s polling interval.
+    // The data includes both static config (group capacity, EVSE list) and live metrics,
+    // but splitting them would add complexity. staleTime of 5s is a pragmatic tradeoff.
+    staleTime: 5_000,
     enabled: !!groupId,
   });
 
@@ -144,6 +150,7 @@ export function useSmartChargingRealtime(groupId: string): SmartChargingRealtime
     currentLoadKw: data?.currentLoadKw ?? 0,
     evses: data?.evses ?? [],
     history30min: data?.history30min ?? [],
+    hasData: data?.hasData ?? false,
     isLoading,
   };
 }

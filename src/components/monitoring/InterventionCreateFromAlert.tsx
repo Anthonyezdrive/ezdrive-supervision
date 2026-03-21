@@ -90,21 +90,14 @@ export default function InterventionCreateFromAlert({
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["interventions"] });
-      toast({
-        title: "Intervention créée",
-        description: `L'intervention "${title}" a été créée avec succès.`,
-        variant: "success",
-      });
+      queryClient.invalidateQueries({ queryKey: ["interventions-list"] });
+      queryClient.invalidateQueries({ queryKey: ["intervention-detail"] });
+      toast(`Intervention "${title}" créée avec succès`, "success");
       onCreated();
     },
-    onError: (err: any) => {
+    onError: (err: unknown) => {
       console.error("Error creating intervention:", err);
-      toast({
-        title: "Erreur",
-        description: "Impossible de créer l'intervention. Veuillez réessayer.",
-        variant: "error",
-      });
+      toast("Impossible de créer l'intervention. Veuillez réessayer.", "error");
     },
   });
 

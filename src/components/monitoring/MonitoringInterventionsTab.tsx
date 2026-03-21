@@ -291,7 +291,8 @@ export default function InterventionsTab() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["interventions"] });
+      queryClient.invalidateQueries({ queryKey: ["interventions-list"] });
+      queryClient.invalidateQueries({ queryKey: ["intervention-detail"] });
       closeModal();
       setShowReport(null);
       toastSuccess("Intervention mise a jour");

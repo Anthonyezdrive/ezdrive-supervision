@@ -83,13 +83,16 @@ export function SlaTrendChart({ cpoId, from, to }: SlaTrendChartProps) {
   const [granularity, setGranularity] = useState<SlaGranularity>("day");
   const [slaTarget, setSlaTarget] = useState<number>(readSavedTarget);
 
-  // Persist SLA target
+  // Persist SLA target (debounced to avoid writes on every keystroke)
   useEffect(() => {
-    try {
-      localStorage.setItem(LS_KEY, String(slaTarget));
-    } catch {
-      // ignore
-    }
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(LS_KEY, String(slaTarget));
+      } catch {
+        // ignore
+      }
+    }, 500);
+    return () => clearTimeout(timer);
   }, [slaTarget]);
 
   const { data: rawData = [], isLoading, error } = useSlaHistory({

@@ -172,7 +172,7 @@ export function SupportPage() {
   const { success: toastSuccess, error: toastError } = useToast();
 
   // Queries via hook
-  const { data: tickets, isLoading } = useTickets();
+  const { data: tickets, isLoading, isError, refetch } = useTickets();
   const { data: profiles } = useProfiles();
 
   // Mutations via hooks
@@ -244,6 +244,16 @@ export function SupportPage() {
           </button>
         )}
       </div>
+
+      {/* Error state */}
+      {isError && (
+        <div className="bg-danger/10 border border-danger/30 rounded-2xl p-4 flex items-center justify-between">
+          <p className="text-danger text-sm">Erreur de chargement des donnees</p>
+          <button onClick={() => refetch()} className="text-sm text-danger hover:underline" type="button">
+            Reessayer
+          </button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-border">

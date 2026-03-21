@@ -3,6 +3,7 @@
 // Preview & batch-generate invoices from unbilled CDRs
 // ============================================================
 
+import { useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 
@@ -157,9 +158,32 @@ export function useInvoicePreview(params: GenerateParams | null) {
 
 export function useGenerateInvoices() {
   const queryClient = useQueryClient();
+  const generatingRef = useRef(false);
 
   return useMutation<GenerateResult, Error, GenerateParams>({
     mutationFn: async (params) => {
+      if (generatingRef.current) {
+        throw new Error("Une génération est déjà en cours.");
+      }
+      generatingRef.current = true;
+
+      try {
+        return await _generateInvoices(params);
+      } finally {
+        generatingRef.current = false;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["invoice-preview"] });
+      queryClient.invalidateQueries({ queryKey: ["cdrs"] });
+      queryClient.invalidateQueries({ queryKey: ["b2b-cdrs"] });
+      queryClient.invalidateQueries({ queryKey: ["ocpi-cdrs"] });
+    },
+  });
+}
+
+async function _generateInvoices(params: GenerateParams): Promise<GenerateResult> {
       // 1. Fetch unbilled CDRs in the period
       let query = supabase
         .from("ocpi_cdrs")
@@ -196,6 +220,7 @@ export function useGenerateInvoices() {
       // 3. Create an invoice for each group and link CDRs
       let invoiceCount = 0;
       let totalCents = 0;
+      const errors: string[] = [];
 
       for (const [, { label, cdrs: groupCdrs }] of grouped) {
         const subtotal = groupCdrs.reduce((s, c) => s + c.total_cost, 0);
@@ -204,11 +229,12 @@ export function useGenerateInvoices() {
         const vatRate = groupCdrs[0]?.vat_rate ?? 20;
         const currency = groupCdrs[0]?.currency ?? "EUR";
 
-        // Generate invoice number: INV-YYYYMM-XXXX
+        // Generate invoice number: INV-YYYYMM-XXXX-XXXXXXXX (UUID-based suffix for uniqueness)
         const now = new Date();
         const prefix = `INV-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
         const suffix = String(invoiceCount + 1).padStart(4, "0");
-        const invoiceNumber = `${prefix}-${suffix}-${Date.now().toString(36).slice(-4).toUpperCase()}`;
+        const uniqueId = crypto.randomUUID().slice(0, 8).toUpperCase();
+        const invoiceNumber = `${prefix}-${suffix}-${uniqueId}`;
 
         // Determine user_id: for customer grouping use the token uid, otherwise use the label
         const userId = groupCdrs[0]?.customer_external_id ?? groupCdrs[0]?.cdr_token?.uid ?? label;
@@ -233,6 +259,7 @@ export function useGenerateInvoices() {
 
         if (insertError) {
           console.error("[InvoiceGen] insert error:", insertError.message);
+          errors.push(`Facture "${label}": ${insertError.message}`);
           continue;
         }
 
@@ -245,17 +272,19 @@ export function useGenerateInvoices() {
 
         if (updateError) {
           console.error("[InvoiceGen] CDR link error:", updateError.message);
+          errors.push(`Liaison CDRs "${label}": ${updateError.message}`);
         }
 
         invoiceCount++;
         totalCents += Math.round(total * 100);
       }
 
+      if (errors.length > 0 && invoiceCount === 0) {
+        throw new Error(`Aucune facture créée. Erreurs:\n${errors.join("\n")}`);
+      }
+      if (errors.length > 0) {
+        console.warn(`[InvoiceGen] ${invoiceCount} factures créées avec ${errors.length} erreur(s):\n${errors.join("\n")}`);
+      }
+
       return { invoiceCount, totalCents };
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["invoice-preview"] });
-    },
-  });
 }

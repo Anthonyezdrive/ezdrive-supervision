@@ -67,7 +67,7 @@ export function InterventionsPage() {
   const [detail, setDetail] = useState<Intervention | null>(null);
 
   const { data: interventions, isLoading } = useQuery<Intervention[]>({
-    queryKey: ["interventions"],
+    queryKey: ["interventions-list"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("interventions")
@@ -89,7 +89,7 @@ export function InterventionsPage() {
       });
       if (error) throw error;
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["interventions"] }); setShowCreate(false); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["interventions-list"] }); queryClient.invalidateQueries({ queryKey: ["intervention-detail"] }); setShowCreate(false); },
   });
 
   const updateStatusMutation = useMutation({
@@ -100,7 +100,7 @@ export function InterventionsPage() {
       const { error } = await supabase.from("interventions").update(updates).eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["interventions"] }); setDetail(null); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["interventions-list"] }); queryClient.invalidateQueries({ queryKey: ["intervention-detail"] }); setDetail(null); },
   });
 
   const filtered = useMemo(() => {

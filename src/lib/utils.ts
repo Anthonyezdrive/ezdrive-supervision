@@ -5,6 +5,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatDuration(hours: number): string {
+  if (!hours || hours <= 0 || isNaN(hours)) return "0min";
   if (hours < 1) {
     const minutes = Math.round(hours * 60);
     return `${minutes}min`;
@@ -20,8 +21,10 @@ export function formatDuration(hours: number): string {
 }
 
 export function formatRelativeTime(dateStr: string): string {
-  const now = new Date();
+  if (!dateStr) return "\u2014";
   const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return "\u2014";
+  const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffSec = Math.floor(diffMs / 1000);
 

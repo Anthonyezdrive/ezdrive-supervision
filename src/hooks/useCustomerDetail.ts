@@ -114,9 +114,10 @@ export function useCustomerDetail(customerId: string | null) {
         )
         .eq("driver_external_id", customerId)
         .limit(1)
-        .single();
+        .maybeSingle();
 
       if (profileError) throw profileError;
+      if (!profileData) throw new Error("Client introuvable");
 
       const profile: CustomerProfile = {
         ...profileData,
@@ -127,12 +128,13 @@ export function useCustomerDetail(customerId: string | null) {
       } as CustomerProfile;
 
       // 2. Get tokens linked to this driver (needed for session lookup)
-      const { data: tokensData } = await supabase
+      const { data: tokensData, error: tokensError } = await supabase
         .from("ocpi_tokens")
         .select(
           "id, uid, type, contract_id, visual_number, issuer, valid, whitelist, last_updated, created_at"
         )
         .eq("contract_id", customerId);
+      if (tokensError) console.warn("[useCustomerDetail] tokens query error:", tokensError.message);
 
       const tokens = (tokensData ?? []) as CustomerToken[];
       const tokenUids = tokens.map((t) => t.uid);
@@ -140,7 +142,7 @@ export function useCustomerDetail(customerId: string | null) {
       // 3. Sessions — match by id_tag from tokens or by consumer driver_external_id
       let sessions: CustomerSession[] = [];
       if (tokenUids.length > 0) {
-        const { data: sessionsData } = await supabase
+        const { data: sessionsData, error: sessionsError } = await supabase
           .from("ocpp_transactions")
           .select(
             "id, transaction_id, chargepoint_id, id_tag, status, started_at, stopped_at, energy_kwh, meter_start, meter_stop, stop_reason, ocpp_chargepoints(identity, stations(name, city, address))"
@@ -148,12 +150,13 @@ export function useCustomerDetail(customerId: string | null) {
           .in("id_tag", tokenUids)
           .order("started_at", { ascending: false })
           .limit(50);
+        if (sessionsError) console.warn("[useCustomerDetail] sessions query error:", sessionsError.message);
         sessions = (sessionsData ?? []) as CustomerSession[];
       }
 
       // If no sessions from tokens, try by consumer_id
       if (sessions.length === 0) {
-        const { data: sessionsData } = await supabase
+        const { data: sessionsData, error: sessionsError2 } = await supabase
           .from("ocpp_transactions")
           .select(
             "id, transaction_id, chargepoint_id, id_tag, status, started_at, stopped_at, energy_kwh, meter_start, meter_stop, stop_reason, ocpp_chargepoints(identity, stations(name, city, address))"
@@ -161,43 +164,46 @@ export function useCustomerDetail(customerId: string | null) {
           .eq("consumer_id", profile.id)
           .order("started_at", { ascending: false })
           .limit(50);
+        if (sessionsError2) console.warn("[useCustomerDetail] sessions fallback query error:", sessionsError2.message);
         sessions = (sessionsData ?? []) as CustomerSession[];
       }
 
-      // 4. Invoices
-      const { data: invoicesData } = await supabase
-        .from("invoices")
-        .select(
-          "id, invoice_number, user_id, period_start, period_end, subtotal_cents, vat_cents, total_cents, currency, vat_rate, type, status, issued_at, paid_at, created_at"
-        )
-        .eq("user_id", customerId)
-        .order("created_at", { ascending: false });
-
-      const invoices = (invoicesData ?? []) as CustomerInvoice[];
-
-      // 5. Subscriptions
-      const { data: subscriptionsData } = await supabase
-        .from("user_subscriptions")
-        .select(
-          "id, user_id, offer_name, status, started_at, ends_at, created_at"
-        )
-        .eq("user_id", customerId);
-
-      const subscriptions =
-        (subscriptionsData ?? []) as CustomerSubscription[];
-
-      // 6. Tickets
-      let tickets: CustomerTicket[] = [];
-      if (profile.email) {
-        const { data: ticketsData } = await supabase
-          .from("maintenance_tickets")
+      // 4, 5, 6: Run independent queries in parallel
+      const [invoicesResult, subscriptionsResult, ticketsResult] = await Promise.all([
+        // 4. Invoices
+        supabase
+          .from("invoices")
           .select(
-            "id, title, status, priority, created_by_email, created_at"
+            "id, invoice_number, user_id, period_start, period_end, subtotal_cents, vat_cents, total_cents, currency, vat_rate, type, status, issued_at, paid_at, created_at"
           )
-          .eq("created_by_email", profile.email)
-          .order("created_at", { ascending: false });
-        tickets = (ticketsData ?? []) as CustomerTicket[];
-      }
+          .eq("user_id", customerId)
+          .order("created_at", { ascending: false }),
+        // 5. Subscriptions
+        supabase
+          .from("user_subscriptions")
+          .select(
+            "id, user_id, offer_name, status, started_at, ends_at, created_at"
+          )
+          .eq("user_id", customerId),
+        // 6. Tickets
+        profile.email
+          ? supabase
+              .from("maintenance_tickets")
+              .select(
+                "id, title, status, priority, created_by_email, created_at"
+              )
+              .eq("created_by_email", profile.email)
+              .order("created_at", { ascending: false })
+          : Promise.resolve({ data: null, error: null }),
+      ]);
+
+      if (invoicesResult.error) console.warn("[useCustomerDetail] invoices query error:", invoicesResult.error.message);
+      if (subscriptionsResult.error) console.warn("[useCustomerDetail] subscriptions query error:", subscriptionsResult.error.message);
+      if (ticketsResult.error) console.warn("[useCustomerDetail] tickets query error:", ticketsResult.error.message);
+
+      const invoices = (invoicesResult.data ?? []) as CustomerInvoice[];
+      const subscriptions = (subscriptionsResult.data ?? []) as CustomerSubscription[];
+      const tickets = (ticketsResult.data ?? []) as CustomerTicket[];
 
       return {
         profile,

@@ -141,7 +141,7 @@ export function useDriverSessions(driverExternalId: string | undefined) {
         // Fallback: also try matching on driver_external_id in ocpi_cdrs
         const { data: cdrs, error: cdrsError } = await supabase
           .from("ocpi_cdrs")
-          .select("id, start_date_time, location_name, total_energy, total_cost")
+          .select("id, start_date_time, cdr_location, total_energy, total_cost")
           .eq("driver_external_id", driverExternalId!)
           .order("start_date_time", { ascending: false })
           .limit(50);
@@ -155,22 +155,41 @@ export function useDriverSessions(driverExternalId: string | undefined) {
           meter_stop: null,
           connector_id: null,
           charge_point_id: null,
-          location_name: c.location_name as string | null,
+          location_name: (c.cdr_location as Record<string, unknown>)?.name as string | null ?? "—",
           total_energy_kwh: c.total_energy as number | null,
           total_cost: c.total_cost as number | null,
         })) as DriverSession[];
       }
 
       // Query OCPP transactions matching linked token UIDs
-      const { data: sessions, error: sessionsError } = await supabase
+      // Try start_timestamp/stop_timestamp first, fallback to started_at/stopped_at
+      let sessions: Array<Record<string, unknown>> = [];
+      const { data: sessionsData, error: sessionsError } = await supabase
         .from("ocpp_transactions")
         .select("id, start_timestamp, stop_timestamp, id_tag, meter_start, meter_stop, connector_id, charge_point_id")
         .in("id_tag", tokenUids)
         .order("start_timestamp", { ascending: false })
         .limit(50);
-      if (sessionsError) throw sessionsError;
 
-      return ((sessions ?? []) as Array<Record<string, unknown>>).map((s) => ({
+      if (!sessionsError) {
+        sessions = (sessionsData ?? []) as Array<Record<string, unknown>>;
+      } else {
+        // Fallback: try started_at/stopped_at column names
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from("ocpp_transactions")
+          .select("id, started_at, stopped_at, id_tag, meter_start, meter_stop, connector_id, charge_point_id")
+          .in("id_tag", tokenUids)
+          .order("started_at", { ascending: false })
+          .limit(50);
+        if (fallbackError) throw fallbackError;
+        sessions = ((fallbackData ?? []) as Array<Record<string, unknown>>).map((s) => ({
+          ...s,
+          start_timestamp: s.started_at,
+          stop_timestamp: s.stopped_at,
+        }));
+      }
+
+      return sessions.map((s) => ({
         id: s.id as string,
         start_timestamp: s.start_timestamp as string | null,
         stop_timestamp: s.stop_timestamp as string | null,
@@ -198,7 +217,7 @@ export function useSoftDeleteDriver() {
   return useMutation({
     mutationFn: async (driverExternalId: string) => {
       const { error } = await supabase
-        .from("all_consumers")
+        .from("gfx_consumers")
         .update({ status: "deleted", deleted_at: new Date().toISOString() })
         .eq("driver_external_id", driverExternalId);
       if (error) throw error;

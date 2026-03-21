@@ -4,6 +4,7 @@
 // ============================================================
 
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Receipt, X, Loader2, CheckCircle, AlertTriangle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -18,6 +19,7 @@ interface CreditNoteModalProps {
     total_cents: number;
     currency: string;
     user_id: string;
+    vat_rate?: number;
   };
   onClose: () => void;
   onCreated: () => void;
@@ -54,6 +56,7 @@ export function CreditNoteModal({
   onCreated,
 }: CreditNoteModalProps) {
   const { success: toastSuccess, error: toastError } = useToast();
+  const queryClient = useQueryClient();
 
   const [isFullRefund, setIsFullRefund] = useState(true);
   const [amountCents, setAmountCents] = useState(invoice.total_cents);
@@ -86,23 +89,31 @@ export function CreditNoteModal({
         .filter(Boolean)
         .join("\n");
 
+      // Compute VAT from original invoice rate
+      const vatRate = invoice.vat_rate ?? 20;
+      const subtotalCents = Math.round(amountCents / (1 + vatRate / 100));
+      const vatCents = amountCents - subtotalCents;
+
       const { error } = await supabase.from("invoices").insert({
         invoice_number: creditNoteNumber,
         user_id: invoice.user_id,
         total_cents: -Math.abs(amountCents),
-        subtotal_cents: -Math.abs(amountCents),
-        vat_cents: 0,
-        vat_rate: 0,
+        subtotal_cents: -Math.abs(subtotalCents),
+        vat_cents: -Math.abs(vatCents),
+        vat_rate: vatRate,
         currency: invoice.currency,
         type: "credit_note",
         status: "issued",
         issued_at: new Date().toISOString(),
         notes: notesContent,
+        parent_invoice_id: invoice.id,
         period_start: new Date().toISOString(),
         period_end: new Date().toISOString(),
       });
 
       if (error) throw error;
+
+      queryClient.invalidateQueries({ queryKey: ["invoices"] });
 
       toastSuccess(
         "Avoir créé",

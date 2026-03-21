@@ -20,8 +20,10 @@ export function useUpdateStationCPO() {
       return data;
     },
     onSuccess: () => {
-      // Rafraîchit la liste des stations après mise à jour CPO
+      // Rafraîchit la liste des stations et les vues associées après mise à jour CPO
       queryClient.invalidateQueries({ queryKey: ["stations"] });
+      queryClient.invalidateQueries({ queryKey: ["station-kpis"] });
+      queryClient.invalidateQueries({ queryKey: ["monitoring-stations"] });
     },
   });
 }

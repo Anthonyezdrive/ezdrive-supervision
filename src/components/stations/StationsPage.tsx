@@ -4,18 +4,16 @@
 // ============================================================
 
 import { useState, useMemo, useCallback } from "react";
-import { Download, Plus, Upload, RotateCcw, Tag } from "lucide-react";
+import { Download, Plus, Upload } from "lucide-react";
 import { useStations } from "@/hooks/useStations";
 import { useCPOs } from "@/hooks/useCPOs";
 import { useTerritories } from "@/hooks/useTerritories";
 import { useCpo } from "@/contexts/CpoContext";
 import { useQueryClient } from "@tanstack/react-query";
-import { useOcppCommand } from "@/hooks/useOcppCommands";
 import { FilterBar } from "@/components/ui/FilterBar";
 import { StationTable } from "./StationTable";
 import { StationDetailView } from "./StationDetailView";
 import { StationFormModal } from "./StationFormModal";
-import { BatchActionBar } from "@/components/shared/BatchActionBar";
 import { TableSkeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { DEFAULT_FILTERS, type StationFilters } from "@/types/filters";
@@ -46,71 +44,6 @@ export function StationsPage() {
   const [powerFilter, setPowerFilter] = useState<PowerFilter>("all");
   const [showImportModal, setShowImportModal] = useState(false);
   const [importStatus, setImportStatus] = useState<{ loading: boolean; message: string | null }>({ loading: false, message: null });
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [showTariffModal, setShowTariffModal] = useState(false);
-  const [tariffValue, setTariffValue] = useState("");
-  const [batchStatus, setBatchStatus] = useState<{ loading: boolean; message: string | null }>({ loading: false, message: null });
-  const resetMutation = useOcppCommand();
-
-  const handleToggleSelect = useCallback((id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const handleToggleSelectAll = useCallback(() => {
-    setSelectedIds((prev) => {
-      if (prev.size === (filtered?.length ?? 0)) return new Set();
-      return new Set((filtered ?? []).map((s) => s.id));
-    });
-  }, [filtered]);
-
-  const handleBatchReset = useCallback(async () => {
-    if (selectedIds.size === 0) return;
-    const confirmed = window.confirm(`Envoyer un Reset OCPP a ${selectedIds.size} station(s) ?`);
-    if (!confirmed) return;
-    setBatchStatus({ loading: true, message: null });
-    let success = 0;
-    let failed = 0;
-    for (const stationId of selectedIds) {
-      try {
-        await resetMutation.mutateAsync({ stationId, command: "Reset", params: { type: "Soft" } });
-        success++;
-      } catch {
-        failed++;
-      }
-    }
-    setBatchStatus({
-      loading: false,
-      message: `Reset: ${success} succes, ${failed} echec(s)`,
-    });
-    setSelectedIds(new Set());
-    setTimeout(() => setBatchStatus({ loading: false, message: null }), 4000);
-  }, [selectedIds, resetMutation]);
-
-  const handleBatchAssignTariff = useCallback(async () => {
-    if (!tariffValue.trim() || selectedIds.size === 0) return;
-    setBatchStatus({ loading: true, message: null });
-    try {
-      const { error } = await supabase
-        .from("stations")
-        .update({ tariff_group: tariffValue.trim() })
-        .in("id", Array.from(selectedIds));
-      if (error) throw error;
-      setBatchStatus({ loading: false, message: `Tarif "${tariffValue}" assigne a ${selectedIds.size} station(s).` });
-      queryClient.invalidateQueries({ queryKey: ["stations"] });
-      setSelectedIds(new Set());
-      setShowTariffModal(false);
-      setTariffValue("");
-    } catch (err) {
-      setBatchStatus({ loading: false, message: `Erreur : ${err instanceof Error ? err.message : "Erreur inconnue"}` });
-    }
-    setTimeout(() => setBatchStatus({ loading: false, message: null }), 4000);
-  }, [selectedIds, tariffValue, queryClient]);
-
   const handleStationUpdated = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["stations"] });
     setSelectedStation(null);
@@ -194,6 +127,7 @@ export function StationsPage() {
             {filtered.length} / {stations?.length ?? 0} bornes
           </span>
           <button
+            type="button"
             onClick={handleExport}
             disabled={filtered.length === 0}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-border rounded-xl text-xs text-foreground-muted hover:text-foreground hover:border-foreground-muted transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
@@ -202,6 +136,7 @@ export function StationsPage() {
             Export CSV
           </button>
           <button
+            type="button"
             onClick={() => setShowImportModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-border rounded-xl text-xs text-foreground-muted hover:text-foreground hover:border-foreground-muted transition-colors"
           >
@@ -209,6 +144,7 @@ export function StationsPage() {
             Importer CSV
           </button>
           <button
+            type="button"
             onClick={() => setShowCreateModal(true)}
             className="flex items-center gap-1.5 px-4 py-2 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
           >
@@ -240,6 +176,7 @@ export function StationsPage() {
         <span className="text-xs text-foreground-muted">Puissance :</span>
         {POWER_FILTERS.map((pf) => (
           <button
+            type="button"
             key={pf.key}
             onClick={() => setPowerFilter(pf.key)}
             className={cn(
@@ -333,7 +270,7 @@ export function StationsPage() {
               <p className={cn("text-sm mt-3", importStatus.message.startsWith("Erreur") ? "text-danger" : "text-status-available")}>{importStatus.message}</p>
             )}
             <div className="flex justify-end mt-4">
-              <button onClick={() => { setShowImportModal(false); setImportStatus({ loading: false, message: null }); }} className="px-4 py-2 text-sm text-foreground-muted hover:text-foreground transition-colors">
+              <button type="button" onClick={() => { setShowImportModal(false); setImportStatus({ loading: false, message: null }); }} className="px-4 py-2 text-sm text-foreground-muted hover:text-foreground transition-colors">
                 Fermer
               </button>
             </div>

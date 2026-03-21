@@ -122,12 +122,12 @@ export function B2BFleetManagement({
       const driverExternalId = `b2b-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const fullName = `${form.first_name.trim()} ${form.last_name.trim()}`;
       const { error } = await supabase.from("all_consumers").insert({
-        id: crypto.randomUUID(),
         driver_external_id: driverExternalId,
         first_name: form.first_name.trim(),
         last_name: form.last_name.trim(),
         full_name: fullName,
         email: form.email.trim() || null,
+        vehicle: form.vehicle?.trim() || null,
         customer_name: clientName,
         status: "active",
         total_sessions: 0,

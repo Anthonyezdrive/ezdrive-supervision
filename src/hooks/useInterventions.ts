@@ -16,7 +16,7 @@ export interface Intervention {
   title: string;
   description: string | null;
   technician: string | null;
-  status: "planned" | "in_progress" | "completed" | "cancelled";
+  status: "planned" | "in_progress" | "completed" | "cancelled" | "archived";
   priority: "low" | "medium" | "high" | "critical";
   scheduled_at: string | null;
   started_at: string | null;
@@ -51,62 +51,48 @@ export interface Profile {
 
 export function useInterventions(filters?: InterventionFilters) {
   return useQuery<Intervention[]>({
-    queryKey: ["interventions", filters],
+    queryKey: ["interventions-list", filters],
     retry: false,
     queryFn: async () => {
-      try {
-        let query = supabase
-          .from("interventions")
-          .select("*")
-          .order("created_at", { ascending: false });
+      let query = supabase
+        .from("interventions")
+        .select("*")
+        .order("created_at", { ascending: false });
 
-        if (filters?.status && filters.status !== "all") {
-          query = query.eq("status", filters.status);
-        }
-        if (filters?.priority && filters.priority !== "all") {
-          query = query.eq("priority", filters.priority);
-        }
-        if (filters?.assigned_to) {
-          query = query.eq("assigned_to", filters.assigned_to);
-        }
-        if (filters?.technician) {
-          query = query.ilike("technician", `%${filters.technician}%`);
-        }
-
-        const { data, error } = await query;
-        if (error) {
-          console.warn("[useInterventions] query error:", error.message);
-          return [];
-        }
-        return (data ?? []) as Intervention[];
-      } catch {
-        return [];
+      if (filters?.status && filters.status !== "all") {
+        query = query.eq("status", filters.status);
       }
+      if (filters?.priority && filters.priority !== "all") {
+        query = query.eq("priority", filters.priority);
+      }
+      if (filters?.assigned_to) {
+        query = query.eq("assigned_to", filters.assigned_to);
+      }
+      if (filters?.technician) {
+        query = query.ilike("technician", `%${filters.technician}%`);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data ?? []) as Intervention[];
     },
   });
 }
 
 export function useInterventionById(id: string | null) {
   return useQuery<Intervention | null>({
-    queryKey: ["interventions", id],
+    queryKey: ["intervention-detail", id],
     enabled: !!id,
     retry: false,
     queryFn: async () => {
       if (!id) return null;
-      try {
-        const { data, error } = await supabase
-          .from("interventions")
-          .select("*")
-          .eq("id", id)
-          .single();
-        if (error) {
-          console.warn("[useInterventionById] error:", error.message);
-          return null;
-        }
-        return data as Intervention;
-      } catch {
-        return null;
-      }
+      const { data, error } = await supabase
+        .from("interventions")
+        .select("*")
+        .eq("id", id)
+        .single();
+      if (error) throw error;
+      return data as Intervention;
     },
   });
 }
@@ -117,19 +103,12 @@ export function useAvailableTechnicians() {
     retry: false,
     staleTime: 60_000,
     queryFn: async () => {
-      try {
-        const { data, error } = await supabase
-          .from("profiles")
-          .select("id, full_name, email")
-          .order("full_name");
-        if (error) {
-          console.warn("[useAvailableTechnicians] error:", error.message);
-          return [];
-        }
-        return (data ?? []) as Profile[];
-      } catch {
-        return [];
-      }
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, full_name, email")
+        .order("full_name");
+      if (error) throw error;
+      return (data ?? []) as Profile[];
     },
   });
 }
@@ -177,7 +156,8 @@ export function useCreateIntervention() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["interventions"] });
+      queryClient.invalidateQueries({ queryKey: ["interventions-list"] });
+      queryClient.invalidateQueries({ queryKey: ["intervention-detail"] });
     },
   });
 }
@@ -213,7 +193,8 @@ export function useUpdateIntervention() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["interventions"] });
+      queryClient.invalidateQueries({ queryKey: ["interventions-list"] });
+      queryClient.invalidateQueries({ queryKey: ["intervention-detail"] });
     },
   });
 }
@@ -233,7 +214,8 @@ export function useAssignIntervention() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["interventions"] });
+      queryClient.invalidateQueries({ queryKey: ["interventions-list"] });
+      queryClient.invalidateQueries({ queryKey: ["intervention-detail"] });
     },
   });
 }
@@ -250,7 +232,8 @@ export function useDeleteIntervention() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["interventions"] });
+      queryClient.invalidateQueries({ queryKey: ["interventions-list"] });
+      queryClient.invalidateQueries({ queryKey: ["intervention-detail"] });
     },
   });
 }
@@ -265,29 +248,22 @@ export function useStartWork() {
         started_at: now,
       };
       // Try to set started_work_at — may fail if column doesn't exist
-      try {
-        const { error } = await supabase
-          .from("interventions")
-          .update({ ...patch, started_work_at: now })
-          .eq("id", id);
-        if (error) {
-          // Fallback without started_work_at
-          const { error: fallbackErr } = await supabase
-            .from("interventions")
-            .update(patch)
-            .eq("id", id);
-          if (fallbackErr) throw fallbackErr;
-        }
-      } catch (err) {
-        const { error } = await supabase
+      const { error } = await supabase
+        .from("interventions")
+        .update({ ...patch, started_work_at: now })
+        .eq("id", id);
+      if (error) {
+        // Fallback without started_work_at
+        const { error: fallbackErr } = await supabase
           .from("interventions")
           .update(patch)
           .eq("id", id);
-        if (error) throw error;
+        if (fallbackErr) throw fallbackErr;
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["interventions"] });
+      queryClient.invalidateQueries({ queryKey: ["interventions-list"] });
+      queryClient.invalidateQueries({ queryKey: ["intervention-detail"] });
     },
   });
 }
@@ -311,28 +287,22 @@ export function useStopWork() {
       if (duration_minutes !== undefined) patch.duration_minutes = duration_minutes;
 
       // Try to set completed_work_at — may fail if column doesn't exist
-      try {
-        const { error } = await supabase
-          .from("interventions")
-          .update({ ...patch, completed_work_at: now })
-          .eq("id", id);
-        if (error) {
-          const { error: fallbackErr } = await supabase
-            .from("interventions")
-            .update(patch)
-            .eq("id", id);
-          if (fallbackErr) throw fallbackErr;
-        }
-      } catch (err) {
-        const { error } = await supabase
+      const { error } = await supabase
+        .from("interventions")
+        .update({ ...patch, completed_work_at: now })
+        .eq("id", id);
+      if (error) {
+        // Fallback without completed_work_at
+        const { error: fallbackErr } = await supabase
           .from("interventions")
           .update(patch)
           .eq("id", id);
-        if (error) throw error;
+        if (fallbackErr) throw fallbackErr;
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["interventions"] });
+      queryClient.invalidateQueries({ queryKey: ["interventions-list"] });
+      queryClient.invalidateQueries({ queryKey: ["intervention-detail"] });
     },
   });
 }

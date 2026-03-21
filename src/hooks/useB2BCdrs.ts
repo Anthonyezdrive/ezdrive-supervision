@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useB2BFilters } from "@/contexts/B2BFilterContext";
@@ -164,50 +165,52 @@ export function useMyB2BClients() {
  * Returns raw values (for filtering) + label maps (for display)
  */
 export function useB2BFilterOptions(cdrs: B2BCdr[]) {
-  const sites = [...new Set(cdrs.map(getLocationName))].filter((s) => s !== "Inconnu").sort();
-  const bornes = [...new Set(cdrs.map(getChargePointId))].filter((b) => b !== "Inconnu").sort();
+  return useMemo(() => {
+    const sites = [...new Set(cdrs.map(getLocationName))].filter((s) => s !== "Inconnu").sort();
+    const bornes = [...new Set(cdrs.map(getChargePointId))].filter((b) => b !== "Inconnu").sort();
 
-  // Build human-readable labels for bornes: EVSE ID → "Site - Borne N"
-  const borneLabelMap = new Map<string, string>();
-  for (const cdr of cdrs) {
-    const cpId = getChargePointId(cdr);
-    if (cpId !== "Inconnu" && !borneLabelMap.has(cpId)) {
-      const locName = getLocationName(cdr);
-      borneLabelMap.set(cpId, formatChargePointLabel(cpId, locName));
+    // Build human-readable labels for bornes: EVSE ID → "Site - Borne N"
+    const borneLabelMap = new Map<string, string>();
+    for (const cdr of cdrs) {
+      const cpId = getChargePointId(cdr);
+      if (cpId !== "Inconnu" && !borneLabelMap.has(cpId)) {
+        const locName = getLocationName(cdr);
+        borneLabelMap.set(cpId, formatChargePointLabel(cpId, locName));
+      }
     }
-  }
 
-  // Build token → driver name map
-  const tokenDriverMap = buildTokenDriverMap(cdrs);
+    // Build token → driver name map
+    const tokenDriverMap = buildTokenDriverMap(cdrs);
 
-  const tokenSet = new Set<string>();
-  for (const c of cdrs) {
-    const t = c.cdr_token?.uid ?? c.auth_id;
-    if (t) tokenSet.add(t);
-  }
-  const tokensList = [...tokenSet].sort();
-
-  // Build label map for tokens: token UID → "Driver Name (token)"
-  const tokenLabelMap = new Map<string, string>();
-  for (const t of tokensList) {
-    const driver = tokenDriverMap.get(t);
-    if (driver) {
-      tokenLabelMap.set(t, `${driver}`);
+    const tokenSet = new Set<string>();
+    for (const c of cdrs) {
+      const t = c.cdr_token?.uid ?? c.auth_id;
+      if (t) tokenSet.add(t);
     }
-  }
+    const tokensList = [...tokenSet].sort();
 
-  // Available years
-  const yearSet = new Set<number>();
-  for (const c of cdrs) {
-    yearSet.add(new Date(c.start_date_time).getFullYear());
-  }
+    // Build label map for tokens: token UID → "Driver Name (token)"
+    const tokenLabelMap = new Map<string, string>();
+    for (const t of tokensList) {
+      const driver = tokenDriverMap.get(t);
+      if (driver) {
+        tokenLabelMap.set(t, `${driver}`);
+      }
+    }
 
-  return {
-    sites,
-    bornes,
-    borneLabelMap,
-    tokens: tokensList,
-    tokenLabelMap,
-    years: [...yearSet].sort(),
-  };
+    // Available years
+    const yearSet = new Set<number>();
+    for (const c of cdrs) {
+      yearSet.add(new Date(c.start_date_time).getFullYear());
+    }
+
+    return {
+      sites,
+      bornes,
+      borneLabelMap,
+      tokens: tokensList,
+      tokenLabelMap,
+      years: [...yearSet].sort(),
+    };
+  }, [cdrs]);
 }

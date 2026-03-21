@@ -167,14 +167,6 @@ export function MonitoringPage() {
     </div>
   );
 
-  // ── Lazy-loaded tabs ──
-  if (activeTab === "alerts") return renderTab("Surveillance en temps réel du réseau", <AlertsTab />);
-  if (activeTab === "history") return renderTab("Historique des alertes envoyées avec filtres", <AlertHistoryTab />);
-  if (activeTab === "ocpp_logs") return renderTab("Logs des messages OCPP bruts", <OcppLogsTab />);
-  if (activeTab === "capacity") return renderTab("Surveillance de la capacité électrique par site", <CapacityTab />);
-  if (activeTab === "maintenance") return renderTab("Surveillance en temps réel du réseau", <MaintenancePage />);
-  if (activeTab === "interventions") return renderTab("Gestion des interventions techniques et rapports", <InterventionsTab />);
-
   // ── Loading state ──
   if (isLoading) {
     return (
@@ -210,6 +202,14 @@ export function MonitoringPage() {
       </div>
     );
   }
+
+  // ── Lazy-loaded tabs ──
+  if (activeTab === "alerts") return renderTab("Surveillance en temps réel du réseau", <AlertsTab />);
+  if (activeTab === "history") return renderTab("Historique des alertes envoyées avec filtres", <AlertHistoryTab />);
+  if (activeTab === "ocpp_logs") return renderTab("Logs des messages OCPP bruts", <OcppLogsTab />);
+  if (activeTab === "capacity") return renderTab("Surveillance de la capacité électrique par site", <CapacityTab />);
+  if (activeTab === "maintenance") return renderTab("Surveillance en temps réel du réseau", <MaintenancePage />);
+  if (activeTab === "interventions") return renderTab("Gestion des interventions techniques et rapports", <InterventionsTab />);
 
   return (
     <div className="space-y-6">
@@ -295,7 +295,7 @@ export function MonitoringPage() {
                       <td className="px-4 py-3 text-foreground-muted">{station.city ?? "--"}</td>
                       <td className="px-4 py-3"><StatusBadge status={station.ocpp_status} /></td>
                       <td className="px-4 py-3">
-                        <span className={cn("text-xs font-medium", station.hours_in_status >= 24 ? "text-danger" : station.hours_in_status >= 6 ? "text-warning" : "text-foreground-muted")}>
+                        <span className={cn("text-xs font-medium", (station.hours_in_status ?? 0) >= 24 ? "text-danger" : (station.hours_in_status ?? 0) >= 6 ? "text-warning" : "text-foreground-muted")}>
                           {formatDuration(station.hours_in_status)}
                         </span>
                       </td>

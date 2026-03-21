@@ -113,7 +113,7 @@ export function LoadHistoryChart({ groupId }: { groupId: string }) {
         .select("chargepoint_id")
         .eq("group_id", groupId);
 
-      const cpIds = (groupEvses ?? []).map((e: any) => e.chargepoint_id).filter(Boolean);
+      const cpIds = (groupEvses ?? []).map((e: Record<string, unknown>) => e.chargepoint_id as string).filter(Boolean);
       if (cpIds.length === 0) return [];
 
       // Query meter values
@@ -144,7 +144,7 @@ export function LoadHistoryChart({ groupId }: { groupId: string }) {
     if (historyRaw && historyRaw.length > 0) {
       for (const mv of historyRaw) {
         const ts = new Date(mv.timestamp).getTime();
-        const bucketKey = Math.floor((ts - start) / bucketMs) * bucketMs + start;
+        const bucketKey = Math.round((ts - start) / bucketMs) * bucketMs + start;
         const existing = buckets.get(bucketKey);
         if (existing) {
           existing.push((mv.value_wh ?? 0) / 1000);

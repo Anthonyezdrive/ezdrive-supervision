@@ -45,6 +45,17 @@ function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+// ── Helpers (XSS) ────────────────────────────────────────────
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 // ── Email preview template ────────────────────────────────────
 
 function buildEmailPreview(
@@ -52,6 +63,10 @@ function buildEmailPreview(
   amount: string,
   dueDate: string
 ): string {
+  const safeInvoice = escapeHtml(invoiceNumber);
+  const safeAmount = escapeHtml(amount);
+  const safeDueDate = escapeHtml(dueDate);
+
   return `<div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#1a1a2e;border-radius:12px;color:#e0e0e0;">
   <div style="text-align:center;margin-bottom:20px;">
     <div style="font-size:24px;font-weight:700;color:#ffffff;">EZDrive</div>
@@ -59,8 +74,8 @@ function buildEmailPreview(
   </div>
   <hr style="border:none;border-top:1px solid #333;margin:16px 0;" />
   <p style="margin:0 0 12px;">Bonjour,</p>
-  <p style="margin:0 0 12px;">Nous vous informons que la facture <strong style="color:#fff;">${invoiceNumber}</strong> d'un montant de <strong style="color:#60a5fa;">${amount}</strong> reste impayée.</p>
-  <p style="margin:0 0 12px;">Date d'échéance : <strong style="color:#fbbf24;">${dueDate}</strong></p>
+  <p style="margin:0 0 12px;">Nous vous informons que la facture <strong style="color:#fff;">${safeInvoice}</strong> d'un montant de <strong style="color:#60a5fa;">${safeAmount}</strong> reste impayée.</p>
+  <p style="margin:0 0 12px;">Date d'échéance : <strong style="color:#fbbf24;">${safeDueDate}</strong></p>
   <p style="margin:0 0 16px;">Nous vous invitons à procéder au règlement dans les meilleurs délais.</p>
   <div style="text-align:center;margin:20px 0;">
     <span style="display:inline-block;background:#3b82f6;color:#fff;padding:10px 24px;border-radius:8px;font-weight:600;font-size:14px;">Régler ma facture</span>
@@ -77,7 +92,7 @@ export function PaymentReminderModal({
   onClose,
   onSent,
 }: PaymentReminderModalProps) {
-  const { success: toastSuccess, error: toastError } = useToast();
+  const { success: toastSuccess, warning: toastWarning, error: toastError } = useToast();
 
   const [email, setEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -105,29 +120,37 @@ export function PaymentReminderModal({
         },
       });
 
-      // Fail gracefully if the edge function is not deployed
+      let emailFailed = false;
       if (fnError) {
         console.warn(
           "Edge function send_reminder not available:",
           fnError.message
         );
+        emailFailed = true;
       }
 
-      // 2. Log the reminder (table may not exist yet — handle gracefully)
-      try {
-        await supabase.from("invoice_reminders").insert({
-          invoice_id: invoice.id,
-          sent_to: email,
-          sent_at: new Date().toISOString(),
-        });
-      } catch {
-        console.warn("invoice_reminders table may not exist, skipping log.");
+      // 2. Log the reminder (check { error } return instead of try/catch)
+      const { error: insertError } = await supabase.from("invoice_reminders").insert({
+        invoice_id: invoice.id,
+        sent_to: email,
+        sent_at: new Date().toISOString(),
+      });
+
+      if (insertError) {
+        console.warn("invoice_reminders insert error:", insertError.message);
       }
 
-      toastSuccess(
-        "Relance envoyée",
-        `Un rappel de paiement a été envoyé à ${email}`
-      );
+      if (emailFailed) {
+        toastWarning(
+          "Relance enregistree",
+          "La relance a ete enregistree mais l'email n'a peut-etre pas ete envoye"
+        );
+      } else {
+        toastSuccess(
+          "Relance envoyée",
+          `Un rappel de paiement a été envoyé à ${email}`
+        );
+      }
       onSent();
     } catch (err: unknown) {
       const message =

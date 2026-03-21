@@ -16,7 +16,7 @@ interface OcpiPushModalProps {
 
 interface OcpiPartner {
   id: string;
-  partner_name: string;
+  name: string | null;
   country_code: string;
   party_id: string;
   status: string;
@@ -50,9 +50,9 @@ export function OcpiPushModal({ open, onClose, locationId }: OcpiPushModalProps)
     setSelectedPartners(new Set());
 
     supabase
-      .from("ocpi_subscriptions")
-      .select("id, partner_name, country_code, party_id, status")
-      .eq("status", "active")
+      .from("ocpi_credentials")
+      .select("id, name, country_code, party_id, status")
+      .in("status", ["CONNECTED", "PENDING"])
       .then(({ data, error: fetchError }) => {
         setLoadingPartners(false);
         if (fetchError) {
@@ -113,7 +113,7 @@ export function OcpiPushModal({ open, onClose, locationId }: OcpiPushModalProps)
       const rawResults = data?.results ?? data?.data?.results ?? [];
       const mapped: PushResult[] = rawResults.map((r: any) => ({
         partnerId: r.partner_id,
-        partnerName: r.partner_name ?? partners.find((p) => p.id === r.partner_id)?.partner_name ?? r.partner_id,
+        partnerName: r.partner_name ?? (() => { const found = partners.find((p) => p.id === r.partner_id); return found ? (found.name ?? `${found.country_code}-${found.party_id}`) : r.partner_id; })(),
         success: r.success ?? true,
         locationsCount: r.locations_count ?? r.locationsCount,
         error: r.error,
@@ -124,7 +124,7 @@ export function OcpiPushModal({ open, onClose, locationId }: OcpiPushModalProps)
         const totalLocations = data?.locations_count ?? data?.count ?? 0;
         const fallback: PushResult[] = Array.from(selectedPartners).map((pid) => ({
           partnerId: pid,
-          partnerName: partners.find((p) => p.id === pid)?.partner_name ?? pid,
+          partnerName: (() => { const found = partners.find((p) => p.id === pid); return found ? (found.name ?? `${found.country_code}-${found.party_id}`) : pid; })(),
           success: true,
           locationsCount: totalLocations,
         }));
@@ -256,7 +256,7 @@ export function OcpiPushModal({ open, onClose, locationId }: OcpiPushModalProps)
                       />
                       <div className="flex-1 min-w-0">
                         <span className="text-sm font-medium text-foreground">
-                          {p.partner_name}
+                          {p.name ?? `${p.country_code}-${p.party_id}`}
                         </span>
                         <span className="ml-2 text-xs text-foreground-muted">
                           {p.country_code}-{p.party_id}

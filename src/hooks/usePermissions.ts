@@ -20,13 +20,17 @@ export function usePermissions() {
     "b2b.view", "b2b.edit",
   ];
 
+  // Stabilize dependency: JSON.stringify ensures we only recompute when permissions actually change
+  const permissionsKey = JSON.stringify(profile?.admin_role?.permissions);
+
   const permissions: string[] = useMemo(() => {
     // Admin and operator roles get all permissions regardless of admin_role config
     if (profile?.role === "admin" || profile?.role === "operator") {
       return ALL_PERMISSIONS;
     }
     return profile?.admin_role?.permissions ?? [];
-  }, [profile?.admin_role?.permissions, profile?.role]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permissionsKey, profile?.role]);
 
   const roleName: string = useMemo(() => {
     return profile?.admin_role?.name ?? profile?.role ?? "";

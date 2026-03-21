@@ -52,6 +52,7 @@ import { supabase } from "@/lib/supabase";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useAuth } from "@/contexts/AuthContext";
+import { useToast } from "@/contexts/ToastContext";
 
 // ── Tab definitions (extended with new stories 91-96) ────────
 
@@ -134,6 +135,7 @@ const DEFAULT_SETTINGS: PlatformSettings = {
 
 function PlatformSettingsSection() {
   const queryClient = useQueryClient();
+  const { error: toastError } = useToast();
   const [form, setForm] = useState<PlatformSettings>(DEFAULT_SETTINGS);
   const [saved, setSaved] = useState(false);
 
@@ -173,6 +175,7 @@ function PlatformSettingsSection() {
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     },
+    onError: () => toastError("Erreur lors de la sauvegarde"),
   });
 
   if (isLoading) {
@@ -319,6 +322,7 @@ function TerritoriesSection() {
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState("");
   const [form, setForm] = useState({ name: "", code: "", region: "", description: "" });
+  const [deleteTarget, setDeleteTarget] = useState<Territory | null>(null);
 
   const { data: territories, isLoading } = useQuery({
     queryKey: ["admin-territories"],
@@ -341,7 +345,7 @@ function TerritoriesSection() {
         .select("id, territory_id");
       const counts: Record<string, number> = {};
       for (const s of data ?? []) {
-        const tid = (s as any).territory_id;
+        const tid = (s as Record<string, unknown>).territory_id as string | undefined;
         if (tid) counts[tid] = (counts[tid] ?? 0) + 1;
       }
       return counts;
@@ -501,7 +505,7 @@ function TerritoriesSection() {
                   onEdit={() => setEditingId(t.id)}
                   onCancelEdit={() => setEditingId(null)}
                   onSave={(updated) => updateMutation.mutate(updated)}
-                  onDelete={() => { if (confirm(`Supprimer le territoire "${t.name}" ?`)) deleteMutation.mutate(t.id); }}
+                  onDelete={() => setDeleteTarget(t)}
                   saving={updateMutation.isPending}
                 />
               ))}
@@ -512,6 +516,18 @@ function TerritoriesSection() {
           </table>
         </div>
       )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Supprimer ce territoire ?"
+        description={deleteTarget ? `Supprimer le territoire "${deleteTarget.name}" ? Cette action est irréversible.` : ""}
+        confirmLabel="Supprimer"
+        cancelLabel="Annuler"
+        variant="danger"
+        loading={deleteMutation.isPending}
+        onConfirm={() => { if (deleteTarget) deleteMutation.mutate(deleteTarget.id); setDeleteTarget(null); }}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }
@@ -623,6 +639,7 @@ function CposSection() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [form, setForm] = useState({ name: "", code: "", stripe_connect_id: "", color: "#00D4AA", territory_id: "", contact_email: "", contact_phone: "" });
+  const [deleteTarget, setDeleteTarget] = useState<CpoEntry | null>(null);
 
   // Fetch territories for dropdown
   const { data: territories } = useQuery({
@@ -662,7 +679,7 @@ function CposSection() {
       const { data } = await supabase.from("stations").select("id, cpo_operator_id");
       const counts: Record<string, number> = {};
       for (const s of data ?? []) {
-        const cid = (s as any).cpo_operator_id;
+        const cid = (s as Record<string, unknown>).cpo_operator_id as string | undefined;
         if (cid) counts[cid] = (counts[cid] ?? 0) + 1;
       }
       return counts;
@@ -866,7 +883,7 @@ function CposSection() {
                   onEdit={() => setEditingId(cpo.id)}
                   onCancelEdit={() => setEditingId(null)}
                   onSave={(updated) => updateMutation.mutate(updated)}
-                  onDelete={() => { if (confirm(`Supprimer le CPO "${cpo.name}" ?`)) deleteMutation.mutate(cpo.id); }}
+                  onDelete={() => setDeleteTarget(cpo)}
                   onToggleActive={(active) => toggleActiveMutation.mutate({ id: cpo.id, is_active: active })}
                   saving={updateMutation.isPending}
                 />
@@ -878,6 +895,18 @@ function CposSection() {
           </table>
         </div>
       )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Supprimer ce CPO ?"
+        description={deleteTarget ? `Supprimer le CPO "${deleteTarget.name}" ? Cette action est irréversible.` : ""}
+        confirmLabel="Supprimer"
+        cancelLabel="Annuler"
+        variant="danger"
+        loading={deleteMutation.isPending}
+        onConfirm={() => { if (deleteTarget) deleteMutation.mutate(deleteTarget.id); setDeleteTarget(null); }}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

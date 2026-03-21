@@ -142,6 +142,8 @@ export function B2BFleetPage() {
   const {
     data: drivers = [],
     isLoading: driversLoading,
+    isError,
+    refetch,
   } = useQuery({
     queryKey: ["b2b-fleet-drivers", clientName],
     queryFn: async () => {
@@ -409,6 +411,19 @@ export function B2BFleetPage() {
         </div>
         <div className="bg-surface border border-border rounded-2xl p-6 h-[400px] animate-pulse" />
         <div className="bg-surface border border-border rounded-2xl p-6 h-[300px] animate-pulse" />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="space-y-6">
+        <div className="bg-danger/10 border border-danger/30 rounded-2xl p-4 flex items-center justify-between">
+          <p className="text-danger text-sm">Erreur de chargement des donnees</p>
+          <button onClick={() => refetch()} className="text-sm text-danger hover:underline" type="button">
+            Reessayer
+          </button>
+        </div>
       </div>
     );
   }

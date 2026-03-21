@@ -83,7 +83,7 @@ export function OcpiCredentialWizard({ cpoId, onClose, onSuccess }: Props) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleNext = async () => {
+  const handleNext = () => {
     if (step < 3) {
       setStep(step + 1);
       return;
