@@ -1,6 +1,6 @@
 const ROAD_API_TOKEN = Deno.env.get("ROAD_API_TOKEN") ?? "";
 const ROAD_BASE_URL =
-  Deno.env.get("ROAD_BASE_URL") ?? "https://api.e-flux.nl";
+  Deno.env.get("ROAD_BASE_URL") ?? "https://api.road.io";
 const ROAD_PROVIDER_ID =
   Deno.env.get("ROAD_PROVIDER_ID") ?? "668be406335353001c35f1d8";
 
@@ -19,6 +19,7 @@ export async function roadFetch(
     ...options,
     headers: {
       Authorization: `Bearer ${ROAD_API_TOKEN}`,
+      provider: ROAD_PROVIDER_ID,
       "Content-Type": "application/json",
       Accept: "application/json",
       ...(options?.headers ?? {}),
