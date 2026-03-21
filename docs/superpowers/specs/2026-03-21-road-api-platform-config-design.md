@@ -49,7 +49,7 @@ Populate existing columns and add new ones to `stations` from Road.io controller
 | Road.io field | DB column | Type | Action | Notes |
 |---|---|---|---|---|
 | `ocppIdentity` | `ocpp_identity` | text | **Populate existing** | Column already exists (migration 015). Road.io populates it for Road-sourced stations. |
-| `connectivityState` | `connectivity_status` | text | **Populate existing** | Column exists (migration 033). Normalize: `"connected"` → `"Online"`, `"disconnected"` → `"Offline"` to match existing domain. |
+| `connectivityState` | `connectivity_status` | text | **Populate existing** | Column exists (migration 033). Normalize: `"connected"` → `"Online"`, `"disconnected"` → `null` to match existing domain (convention: `"Online"` or `null`). |
 | `enablePublicCharging` | `charger_type` | text | **Populate existing** | Column exists. Map: `true` → `"Public"`, `false` → `"Business"`. No new `is_public` column needed. |
 | `setupProgress.state` | `setup_status` | text | **Add column** | "COMPLETED" / "IN_PROGRESS" |
 | `accessGroupIds` | `access_group_ids` | jsonb | **Add column** | Road access group refs |
@@ -58,47 +58,31 @@ Populate existing columns and add new ones to `stations` from Road.io controller
 | `numericIdentity` | `numeric_identity` | integer | **Add column** | Road numeric ID |
 
 **Files changed:**
-- Migration SQL: add new columns to `stations` + **recreate `stations_enriched` view** and `maintenance_stations` view to expose new fields (critical: `useStations.ts` reads from `stations_enriched`, not `stations` directly)
-- `supabase/functions/road-sync/index.ts`: extract and store new fields, normalize `connectivityState` → "Online"/"Offline", map `enablePublicCharging` → `charger_type`
+- Migration SQL: add new columns to `stations` + **recreate views in cascade order**: first `DROP VIEW IF EXISTS user_accessible_stations` (migration 036, depends on `stations_enriched`), then recreate `stations_enriched` and `maintenance_stations` views with new fields, then recreate `user_accessible_stations`. Critical: `useStations.ts` reads from `stations_enriched`, not `stations` directly.
+- `supabase/functions/road-sync/index.ts`: extract and store new fields, normalize `connectivityState` → `"Online"` / `null`, map `enablePublicCharging` → `charger_type`
 - `src/types/station.ts`: add new fields to Station type
 
 ### 1.2 Alert System
 
-**New edge function: `road-alert-check`** (cron every 5 minutes)
+**Existing infrastructure (migrations 004 + 057):**
+- `alert_history` table: stores alert events (station_id, alert_type, hours_in_fault, sent_at, details jsonb)
+- `alert_rules` table: configurable rules with types including `fault_threshold`, `offline_threshold`, `unavailable_threshold`, `heartbeat_missing`, etc.
+- `alert_config` table: global alert settings (threshold_hours, email_recipients)
 
-Alert types:
-- **Disconnection**: `connectivity_status` changes from "connected" to "disconnected"
-- **Fault**: `ocpp_status` changes to "Faulted"
-- **Recovery**: station returns to "Available"
-- **Extended outage**: "Unavailable" or "Faulted" for > 24h
+**Enhancement: extend existing `alert-check` edge function** (or create `road-alert-check` that writes to the same `alert_history` table)
 
-**New table: `station_alerts`**
+New alert rule types to add to `alert_rules.alert_type` CHECK constraint:
+- `"disconnection"`: `connectivity_status` changes from `"Online"` to `null`
+- `"recovery"`: station returns to "Available" from fault/offline
+- `"extended_outage"`: "Unavailable" or "Faulted" for > 24h
 
-| Column | Type | Description |
-|---|---|---|
-| id | uuid PK | |
-| station_id | uuid FK | Reference to station |
-| alert_type | text | "disconnection" / "fault" / "recovery" / "extended_outage" |
-| severity | text | "info" / "warning" / "critical" |
-| message | text | Human-readable description |
-| metadata | jsonb | Previous/new status, duration, etc. |
-| acknowledged | boolean | Has operator seen it |
-| acknowledged_by | uuid FK | User who acknowledged |
-| created_at | timestamptz | Alert timestamp |
-| resolved_at | timestamptz | When resolved (null if active) |
+These new types extend the existing enum. The function writes to `alert_history` (not a new table), using `details` jsonb column (migration 057) for metadata like previous/new status.
 
-**Indexes:**
-- `idx_station_alerts_station_id` on `station_id`
-- `idx_station_alerts_active` partial index on `(station_id, alert_type) WHERE resolved_at IS NULL`
-- `idx_station_alerts_unack` partial index on `(acknowledged) WHERE acknowledged = false`
+**Deduplication:** Check `alert_history` for recent alerts of same type for same station (within `notification_interval_hours` from `alert_rules`) before creating new ones. Auto-resolve by inserting a `"recovery"` alert when station comes back online.
 
-**RLS:** Enable RLS. Policies: authenticated users with admin/operator role can read all. Only service_role can insert (edge function). Operators can update `acknowledged` fields.
-
-**Deduplication:** The `road-alert-check` function must check for existing unresolved alerts before creating new ones. Rule: do NOT create a new alert of the same `alert_type` for a station if an unresolved one (`resolved_at IS NULL`) already exists. Auto-resolve "disconnection" alerts when station comes back online.
-
-**Files created:**
-- Migration SQL: `station_alerts` table with indexes + RLS policies
-- `supabase/functions/road-alert-check/index.ts`
+**Files changed:**
+- Migration SQL: `ALTER TABLE alert_rules DROP CONSTRAINT ...; ADD CONSTRAINT ...` to extend `alert_type` enum with new values
+- `supabase/functions/road-alert-check/index.ts` (new edge function, writes to existing `alert_history`)
 - Cron: pg_cron schedule every 5 min
 
 ### 1.3 Dashboard Enrichments
@@ -153,8 +137,8 @@ Ingests into existing `ocpi_tokens` table:
 | `contractId` | `contract_id` | eMSP contract |
 | `type` | `type` | RFID / APP_USER / AD_HOC |
 | `status` | `status` | ACTIVE / BLOCKED / EXPIRED |
-| `visualNumber` | `visual_number` | Printed number on card |
-| `issuer` | `issuer` | EZDrive / VCity |
+| `visualNumber` | `visual_number` | Printed number on card (column exists, migration 008) |
+| `issuer` | `issuer` | EZDrive / VCity (column exists, migration 008) |
 | `lastUpdated` | `last_updated` | Timestamp |
 
 Deduplication with existing GFX tokens via `uid` match. `source: "road"`, `cpo_id` per account.
@@ -173,7 +157,7 @@ Deduplication with existing GFX tokens via `uid` match. `source: "road"`, `cpo_i
 **Files:**
 - `supabase/functions/road-token-sync/index.ts` (new, cron)
 - `supabase/functions/road-token-action/index.ts` (new, on-demand)
-- Migration SQL: add `road_account_id`, `visual_number`, `issuer` to `ocpi_tokens`
+- Migration SQL: add `road_account_id` to `ocpi_tokens` (`visual_number` and `issuer` already exist in migration 008)
 - `src/components/rfid/RfidPage.tsx` (enhance)
 - `src/hooks/useTokens.ts` (new or enhance)
 
@@ -225,7 +209,7 @@ Ingests into existing `ocpi_tariffs` table (migration 008):
 | `name` | `tariff_alt_text` | As `[{language: "fr", text: name}]` |
 | — | `source` | New column: `"road"` (needs migration) |
 
-**New columns on `ocpi_tariffs`:** `source text DEFAULT 'gireve'`, `road_tariff_id text`, `cpo_id uuid REFERENCES cpo_operators(id)`.
+**New columns on `ocpi_tariffs`:** `source text DEFAULT 'gfx'` (consistent with project convention: `gfx` / `road` / `ocpp`), `road_tariff_id text`, `cpo_id uuid REFERENCES cpo_operators(id)`.
 
 Tariff ↔ station link via `accessGroupIds` → `access_group_tariffs` (existing table from migration 049).
 Tariff ↔ billing plan ↔ user chain via `road-driver-sync` billing plan data.
@@ -261,7 +245,7 @@ RUBIS billing (VCity AG):
 | Cron | Frequency | Function | Scope |
 |---|---|---|---|
 | `road-sync` | 5 min | Stations + statuses | Reunion + VCity |
-| `road-alert-check` | 5 min | Disconnect/fault alerts | Reunion + VCity |
+| `road-alert-check` | 5 min | Disconnect/fault/recovery alerts | Reunion + VCity |
 | `road-cdr-sync` | 6h | Sessions/CDRs | Reunion + VCity |
 | `road-token-sync` | 6h | RFID/APP tokens | Reunion + VCity |
 | `road-driver-sync` | 24h | User accounts | Reunion + VCity |
@@ -286,7 +270,7 @@ Stations currently managed via Road.io will progressively migrate to EZDrive's n
 **New DB fields:**
 - `stations.migration_status`: `null | "planned" | "dual" | "migrated"`
 
-**Source transition logic:** When `migration_status` is set to `"migrated"`, an admin action updates `source` to `"ocpp"`. The `road-sync` edge function filters by `source = "road"` so migrated stations are excluded from Road.io overwrites. CDRs are not affected — historical Road CDRs remain with `source: "road"`.
+**Source transition logic:** When `migration_status` is set to `"migrated"`, an admin action updates `source` to `"ocpp"` AND sets `road_id` to `null`. This is critical: `road-sync` matches existing stations by `road_id` — if `road_id` is not nulled, the sync would skip the station on SELECT (filtered by `source = "road"`), then treat it as a new station and INSERT a duplicate row. Nulling `road_id` ensures Road.io data for this station is simply ignored. CDRs are not affected — historical Road CDRs remain with `source: "road"`.
 
 **New admin page: "OCPP Migration"**
 - List of stations with migration status
