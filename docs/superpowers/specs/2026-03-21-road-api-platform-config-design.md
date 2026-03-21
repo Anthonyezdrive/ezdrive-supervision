@@ -44,22 +44,22 @@ Each sync writes to the same tables with `source` field for traceability. The fr
 
 ### 1.1 Enriched Station Sync
 
-Add new columns to `stations` table and populate them from Road.io controller data:
+Populate existing columns and add new ones to `stations` from Road.io controller data:
 
-| Road.io field | DB column | Type | Purpose |
-|---|---|---|---|
-| `ocppIdentity` | `ocpp_identity` | text | OCPP chargepoint ID |
-| `connectivityState` | `connectivity_status` | text | "connected"/"disconnected" |
-| `setupProgress.state` | `setup_status` | text | "COMPLETED"/"IN_PROGRESS" |
-| `enablePublicCharging` | `is_public` | boolean | Public vs private |
-| `accessGroupIds` | `access_group_ids` | jsonb | Road access group refs |
-| `syncOcpiCredentialIds` | `roaming_credential_ids` | jsonb | Active roaming connections |
-| `ocppChargingStationId` | `ocpp_charging_station_id` | text | Road internal UUID |
-| `numericIdentity` | `numeric_identity` | integer | Road numeric ID |
+| Road.io field | DB column | Type | Action | Notes |
+|---|---|---|---|---|
+| `ocppIdentity` | `ocpp_identity` | text | **Populate existing** | Column already exists (migration 015). Road.io populates it for Road-sourced stations. |
+| `connectivityState` | `connectivity_status` | text | **Populate existing** | Column exists (migration 033). Normalize: `"connected"` → `"Online"`, `"disconnected"` → `"Offline"` to match existing domain. |
+| `enablePublicCharging` | `charger_type` | text | **Populate existing** | Column exists. Map: `true` → `"Public"`, `false` → `"Business"`. No new `is_public` column needed. |
+| `setupProgress.state` | `setup_status` | text | **Add column** | "COMPLETED" / "IN_PROGRESS" |
+| `accessGroupIds` | `access_group_ids` | jsonb | **Add column** | Road access group refs |
+| `syncOcpiCredentialIds` | `roaming_credential_ids` | jsonb | **Add column** | Active roaming connections |
+| `ocppChargingStationId` | `ocpp_charging_station_id` | text | **Add column** | Road internal UUID |
+| `numericIdentity` | `numeric_identity` | integer | **Add column** | Road numeric ID |
 
 **Files changed:**
-- Migration SQL: add columns to `stations`
-- `supabase/functions/road-sync/index.ts`: extract and store new fields
+- Migration SQL: add new columns to `stations` + **recreate `stations_enriched` view** and `maintenance_stations` view to expose new fields (critical: `useStations.ts` reads from `stations_enriched`, not `stations` directly)
+- `supabase/functions/road-sync/index.ts`: extract and store new fields, normalize `connectivityState` → "Online"/"Offline", map `enablePublicCharging` → `charger_type`
 - `src/types/station.ts`: add new fields to Station type
 
 ### 1.2 Alert System
@@ -87,8 +87,17 @@ Alert types:
 | created_at | timestamptz | Alert timestamp |
 | resolved_at | timestamptz | When resolved (null if active) |
 
+**Indexes:**
+- `idx_station_alerts_station_id` on `station_id`
+- `idx_station_alerts_active` partial index on `(station_id, alert_type) WHERE resolved_at IS NULL`
+- `idx_station_alerts_unack` partial index on `(acknowledged) WHERE acknowledged = false`
+
+**RLS:** Enable RLS. Policies: authenticated users with admin/operator role can read all. Only service_role can insert (edge function). Operators can update `acknowledged` fields.
+
+**Deduplication:** The `road-alert-check` function must check for existing unresolved alerts before creating new ones. Rule: do NOT create a new alert of the same `alert_type` for a station if an unresolved one (`resolved_at IS NULL`) already exists. Auto-resolve "disconnection" alerts when station comes back online.
+
 **Files created:**
-- Migration SQL: `station_alerts` table
+- Migration SQL: `station_alerts` table with indexes + RLS policies
 - `supabase/functions/road-alert-check/index.ts`
 - Cron: pg_cron schedule every 5 min
 
@@ -128,7 +137,7 @@ Alert types:
 
 ---
 
-## Phase 2 — Exploitation (Month 1-2)
+## Phase 2 — Exploitation (Weeks 4-8)
 
 ### 2.1 Token Sync
 
@@ -153,10 +162,17 @@ Deduplication with existing GFX tokens via `uid` match. `source: "road"`, `cpo_i
 **Frontend (RfidPage):**
 - Unified display of Road + GFX tokens
 - Filter by source, CPO, status
-- Block/Unblock action via Road API (`/1/tokens/{id}/block`)
+- Block/Unblock action via `road-token-action` edge function (proxies to Road API)
+
+**New edge function: `road-token-action`** (on-demand, not cron)
+- Accepts `{ tokenId, action: "block" | "unblock", accountIndex }` in POST body
+- Calls Road.io `POST /1/tokens/{id}/block` or `POST /1/tokens/{id}/unblock` with correct account credentials
+- Updates local `ocpi_tokens.status` accordingly
+- Returns success/error to frontend
 
 **Files:**
-- `supabase/functions/road-token-sync/index.ts` (new)
+- `supabase/functions/road-token-sync/index.ts` (new, cron)
+- `supabase/functions/road-token-action/index.ts` (new, on-demand)
 - Migration SQL: add `road_account_id`, `visual_number`, `issuer` to `ocpi_tokens`
 - `src/components/rfid/RfidPage.tsx` (enhance)
 - `src/hooks/useTokens.ts` (new or enhance)
@@ -177,7 +193,7 @@ Enriches `consumer_profiles` table:
 | `status` | `status` | Active/inactive |
 | `billingPlan.name` | `billing_plan` | New column |
 
-Join path: `consumer_profiles` ↔ `ocpi_tokens` (via road_account_id) ↔ `ocpi_cdrs` (via token uid or driver_external_id) for full driver journey.
+**Join strategy:** Primary join via `consumer_profiles.road_account_id` → `ocpi_cdrs.driver_external_id` (both store the Road account ID). Secondary join via `ocpi_tokens.uid` for token-level detail. For drivers existing in both GFX and Road, deduplication is by email match — if a `consumer_profile` already exists with the same email (from GFX `gfx-driver-sync`), the Road sync updates it with `road_account_id` rather than creating a duplicate.
 
 **Frontend (DriversPage + CustomerDetailPage):**
 - Unified driver view (GFX + Road)
@@ -197,10 +213,24 @@ Join path: `consumer_profiles` ↔ `ocpi_tokens` (via road_account_id) ↔ `ocpi
 
 Endpoints: `POST /1/tariff-profiles/search` + `POST /1/billing-plans/search`
 
-Ingests into existing `ocpi_tariffs` table:
-- Price per kWh, per session, per parking minute
-- Tariff ↔ station link (via `accessGroupIds`)
-- Tariff ↔ billing plan ↔ user chain
+Ingests into existing `ocpi_tariffs` table (migration 008):
+
+| Road.io field | DB column | Notes |
+|---|---|---|
+| `id` | `tariff_id` | Road tariff profile ID (prefixed `road-`) |
+| `currency` | `currency` | EUR default |
+| `pricePerKwh` | `elements` jsonb | Stored as OCPI element: `[{price_components: [{type: "ENERGY", price: X}]}]` |
+| `pricePerSession` | `elements` jsonb | Added as component: `{type: "FLAT", price: X}` |
+| `pricePerMinute` | `elements` jsonb | Added as component: `{type: "TIME", price: X}` |
+| `name` | `tariff_alt_text` | As `[{language: "fr", text: name}]` |
+| — | `source` | New column: `"road"` (needs migration) |
+
+**New columns on `ocpi_tariffs`:** `source text DEFAULT 'gireve'`, `road_tariff_id text`, `cpo_id uuid REFERENCES cpo_operators(id)`.
+
+Tariff ↔ station link via `accessGroupIds` → `access_group_tariffs` (existing table from migration 049).
+Tariff ↔ billing plan ↔ user chain via `road-driver-sync` billing plan data.
+
+Related: `tariff_schedules` (migration 047) for peak/off-peak pricing already exists.
 
 **Frontend (TariffsPage):**
 - Road tariffs by CPO (Reunion / VCity)
@@ -241,7 +271,7 @@ All crons use the multi-account pattern from `road-client.ts` with hermetic CPO 
 
 ---
 
-## Phase 3 — Complete Platform (Month 2-6)
+## Phase 3 — Complete Platform (Month 3-6)
 
 ### 3.1 Progressive OCPP Migration
 
@@ -251,10 +281,12 @@ Stations currently managed via Road.io will progressively migrate to EZDrive's n
 1. Inventory: identify migrable stations via `ocpp_identity` from road-sync
 2. Dual-listen: configure station to send OCPP to both Road.io AND EZDrive server
 3. Switchover: change OCPP URL in station config (via Road API ChangeConfiguration or manual)
-4. Completion: station becomes `source: "ocpp"`, Road.io data becomes historical
+4. Completion: update `source` from `"road"` to `"ocpp"`. The `road-sync` function skips stations where `source != "road"`, so historical Road data is preserved but no longer overwritten. CDR sync continues for both sources — Road CDRs keep `source: "road"`, native OCPP transactions are stored in `ocpp_transactions`.
 
 **New DB fields:**
 - `stations.migration_status`: `null | "planned" | "dual" | "migrated"`
+
+**Source transition logic:** When `migration_status` is set to `"migrated"`, an admin action updates `source` to `"ocpp"`. The `road-sync` edge function filters by `source = "road"` so migrated stations are excluded from Road.io overwrites. CDRs are not affected — historical Road CDRs remain with `source: "road"`.
 
 **New admin page: "OCPP Migration"**
 - List of stations with migration status
@@ -267,27 +299,15 @@ Stations currently managed via Road.io will progressively migrate to EZDrive's n
 
 Endpoint: `POST /1/access-groups/search`
 
-**New tables:**
+**Existing tables (migration 049):** `access_groups`, `access_group_members`, `access_group_stations`, `access_group_tariffs` — all already exist with RLS, indexes, triggers, and `resolve_access_group_tariff()` function.
 
-`access_group_members`:
-| Column | Type |
-|---|---|
-| access_group_id | uuid FK |
-| token_id | uuid FK |
-| account_id | uuid FK |
+**Sync strategy:** The `road-access-group-sync` function populates these existing tables from Road.io data:
+- Road access group → `access_groups` row (with `road_access_group_id` column to add)
+- Road group's tokens → `access_group_members.token_uid`
+- Road group's controllers → `access_group_stations.station_id` (via `stationByRoadId` lookup)
+- Road group's tariff link → `access_group_tariffs` (via tariff sync)
 
-`access_group_stations`:
-| Column | Type |
-|---|---|
-| access_group_id | uuid FK |
-| station_id | uuid FK |
-
-`access_group_rules`:
-| Column | Type |
-|---|---|
-| access_group_id | uuid FK |
-| rule_type | text |
-| rule_config | jsonb |
+**New column needed:** `access_groups.road_access_group_id text` — Road.io's internal ID for write-back operations.
 
 **Frontend (AccessGroupsPage):**
 - View Road access groups by CPO
@@ -312,16 +332,22 @@ Road API: `POST /1/evse-controllers/{id}/smart-charging`
 
 ### 3.4 Mobile API for End Users
 
-Expose edge functions consumed by the existing React Native mobile app. No direct Road/GFX calls — all through unified Supabase layer.
+The mobile app already uses a unified edge function router (`supabase/functions/api/index.ts`) with module-based routing: `/functions/v1/api/{module}/{action}`. Existing modules include `stations`, `user`, `charging`, `rfid`, `invoices`, `subscriptions`, etc.
 
-| Endpoint | Method | Description |
+**Enhancements to existing modules** (no new edge functions needed):
+
+| Existing module | New action | Description |
 |---|---|---|
-| `/api/me/sessions` | GET | Driver's charge history |
-| `/api/me/tokens` | GET | My RFID tokens |
-| `/api/me/tokens/{id}/block` | POST | Report lost token |
-| `/api/me/invoices` | GET | My invoices |
-| `/api/stations/nearby` | GET | Nearby stations (lat/lng/radius) |
-| `/api/stations/{id}/availability` | GET | Real-time availability |
+| `user` | `sessions` | Driver's charge history from `ocpi_cdrs` (Road + GFX unified) |
+| `rfid` | `block` | Report lost token — proxies to `road-token-action` for Road tokens |
+| `stations` | `nearby` | Enhance with Road real-time availability data |
+| `stations` | `availability` | Real-time connector status from Road sync |
+| `invoices` | (existing) | Already serves invoices, enrich with Road CDR data |
+
+**Files changed:**
+- `supabase/functions/api/_modules/user.ts`: add `sessions` action
+- `supabase/functions/api/_modules/rfid.ts`: add `block` action proxying to Road API
+- `supabase/functions/api/_modules/stations.ts`: enhance `nearby` and add `availability`
 
 Data source: unified Supabase tables, filtered by authenticated user's `consumer_profile`.
 
