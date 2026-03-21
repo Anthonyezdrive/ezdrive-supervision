@@ -74,10 +74,14 @@ export interface TariffVisualBuilderProps {
 
 function normalizeValue(value: OcpiTariff | OcpiTariff[] | null): TariffValue {
   if (!value) return { elements: [] };
+  // If it's an array, take the first element
+  if (Array.isArray(value)) {
+    const first = value[0];
+    if (first?.elements && Array.isArray(first.elements)) return first as TariffValue;
+    return { elements: [] };
+  }
   // If it's already the right shape
   if (value.elements && Array.isArray(value.elements)) return value as TariffValue;
-  // If the value itself is an array of elements
-  if (Array.isArray(value)) return { elements: value };
   return { elements: [] };
 }
 
@@ -204,7 +208,7 @@ export function TariffVisualBuilder({
     try {
       const parsed = JSON.parse(text);
       const normalized = normalizeValue(parsed);
-      onChange(normalized);
+      onChange(normalized as OcpiTariff);
     } catch (e: unknown) {
       setJsonError("JSON invalide : " + (e instanceof Error ? e.message : String(e)));
     }
@@ -222,7 +226,7 @@ export function TariffVisualBuilder({
       try {
         const parsed = JSON.parse(jsonText);
         const normalized = normalizeValue(parsed);
-        onChange(normalized);
+        onChange(normalized as OcpiTariff);
       } catch {
         // Keep current value if JSON is invalid
       }

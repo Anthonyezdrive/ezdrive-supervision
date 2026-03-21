@@ -521,6 +521,11 @@ export function AgreementsPage() {
       technical_contact: agreement.technical_contact ?? "",
       remarks: agreement.remarks ?? "",
       updated_by: agreement.updated_by ?? "",
+      notice_period_days: agreement.notice_period_days != null ? String(agreement.notice_period_days) : "90",
+      auto_renew: agreement.auto_renew ?? false,
+      renewal_period_months: agreement.renewal_period_months != null ? String(agreement.renewal_period_months) : "12",
+      tacit_acceptance_days: agreement.tacit_acceptance_days != null ? String(agreement.tacit_acceptance_days) : "30",
+      termination_reason: agreement.termination_reason ?? "",
     });
     setModalOpen(true);
   }

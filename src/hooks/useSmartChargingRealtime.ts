@@ -26,16 +26,6 @@ interface SmartChargingRealtimeData {
   isLoading: boolean;
 }
 
-/** Row shape returned by the joined query on smart_charging_group_evses */
-interface GroupEvseJoinedRow {
-  chargepoint_id: string;
-  ocpp_chargepoints: {
-    id: string;
-    chargepoint_identity: string;
-    is_connected: boolean;
-  } | null;
-}
-
 /** Active session row from ocpp_transactions */
 interface ActiveSessionRow {
   chargepoint_id: string;
@@ -65,8 +55,11 @@ export function useSmartChargingRealtime(groupId: string): SmartChargingRealtime
 
       if (evseError) throw evseError;
 
-      const chargepointIds = (groupEvses ?? [] as GroupEvseJoinedRow[])
-        .map((e: GroupEvseJoinedRow) => e.ocpp_chargepoints?.id ?? e.chargepoint_id)
+      const chargepointIds = (groupEvses ?? [])
+        .map((e) => {
+          const cp = Array.isArray(e.ocpp_chargepoints) ? e.ocpp_chargepoints[0] : e.ocpp_chargepoints;
+          return cp?.id ?? e.chargepoint_id;
+        })
         .filter(Boolean);
 
       // 3. Get active transactions for those chargepoints
@@ -89,8 +82,9 @@ export function useSmartChargingRealtime(groupId: string): SmartChargingRealtime
       }
 
       // 4. Build EVSE list
-      const evses: EvseRealtimeRow[] = (groupEvses ?? [] as GroupEvseJoinedRow[]).map((row: GroupEvseJoinedRow) => {
-        const cp = row.ocpp_chargepoints;
+      const evses: EvseRealtimeRow[] = (groupEvses ?? []).map((row) => {
+        const cpRaw = row.ocpp_chargepoints;
+        const cp = Array.isArray(cpRaw) ? cpRaw[0] : cpRaw;
         const cpId = cp?.id ?? row.chargepoint_id;
         const identity = cp?.chargepoint_identity ?? "Inconnu";
         const isConnected = cp?.is_connected ?? false;

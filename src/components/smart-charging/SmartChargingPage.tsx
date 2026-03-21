@@ -141,7 +141,7 @@ export function SmartChargingPage() {
 // ══════════════════════════════════════════════════════════════
 
 function GroupListView({ onSelect }: { onSelect: (group: SmartChargingGroup) => void }) {
-  const { selectedCpoId, cpoName } = useCpo();
+  const { selectedCpoId, selectedCpo } = useCpo();
   const queryClient = useQueryClient();
   const [filterName, setFilterName] = useState("");
   const [filterCpo, setFilterCpo] = useState("");
@@ -206,7 +206,7 @@ function GroupListView({ onSelect }: { onSelect: (group: SmartChargingGroup) => 
           structure,
           algorithm: "capacity_management_ac",
           cpo_id: selectedCpoId || null,
-          cpo_name: cpoName || null,
+          cpo_name: selectedCpo?.name || null,
         })
         .select()
         .single();
