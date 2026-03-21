@@ -62,7 +62,7 @@ test.describe("B2B Portal", () => {
     await page.waitForTimeout(2000);
 
     // Click on Sessions tab/link
-    const sessionsLink = page.locator('a[href*="sessions"], text=/sessions/i').first();
+    const sessionsLink = page.locator('a[href*="sessions"]').first();
     if (await sessionsLink.isVisible()) {
       await sessionsLink.click();
       await page.waitForTimeout(1500);

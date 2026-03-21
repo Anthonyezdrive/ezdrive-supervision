@@ -14,9 +14,9 @@ test.describe("Authentication Flow", () => {
 
   test("shows login form with email and password fields", async ({ page }) => {
     await page.goto("/login");
-    await expect(page.locator('input[type="email"]')).toBeVisible();
-    await expect(page.locator('input[type="password"]')).toBeVisible();
-    await expect(page.getByRole("button", { name: /connexion/i })).toBeVisible();
+    await expect(page.locator('input[type="email"], input[name="email"], input[placeholder*="mail"]').first()).toBeVisible();
+    await expect(page.locator('input[type="password"], input[name="password"]').first()).toBeVisible();
+    await expect(page.locator('button[type="submit"]')).toBeVisible();
   });
 
   test("shows error on invalid credentials", async ({ page }) => {

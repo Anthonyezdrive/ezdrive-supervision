@@ -35,7 +35,7 @@ test.describe("Dashboard", () => {
   test("sync button is visible", async ({ page }) => {
     await page.goto("/dashboard");
     await page.waitForTimeout(1500);
-    const syncBtn = page.locator('text=/sync/i, button:has-text("Sync")').first();
+    const syncBtn = page.locator('button:has-text("Sync")').first();
     if (await syncBtn.isVisible()) {
       expect(await syncBtn.isEnabled()).toBeTruthy();
     }
