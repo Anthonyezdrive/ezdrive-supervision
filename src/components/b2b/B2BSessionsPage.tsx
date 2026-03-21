@@ -1,9 +1,11 @@
 import { useState, useMemo } from "react";
 import { useOutletContext } from "react-router-dom";
-import { Search, Zap, Clock, Euro, Hash, FileText } from "lucide-react";
+import { Search, Zap, Clock, Euro, Hash, FileText, MapPin } from "lucide-react";
 import { useB2BCdrs } from "@/hooks/useB2BCdrs";
 import { useB2BFilters } from "@/contexts/B2BFilterContext";
-import { formatNumber, formatEUR, formatDuration } from "@/lib/b2b-formulas";
+import { useDriverLookup } from "@/hooks/useDriverLookup";
+import { useB2BStationLookup, resolveStation } from "@/hooks/useB2BStationLookup";
+import { formatNumber, formatEUR, formatDuration, getChargePointId, getLocationName } from "@/lib/b2b-formulas";
 import { downloadCSV, todayISO } from "@/lib/export";
 import { ExportButtons } from "./ExportButtons";
 import { SlideOver } from "@/components/ui/SlideOver";
@@ -45,6 +47,8 @@ export function B2BSessionsPage() {
     useOutletContext<{ activeClient: B2BClient | null; customerExternalIds: string[] }>();
   const { year } = useB2BFilters();
   const { data: cdrs, isLoading } = useB2BCdrs(customerExternalIds);
+  const { data: driverMap } = useDriverLookup();
+  const { data: stationLookup } = useB2BStationLookup();
 
   // Local filters
   const [search, setSearch] = useState("");
@@ -71,8 +75,9 @@ export function B2BSessionsPage() {
       result = result.filter((c) => {
         const locName = c.cdr_location?.name?.toLowerCase() ?? "";
         const driver = (c.driver_external_id ?? "").toLowerCase();
+        const driverName = (driverMap?.get(c.driver_external_id ?? "") ?? "").toLowerCase();
         const tokenUid = (c.cdr_token?.uid ?? "").toLowerCase();
-        return locName.includes(q) || driver.includes(q) || tokenUid.includes(q);
+        return locName.includes(q) || driver.includes(q) || driverName.includes(q) || tokenUid.includes(q);
       });
     }
 
@@ -94,7 +99,7 @@ export function B2BSessionsPage() {
     }
 
     return result;
-  }, [allCdrs, search, dateFrom, dateTo, sessionType]);
+  }, [allCdrs, search, dateFrom, dateTo, sessionType, driverMap]);
 
   // Sort by most recent first for display
   const sorted = useMemo(
@@ -123,7 +128,7 @@ export function B2BSessionsPage() {
     const exportRows = sorted.map((c) => ({
       Date: formatDateFR(c.start_date_time),
       Lieu: c.cdr_location?.name ?? "—",
-      Conducteur: c.driver_external_id ?? "—",
+      Conducteur: driverMap?.get(c.driver_external_id ?? "") || c.driver_external_id || "—",
       Token: c.cdr_token?.uid ?? "—",
       "Énergie (kWh)": formatNumber(c.total_energy ?? 0),
       "Durée": formatDuration((c.total_time ?? 0) / 3600),
@@ -289,7 +294,9 @@ export function B2BSessionsPage() {
                   >
                     <td className={tdClass}>{formatDateFR(c.start_date_time)}</td>
                     <td className={`${tdClass} max-w-[200px] truncate`}>{c.cdr_location?.name ?? "—"}</td>
-                    <td className={`${tdClass} max-w-[160px] truncate`}>{c.driver_external_id ?? "—"}</td>
+                    <td className={`${tdClass} max-w-[160px] truncate`} title={c.driver_external_id ?? undefined}>
+                      {driverMap?.get(c.driver_external_id ?? "") || c.driver_external_id || "—"}
+                    </td>
                     <td className={`${tdClass} font-mono text-xs`}>{tokenShort(c.cdr_token?.uid)}</td>
                     <td className={`${tdClass} text-right font-medium`}>{formatNumber(c.total_energy ?? 0)} kWh</td>
                     <td className={`${tdClass} text-right`}>{formatDuration((c.total_time ?? 0) / 3600)}</td>
@@ -327,7 +334,7 @@ export function B2BSessionsPage() {
         subtitle={selectedCdr ? `ID: ${selectedCdr.id}` : undefined}
         maxWidth="max-w-xl"
       >
-        {selectedCdr && <CdrDetail cdr={selectedCdr} />}
+        {selectedCdr && <CdrDetail cdr={selectedCdr} driverMap={driverMap} stationLookup={stationLookup} />}
       </SlideOver>
     </div>
   );
@@ -335,13 +342,24 @@ export function B2BSessionsPage() {
 
 // ─── CDR Detail ────────────────────────────────────────────
 
-function CdrDetail({ cdr }: { cdr: B2BCdr }) {
+function CdrDetail({
+  cdr,
+  driverMap,
+  stationLookup,
+}: {
+  cdr: B2BCdr;
+  driverMap?: Map<string, string> | null;
+  stationLookup?: { byGfxId: Map<string, any>; byName: Map<string, any> } | null;
+}) {
   const costTTC = cdr.total_retail_cost_incl_vat ?? 0;
   const isFree = costTTC === 0;
 
   const location = cdr.cdr_location;
   const locationParts = [location?.name, location?.address, location?.city].filter(Boolean);
   const evseId = location?.evses?.[0]?.evse_id ?? location?.evses?.[0]?.uid ?? "—";
+  const driverName = driverMap?.get(cdr.driver_external_id ?? "");
+  const chargePointId = getChargePointId(cdr);
+  const station = resolveStation(chargePointId, location?.name, stationLookup);
 
   return (
     <div className="p-6 space-y-6">
@@ -393,8 +411,18 @@ function CdrDetail({ cdr }: { cdr: B2BCdr }) {
           {cdr.cdr_token?.contract_id && (
             <DetailRow label="Contract ID" value={cdr.cdr_token.contract_id} mono />
           )}
-          <DetailRow label="Conducteur" value={cdr.driver_external_id ?? "—"} />
+          <DetailRow label="Conducteur" value={driverName ? `${driverName} (${cdr.driver_external_id})` : cdr.driver_external_id ?? "—"} />
           <DetailRow label="EVSE ID" value={evseId} mono />
+          {station && (
+            <>
+              {station.charge_point_vendor && (
+                <DetailRow label="Borne" value={`${station.charge_point_vendor}${station.charge_point_model ? ` ${station.charge_point_model}` : ""}`} />
+              )}
+              {station.max_power_kw != null && (
+                <DetailRow label="Puissance max" value={`${station.max_power_kw} kW`} />
+              )}
+            </>
+          )}
           <DetailRow label="Source (GFX CDR)" value={cdr.gfx_cdr_id ?? "—"} mono />
         </div>
       </div>
