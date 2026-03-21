@@ -7,6 +7,7 @@ import { useB2BRole } from "@/hooks/useB2BRole";
 import { B2BFilterProvider, useB2BFilters } from "@/contexts/B2BFilterContext";
 import { useB2BClients, useB2BCdrs, useB2BFilterOptions, useMyB2BClients } from "@/hooks/useB2BCdrs";
 import { B2BFilterBar } from "./B2BFilterBar";
+import { SectionErrorBoundary } from "@/components/ui/SectionErrorBoundary";
 import type { B2BClient } from "@/types/b2b";
 
 interface B2BTab {
@@ -149,7 +150,9 @@ function B2BLayoutInner() {
       </div>
 
       {/* Page content — pass activeClient + role via context */}
-      <Outlet context={{ activeClient, customerExternalIds, b2bRole, isEmployee, driverExternalId, tokenUids }} />
+      <SectionErrorBoundary section="Portail B2B" fallbackUrl="/b2b/overview">
+        <Outlet context={{ activeClient, customerExternalIds, b2bRole, isEmployee, driverExternalId, tokenUids }} />
+      </SectionErrorBoundary>
 
       {/* EZDrive footer branding */}
       <div className="flex items-center justify-center gap-2 pt-6 pb-2">
