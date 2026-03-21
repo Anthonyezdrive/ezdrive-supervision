@@ -3,6 +3,7 @@ import { Outlet, useLocation } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import { GlobalSearch } from "@/components/search/GlobalSearch";
+import { Sentry } from "@/lib/sentry";
 
 // Pages that need full-height layout without padding
 const FULL_HEIGHT_ROUTES = ["/map"];
@@ -25,6 +26,10 @@ class RouteErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundar
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("[ErrorBoundary] Erreur capturée :", error, info.componentStack);
+    Sentry.captureException(error, {
+      tags: { section: "global" },
+      contexts: { react: { componentStack: info.componentStack ?? "" } },
+    });
   }
 
   render() {
