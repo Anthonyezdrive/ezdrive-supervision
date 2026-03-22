@@ -65,6 +65,65 @@ export async function handleStopTransaction(
       ? (meterStop - tx.meter_start) / 1000
       : null;
 
+    // --- Idle Fee Detection ---
+    let parkingDurationMinutes: number | null = null;
+    let idleFeeCents: number | null = null;
+
+    try {
+      // Query idle fee configuration for this station
+      const idleFeeConfig = cp.station_id
+        ? await queryOne<{
+            grace_period_minutes: number;
+            fee_per_minute_cents: number;
+            max_fee_cents: number;
+          }>(
+            `SELECT grace_period_minutes, fee_per_minute_cents, max_fee_cents
+             FROM idle_fee_config
+             WHERE station_id = $1 AND enabled = true`,
+            [cp.station_id]
+          )
+        : null;
+
+      if (idleFeeConfig) {
+        // Find the last MeterValue with power > 0 (i.e. when charging actually stopped)
+        const lastActiveMeter = await queryOne<{ sampled_at: string }>(
+          `SELECT sampled_at
+           FROM ocpp_meter_values
+           WHERE transaction_id = $1
+             AND power_active_import_w > 0
+           ORDER BY sampled_at DESC
+           LIMIT 1`,
+          [tx.id]
+        );
+
+        if (lastActiveMeter) {
+          const chargingEndTime = new Date(lastActiveMeter.sampled_at);
+          const stopTime = new Date(timestamp || Date.now());
+          const parkingMs = stopTime.getTime() - chargingEndTime.getTime();
+          parkingDurationMinutes = Math.max(0, Math.round(parkingMs / 60000));
+
+          const excessMinutes = parkingDurationMinutes - idleFeeConfig.grace_period_minutes;
+
+          if (excessMinutes > 0) {
+            const rawFee = excessMinutes * idleFeeConfig.fee_per_minute_cents;
+            idleFeeCents = Math.min(rawFee, idleFeeConfig.max_fee_cents);
+            logger.info(
+              {
+                transactionId: tx.id,
+                parkingDurationMinutes,
+                gracePeriod: idleFeeConfig.grace_period_minutes,
+                excessMinutes,
+                idleFeeCents,
+              },
+              'Idle fee applied'
+            );
+          }
+        }
+      }
+    } catch (err) {
+      logger.warn({ err, transactionId: tx.id }, 'Failed to compute idle fee, skipping');
+    }
+
     // Update transaction
     await query(
       `UPDATE ocpp_transactions
@@ -72,9 +131,19 @@ export async function handleStopTransaction(
            energy_kwh = $2,
            stopped_at = $3,
            stop_reason = $4,
-           status = 'Completed'
+           status = 'Completed',
+           parking_duration_minutes = $6,
+           idle_fee_cents = $7
        WHERE id = $5`,
-      [meterStop, energyKwh, timestamp || new Date().toISOString(), reason || 'Local', tx.id]
+      [
+        meterStop,
+        energyKwh,
+        timestamp || new Date().toISOString(),
+        reason || 'Local',
+        tx.id,
+        parkingDurationMinutes,
+        idleFeeCents,
+      ]
     );
 
     // Update station status back to Available

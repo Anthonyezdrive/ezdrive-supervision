@@ -39,6 +39,9 @@ import {
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+// Singleton — réutilisé entre les requêtes (Deno edge runtime garde le module en mémoire)
+const sb = createClient(supabaseUrl, supabaseServiceKey);
+
 const TIER_AMOUNT_CENTS = 2000; // 20€ per authorization tier
 const SAFETY_THRESHOLD_CENTS = 1800; // Trigger next tier at 18€ consumed
 const DEFAULT_CURRENCY = "eur";
@@ -94,9 +97,10 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const sb = createClient(supabaseUrl, supabaseServiceKey);
 
     switch (path) {
+      case "create-intent":
+        return await handleCreateIntent(sb, body);
       case "authorize":
         return await handleAuthorize(sb, body);
       case "authorize-sepa":
@@ -114,13 +118,117 @@ Deno.serve(async (req) => {
       case "status":
         return await handleStatus(sb, body);
       default:
-        return json({ error: "Unknown action. Use: authorize, authorize-sepa, charge-sepa, setup-sepa, extend, capture, finalize, status" }, 400);
+        return json({ error: "Unknown action. Use: create-intent, authorize, authorize-sepa, charge-sepa, setup-sepa, extend, capture, finalize, status" }, 400);
     }
   } catch (err) {
     console.error("[spot-payment] Error:", err);
     return json({ error: (err as Error).message }, 500);
   }
 });
+
+// ─── 0. CREATE-INTENT — Guest Direct Pay (no Stripe customer) ───
+
+async function handleCreateIntent(
+  sb: ReturnType<typeof createClient>,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  const {
+    station_id,
+    connector_id = 1,
+    email,
+    amount = TIER_AMOUNT_CENTS,
+  } = body as {
+    station_id: string;
+    connector_id?: number;
+    email: string;
+    amount?: number;
+  };
+
+  if (!station_id) return json({ error: "station_id required" }, 400);
+  if (!email) return json({ error: "email required for receipt" }, 400);
+
+  // Get station name
+  const { data: station } = await sb
+    .from("stations")
+    .select("name, city, ocpp_identity")
+    .eq("id", station_id)
+    .single();
+  const stationName = station?.name ?? "Borne EZDrive";
+
+  // Find or create guest Stripe customer by email
+  const stripe = (await import("../_shared/stripe-client.ts")).getStripe();
+  let customerId: string;
+  const existingCustomers = await stripe.customers.list({ email, limit: 1 });
+  if (existingCustomers.data.length > 0) {
+    customerId = existingCustomers.data[0].id;
+  } else {
+    const newCustomer = await stripe.customers.create({
+      email,
+      metadata: { source: "direct_pay", station_id },
+    });
+    customerId = newCustomer.id;
+  }
+
+  // Create PaymentIntent with manual capture (pre-authorization)
+  const pi = await createPaymentIntent({
+    amountCents: amount as number,
+    currency: DEFAULT_CURRENCY,
+    customerId,
+    description: `Direct Pay — ${stationName} — Pré-autorisation`,
+    captureMethod: "manual",
+    metadata: {
+      type: "direct_pay",
+      station_id,
+      connector_id: String(connector_id),
+      email,
+      guest: "true",
+    },
+  });
+
+  // Create spot_sessions record
+  const { data: session } = await sb
+    .from("spot_sessions")
+    .insert({
+      station_id,
+      station_name: stationName,
+      connector_id,
+      consumer_id: null,
+      stripe_customer_id: customerId,
+      connected_account_id: null,
+      application_fee_pct: 0,
+      total_authorized_cents: amount,
+      total_consumed_cents: 0,
+      payment_mode: "card_preauth",
+      status: "pending",
+      coupon_code: null,
+      coupon_discount_cents: 0,
+    })
+    .select()
+    .single();
+
+  // Track PI
+  if (session) {
+    await sb.from("spot_payment_intents").insert({
+      session_id: session.id,
+      stripe_pi_id: pi.id,
+      amount_cents: amount,
+      tier_number: 1,
+      status: "authorized",
+    });
+  }
+
+  return json({
+    success: true,
+    session_id: session?.id,
+    client_secret: pi.client_secret,
+    payment_intent_id: pi.id,
+    stripe_customer_id: customerId,
+    authorized_cents: amount,
+    station_name: stationName,
+    ocpp_identity: station?.ocpp_identity,
+    message: `Pré-autorisation de ${((amount as number) / 100).toFixed(2)}€ créée. Confirmez avec votre carte.`,
+  });
+}
 
 // ─── 1. AUTHORIZE — Initial 20€ pre-authorization ────────
 
@@ -538,24 +646,19 @@ async function handleExtend(
     return json({ error: "session_id required" }, 400);
   }
 
-  // Get session
+  // Atomically update consumed amount and fetch latest session state in one call
   const { data: session, error } = await sb
     .from("spot_sessions")
-    .select("*, spot_payment_intents(*)")
+    .update({ total_consumed_cents: consumed_cents })
     .eq("id", session_id)
-    .single();
+    .select("*, spot_payment_intents(*)")
+    .maybeSingle();
 
   if (error || !session) {
     return json({ error: "Session not found" }, 404);
   }
 
-  // Update consumed amount
-  await sb
-    .from("spot_sessions")
-    .update({ total_consumed_cents: consumed_cents })
-    .eq("id", session_id);
-
-  // Check if we need a new tier
+  // Check if we need a new tier (using post-update data to avoid race)
   const currentTier = session.spot_payment_intents?.length ?? 1;
   const remainingAuthorized = session.total_authorized_cents - consumed_cents;
 

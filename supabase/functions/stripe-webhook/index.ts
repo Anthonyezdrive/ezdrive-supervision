@@ -12,8 +12,11 @@ import { corsHeaders } from "../_shared/cors.ts";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
+// Singleton — réutilisé entre les requêtes (Deno edge runtime garde le module en mémoire)
+const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
 function getDb() {
-  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  return db;
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -250,17 +253,19 @@ async function handlePaymentIntentSucceeded(paymentIntent: Record<string, unknow
 
   // Update payment_status in CDRs and OCPP transactions
   if (transactionId) {
-    await db.from("ocpp_transactions").update({
+    const { error: txErr } = await db.from("ocpp_transactions").update({
       payment_status: "paid",
       payment_intent_id: piId,
       paid_at: new Date().toISOString(),
     }).eq("id", transactionId);
+    if (txErr) console.error(`[Stripe] Failed to update ocpp_transaction ${transactionId}:`, txErr.message);
 
-    await db.from("ocpi_cdrs").update({
+    const { error: cdrErr } = await db.from("ocpi_cdrs").update({
       payment_status: "paid",
       payment_intent_id: piId,
       paid_at: new Date().toISOString(),
     }).eq("id", transactionId);
+    if (cdrErr) console.error(`[Stripe] Failed to update ocpi_cdr ${transactionId}:`, cdrErr.message);
 
     console.log(`[Stripe] CDR/Transaction ${transactionId} marked as paid`);
   }
@@ -268,12 +273,13 @@ async function handlePaymentIntentSucceeded(paymentIntent: Record<string, unknow
   // Also try matching by metadata session_id (for spot payments)
   const sessionId = metadata?.session_id;
   if (sessionId) {
-    await db.from("ocpi_cdrs").update({
+    const { error: spotErr } = await db.from("ocpi_cdrs").update({
       payment_status: "paid",
       payment_intent_id: piId,
       paid_at: new Date().toISOString(),
       payment_method: "stripe",
     }).eq("gfx_cdr_id", sessionId);
+    if (spotErr) console.error(`[Stripe] Failed to update spot CDR ${sessionId}:`, spotErr.message);
   }
 
   // ── Prepaid token recharge ──
@@ -323,15 +329,17 @@ async function handlePaymentIntentFailed(paymentIntent: Record<string, unknown>)
   const metadata = paymentIntent.metadata as Record<string, string> | undefined;
   const transactionId = metadata?.transaction_id;
   if (transactionId) {
-    await db.from("ocpp_transactions").update({
+    const { error: txErr } = await db.from("ocpp_transactions").update({
       payment_status: "failed",
       payment_intent_id: piId,
     }).eq("id", transactionId);
+    if (txErr) console.error(`[Stripe] Failed to update ocpp_transaction ${transactionId}:`, txErr.message);
 
-    await db.from("ocpi_cdrs").update({
+    const { error: cdrErr } = await db.from("ocpi_cdrs").update({
       payment_status: "failed",
       payment_intent_id: piId,
     }).eq("id", transactionId);
+    if (cdrErr) console.error(`[Stripe] Failed to update ocpi_cdr ${transactionId}:`, cdrErr.message);
 
     console.log(`[Stripe] CDR/Transaction ${transactionId} marked as failed`);
   }

@@ -33,8 +33,8 @@ export function B2BLoginPage() {
     if (profile?.role === "b2b_client") {
       return <Navigate to="/b2b/overview" replace />;
     }
-    // Admin/operator who hit /portail — send to B2B too
-    return <Navigate to="/b2b/overview" replace />;
+    // Admin/operator who hit /portail — send to admin dashboard
+    return <Navigate to="/dashboard" replace />;
   }
 
   async function handleLogin(e: FormEvent) {

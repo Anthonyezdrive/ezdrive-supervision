@@ -12,13 +12,19 @@ export function initSentry() {
     dsn: SENTRY_DSN,
     environment: import.meta.env.MODE, // "development" | "production"
     release: `ezdrive-supervision@${import.meta.env.VITE_APP_VERSION ?? "2.0.0"}`,
+    sendDefaultPii: true,
+
+    integrations: [
+      Sentry.browserTracingIntegration(),
+      Sentry.replayIntegration(),
+    ],
 
     // Performance monitoring
     tracesSampleRate: import.meta.env.PROD ? 0.2 : 1.0,
 
     // Session replay for error reproduction
-    replaysSessionSampleRate: 0,
-    replaysOnErrorSampleRate: import.meta.env.PROD ? 1.0 : 0,
+    replaysSessionSampleRate: 0.1,
+    replaysOnErrorSampleRate: 1.0,
 
     // Only send errors in production by default
     enabled: import.meta.env.PROD || !!SENTRY_DSN,

@@ -172,6 +172,37 @@ async function processCommand(commandId: string): Promise<void> {
       [resultStatus, JSON.stringify(result), commandId]
     );
 
+    // --- Post-processing: Reservation status updates ---
+    if (resultStatus === 'accepted') {
+      try {
+        if (cmd.command === 'ReserveNow' && cmd.payload?.reservationId) {
+          await query(
+            `UPDATE reservations
+             SET status = 'active', confirmed_at = now(), updated_at = now()
+             WHERE reservation_id = $1 AND chargepoint_id = $2`,
+            [cmd.payload.reservationId, cmd.chargepoint_id]
+          );
+          logger.info(
+            { reservationId: cmd.payload.reservationId, chargepointId: cmd.chargepoint_id },
+            'Reservation confirmed (ReserveNow accepted)'
+          );
+        } else if (cmd.command === 'CancelReservation' && cmd.payload?.reservationId) {
+          await query(
+            `UPDATE reservations
+             SET status = 'cancelled', cancelled_at = now(), updated_at = now()
+             WHERE reservation_id = $1 AND chargepoint_id = $2`,
+            [cmd.payload.reservationId, cmd.chargepoint_id]
+          );
+          logger.info(
+            { reservationId: cmd.payload.reservationId, chargepointId: cmd.chargepoint_id },
+            'Reservation cancelled (CancelReservation accepted)'
+          );
+        }
+      } catch (postErr) {
+        logger.warn({ err: postErr, command: cmd.command }, 'Failed to post-process reservation status');
+      }
+    }
+
     logger.info({
       identity: cp.identity,
       command: cmd.command,
@@ -226,6 +257,12 @@ function parseCommandResult(command: string, result: any): string {
 
     case 'GetCompositeSchedule':
       // Returns status + optional chargingSchedule
+      return result.status === 'Accepted' ? 'accepted' : 'rejected';
+
+    // Reservation commands
+    case 'ReserveNow':
+      return result.status === 'Accepted' ? 'accepted' : 'rejected';
+    case 'CancelReservation':
       return result.status === 'Accepted' ? 'accepted' : 'rejected';
 
     default:

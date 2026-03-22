@@ -59,6 +59,8 @@ export interface Station {
   deploy_state: DeployState;
   heartbeat_interval: number | null;
   iso_15118_enabled: boolean;
+  // OCPP identity (migration 015)
+  ocpp_identity?: string | null;
   // Road enriched fields (migration 058)
   setup_status?: string | null;
   access_group_ids?: string[] | null;

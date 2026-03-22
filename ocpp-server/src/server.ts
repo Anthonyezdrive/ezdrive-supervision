@@ -92,7 +92,28 @@ export function createOcppServer(httpServer: http.Server) {
         logger.info({ identity, ip: request.socket.remoteAddress }, 'WS auth: authenticated');
       }
 
-      logger.info({ identity, ip: request.socket.remoteAddress }, 'Chargepoint connection attempt');
+      // ── Whitelist by Identity ──
+      // Reject connections from chargepoints not registered in our database.
+      // This prevents unauthorized devices from connecting even without Basic Auth.
+      try {
+        const registered = await queryOne<{ identity: string }>(
+          `SELECT identity FROM ocpp_chargepoints WHERE identity = $1
+           UNION
+           SELECT ocpp_identity AS identity FROM stations WHERE ocpp_identity = $1`,
+          [identity]
+        );
+        if (!registered) {
+          logger.warn({ identity, ip: request.socket.remoteAddress }, 'Rejected: chargepoint not registered in database');
+          socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+          socket.destroy();
+          return;
+        }
+      } catch (dbErr) {
+        // If DB is unreachable, allow connection (fail-open to not brick bornes)
+        logger.error({ identity, err: dbErr }, 'Whitelist check: DB error — allowing connection (fail-open)');
+      }
+
+      logger.info({ identity, ip: request.socket.remoteAddress }, 'Chargepoint connection attempt (whitelisted)');
       rpcServer.handleUpgrade(request, socket, head);
     } else {
       logger.warn({ url: request.url }, 'Rejected WebSocket connection: invalid path');

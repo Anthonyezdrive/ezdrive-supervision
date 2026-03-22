@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   Building2, Users, Plus, Trash2, Pencil, Search,
-  CheckCircle, XCircle, Eye, EyeOff, Copy, Loader2,
+  CheckCircle, XCircle, Eye, EyeOff, Copy, Loader2, Euro,
 } from "lucide-react";
 import { PageHelp } from "@/components/ui/PageHelp";
 import { KPICard } from "@/components/ui/KPICard";
@@ -20,6 +20,8 @@ import {
 } from "@/hooks/useB2BAdmin";
 import type { B2BClient } from "@/types/b2b";
 import type { B2BUserRow } from "@/hooks/useB2BAdmin";
+import { useAllReimbursementConfigs, useUpdateReimbursementConfig } from "@/hooks/useReimbursements";
+import type { ReimbursementConfig } from "@/hooks/useReimbursements";
 
 const thClass =
   "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-foreground-muted";
@@ -47,7 +49,7 @@ export function B2BAdminPage() {
   const deleteClient = useDeleteB2BClient();
 
   // ── State ──
-  const [tab, setTab] = useState<"clients" | "users">("clients");
+  const [tab, setTab] = useState<"clients" | "users" | "reimbursements">("clients");
   const [search, setSearch] = useState("");
 
   // User creation slide-over
@@ -70,6 +72,19 @@ export function B2BAdminPage() {
 
   // Delete confirmations
   const [deleteTarget, setDeleteTarget] = useState<{ type: "user" | "client"; id: string; label: string } | null>(null);
+
+  // Reimbursement config
+  const { data: reimbursementConfigs, isLoading: loadingConfigs } = useAllReimbursementConfigs();
+  const updateReimbursementConfig = useUpdateReimbursementConfig();
+  const [showEditConfig, setShowEditConfig] = useState(false);
+  const [editingConfig, setEditingConfig] = useState<ReimbursementConfig | null>(null);
+  const [configForm, setConfigForm] = useState({
+    rate_per_kwh: "0.25",
+    max_monthly_amount: "",
+    enabled: true,
+    payment_method: "bank_transfer",
+    billing_day: "1",
+  });
 
   // ── Derived ──
   const activeClients = (clients ?? []).filter((c) => c.is_active).length;
@@ -255,6 +270,14 @@ export function B2BAdminPage() {
           >
             Utilisateurs ({totalUsers})
           </button>
+          <button
+            onClick={() => setTab("reimbursements")}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+              tab === "reimbursements" ? "bg-primary text-white" : "text-foreground-muted hover:text-foreground"
+            }`}
+          >
+            Remboursements ({(reimbursementConfigs ?? []).length})
+          </button>
         </div>
 
         <div className="flex-1" />
@@ -270,7 +293,7 @@ export function B2BAdminPage() {
           />
         </div>
 
-        {tab === "clients" ? (
+        {tab === "clients" && (
           <button
             onClick={() => setShowCreateClient(true)}
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors"
@@ -278,7 +301,8 @@ export function B2BAdminPage() {
             <Plus className="w-4 h-4" />
             Ajouter client
           </button>
-        ) : (
+        )}
+        {tab === "users" && (
           <button
             onClick={() => {
               setUserForm({ email: "", password: generatePassword(), fullName: "", clientId: clients?.[0]?.id ?? "" });
@@ -421,6 +445,100 @@ export function B2BAdminPage() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* ── Reimbursements Config Table ── */}
+      {tab === "reimbursements" && (
+        <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-border flex items-center gap-3">
+            <Euro className="w-5 h-5" style={{ color: "#2ECC71" }} />
+            <h3 className="text-sm font-heading font-bold text-foreground">Configuration des remboursements par client</h3>
+          </div>
+          {loadingConfigs ? (
+            <div className="p-6 space-y-3">
+              {[1, 2, 3].map((i) => <div key={i} className="h-12 bg-surface-elevated rounded-xl animate-pulse" />)}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className={thClass}>Client</th>
+                    <th className={`${thClass} text-right`}>Taux / kWh</th>
+                    <th className={`${thClass} text-right`}>Plafond mensuel</th>
+                    <th className={`${thClass} text-center`}>Approbation auto</th>
+                    <th className={`${thClass} text-center`}>Statut</th>
+                    <th className={`${thClass} text-center`}>Jour facturation</th>
+                    <th className={`${thClass} text-right`}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(reimbursementConfigs ?? []).map((cfg) => {
+                    const clientName = (clients ?? []).find((c) => c.id === cfg.b2b_client_id)?.name ?? cfg.b2b_client_id;
+                    return (
+                      <tr key={cfg.id} className="border-b border-border/50 hover:bg-surface-elevated/50 transition-colors">
+                        <td className={`${tdClass} font-medium`}>
+                          <span className="px-2 py-0.5 bg-primary/10 text-primary rounded-full text-xs font-medium">
+                            {clientName}
+                          </span>
+                        </td>
+                        <td className={`${tdClass} text-right font-mono`}>{cfg.rate_per_kwh.toFixed(2)} EUR</td>
+                        <td className={`${tdClass} text-right font-mono`}>
+                          {cfg.max_monthly_amount != null ? `${cfg.max_monthly_amount.toFixed(0)} EUR` : "—"}
+                        </td>
+                        <td className={`${tdClass} text-center`}>
+                          {cfg.payment_method === "auto" ? (
+                            <CheckCircle className="w-4 h-4 text-green-400 inline" />
+                          ) : (
+                            <XCircle className="w-4 h-4 text-foreground-muted inline" />
+                          )}
+                        </td>
+                        <td className={`${tdClass} text-center`}>
+                          {cfg.enabled ? (
+                            <span className="inline-flex items-center gap-1.5 rounded-lg border px-2 py-0.5 text-xs font-semibold bg-emerald-500/10 text-emerald-400 border-emerald-500/25">
+                              Actif
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 rounded-lg border px-2 py-0.5 text-xs font-semibold bg-red-500/10 text-red-400 border-red-500/25">
+                              Inactif
+                            </span>
+                          )}
+                        </td>
+                        <td className={`${tdClass} text-center font-mono`}>{cfg.billing_day}</td>
+                        <td className={`${tdClass} text-right`}>
+                          <button
+                            onClick={() => {
+                              setEditingConfig(cfg);
+                              setConfigForm({
+                                rate_per_kwh: String(cfg.rate_per_kwh),
+                                max_monthly_amount: cfg.max_monthly_amount != null ? String(cfg.max_monthly_amount) : "",
+                                enabled: cfg.enabled,
+                                payment_method: cfg.payment_method,
+                                billing_day: String(cfg.billing_day),
+                              });
+                              setShowEditConfig(true);
+                            }}
+                            className="p-1.5 text-foreground-muted hover:text-foreground hover:bg-surface-elevated rounded-lg transition-colors"
+                            title="Modifier"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {(reimbursementConfigs ?? []).length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-12 text-center text-foreground-muted text-sm">
+                        Aucune configuration de remboursement
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
@@ -685,6 +803,117 @@ export function B2BAdminPage() {
             >
               {createClient.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
               Cr\u00e9er le client
+            </button>
+          </div>
+        </div>
+      </SlideOver>
+
+      {/* ── Edit Reimbursement Config SlideOver ── */}
+      <SlideOver
+        open={showEditConfig}
+        onClose={() => { setShowEditConfig(false); setEditingConfig(null); }}
+        title={`Remboursement — ${editingConfig ? ((clients ?? []).find((c) => c.id === editingConfig.b2b_client_id)?.name ?? "") : ""}`}
+      >
+        <div className="p-6 space-y-5">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1.5">Taux par kWh (EUR)</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={configForm.rate_per_kwh}
+              onChange={(e) => setConfigForm((f) => ({ ...f, rate_per_kwh: e.target.value }))}
+              className="w-full px-3 py-2.5 bg-surface-elevated border border-border rounded-xl text-sm text-foreground font-mono focus:border-border-focus focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1.5">
+              Plafond mensuel (EUR) <span className="text-foreground-muted font-normal">— vide = illimité</span>
+            </label>
+            <input
+              type="number"
+              step="1"
+              min="0"
+              value={configForm.max_monthly_amount}
+              onChange={(e) => setConfigForm((f) => ({ ...f, max_monthly_amount: e.target.value }))}
+              placeholder="Illimité"
+              className="w-full px-3 py-2.5 bg-surface-elevated border border-border rounded-xl text-sm text-foreground font-mono placeholder:text-foreground-muted focus:border-border-focus focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1.5">Méthode de paiement</label>
+            <select
+              value={configForm.payment_method}
+              onChange={(e) => setConfigForm((f) => ({ ...f, payment_method: e.target.value }))}
+              className="w-full px-3 py-2.5 bg-surface-elevated border border-border rounded-xl text-sm text-foreground focus:border-border-focus focus:outline-none"
+            >
+              <option value="bank_transfer">Virement bancaire</option>
+              <option value="auto">Automatique</option>
+              <option value="manual">Manuel</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1.5">Jour de facturation</label>
+            <input
+              type="number"
+              min="1"
+              max="28"
+              value={configForm.billing_day}
+              onChange={(e) => setConfigForm((f) => ({ ...f, billing_day: e.target.value }))}
+              className="w-32 px-3 py-2.5 bg-surface-elevated border border-border rounded-xl text-sm text-foreground font-mono focus:border-border-focus focus:outline-none"
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium text-foreground">Actif</label>
+            <button
+              type="button"
+              onClick={() => setConfigForm((f) => ({ ...f, enabled: !f.enabled }))}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                configForm.enabled ? "bg-primary" : "bg-surface-elevated border border-border"
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  configForm.enabled ? "translate-x-6" : "translate-x-1"
+                }`}
+              />
+            </button>
+          </div>
+
+          <div className="pt-4 border-t border-border flex justify-end gap-3">
+            <button
+              onClick={() => { setShowEditConfig(false); setEditingConfig(null); }}
+              className="px-4 py-2.5 text-sm text-foreground-muted hover:text-foreground border border-border rounded-xl transition-colors"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={() => {
+                if (!editingConfig) return;
+                updateReimbursementConfig.mutate(
+                  {
+                    b2b_client_id: editingConfig.b2b_client_id,
+                    rate_per_kwh: parseFloat(configForm.rate_per_kwh) || 0,
+                    max_monthly_amount: configForm.max_monthly_amount ? parseFloat(configForm.max_monthly_amount) : null,
+                    enabled: configForm.enabled,
+                    payment_method: configForm.payment_method,
+                    billing_day: parseInt(configForm.billing_day) || 1,
+                  },
+                  {
+                    onSuccess: () => {
+                      toastSuccess("Configuration mise à jour");
+                      setShowEditConfig(false);
+                      setEditingConfig(null);
+                    },
+                    onError: (err) => toastError("Erreur", err.message),
+                  }
+                );
+              }}
+              disabled={updateReimbursementConfig.isPending}
+              className="px-5 py-2.5 text-sm font-semibold bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {updateReimbursementConfig.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+              Enregistrer
             </button>
           </div>
         </div>

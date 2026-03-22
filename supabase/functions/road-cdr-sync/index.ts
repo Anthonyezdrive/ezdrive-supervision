@@ -2,15 +2,17 @@
 // Edge Function: Road CDR Sync
 // Ingests sessions (CDRs) from Road.io API into ocpi_cdrs
 // Supports incremental sync via watermark table
-// Respects CPO isolation: EZDrive Reunion / VCity AG
+// Multi-account: EZDrive Réunion / VCity AG (hermetic CPO isolation)
 // ============================================
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.0";
 import { corsHeaders } from "../_shared/cors.ts";
-import { roadPost, ROAD_PROVIDER_ID } from "../_shared/road-client.ts";
-
-const ROAD_VCITY_PROVIDER_ID = Deno.env.get("ROAD_VCITY_PROVIDER_ID") ?? "";
+import {
+  getRoadAccounts,
+  roadPostWithAuth,
+  type RoadAccountConfig,
+} from "../_shared/road-client.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -19,40 +21,6 @@ const COUNTRY_CODE = "FR";
 const PARTY_ID = "EZD";
 const PAGE_SIZE = 100;
 const MAX_PAGES_PER_RUN = 5; // Max 500 sessions per invocation
-
-// -------------------------------------------------------
-// Road account config — hermetic CPO isolation
-// -------------------------------------------------------
-interface RoadAccountConfig {
-  providerId: string;
-  cpoCode: string;
-  label: string;
-  watermarkId: string;
-}
-
-function getRoadAccounts(): RoadAccountConfig[] {
-  const accounts: RoadAccountConfig[] = [];
-
-  if (ROAD_PROVIDER_ID) {
-    accounts.push({
-      providerId: ROAD_PROVIDER_ID,
-      cpoCode: "ezdrive-reunion",
-      label: "EZDrive Reunion",
-      watermarkId: "road-cdr-sync-reunion",
-    });
-  }
-
-  if (ROAD_VCITY_PROVIDER_ID) {
-    accounts.push({
-      providerId: ROAD_VCITY_PROVIDER_ID,
-      cpoCode: "vcity-ag",
-      label: "VCity AG",
-      watermarkId: "road-cdr-sync-vcity",
-    });
-  }
-
-  return accounts;
-}
 
 // -------------------------------------------------------
 // Interfaces
@@ -163,7 +131,7 @@ serve(async (req: Request) => {
         continue;
       }
 
-      console.log(`[road-cdr-sync] Starting ${account.label} (provider: ${account.providerId})`);
+      console.log(`[road-cdr-sync] Starting ${account.label} (provider: ${account.providerId.slice(0, 8)}…)`);
 
       const accountResult = await syncAccountSessions(
         supabase,
@@ -228,7 +196,7 @@ async function syncAccountSessions(
 
   console.log(`[road-cdr-sync] ${account.label}: starting from skip=${currentSkip}, lastDate=${lastRecordDate}`);
 
-  // 2. Paginated fetch from Road.io
+  // 2. Paginated fetch from Road.io using account-specific credentials
   let pagesProcessed = 0;
 
   while (pagesProcessed < MAX_PAGES_PER_RUN) {
@@ -237,10 +205,12 @@ async function syncAccountSessions(
       skip: currentSkip,
     };
 
-    // Filter by account's provider to ensure hermetic isolation
-    // The provider header ensures we only see this provider's data
-
-    const res = await roadPost("/1/sessions/search", searchBody);
+    const res = await roadPostWithAuth(
+      "/1/sessions/search",
+      searchBody,
+      account.apiToken,
+      account.providerId
+    );
 
     if (!res.ok) {
       const errText = await res.text();
@@ -269,8 +239,7 @@ async function syncAccountSessions(
           continue;
         }
 
-        // Deduplication check by road session ID stored in gfx_cdr_id field
-        // (reusing the existing column for Road CDR IDs)
+        // Deduplication check
         const roadCdrId = `road-${sessionId}`;
 
         const { data: existing } = await supabase
@@ -284,7 +253,9 @@ async function syncAccountSessions(
           continue;
         }
 
-        // Resolve station_id from evseControllerId or chargePointId
+        // Resolve station_id from evseControllerId (= road_id in stations table)
+        // For CPO sessions: evseControllerId contains the Road controller ID
+        // For MSP sessions: no evseControllerId, chargePointId has EVSE UID (e.g. RE*EFL*EV1067965*C1)
         let stationId: string | null = null;
         const evseCtrlId = session.evseControllerId;
         if (evseCtrlId) {
@@ -293,9 +264,15 @@ async function syncAccountSessions(
             stationId = station.id;
             // Verify CPO isolation: only link if station belongs to this CPO
             if (station.cpo_id !== cpoId) {
+              console.log(`[road-cdr-sync] CPO mismatch for evseControllerId=${evseCtrlId}: station.cpo_id=${station.cpo_id} vs expected=${cpoId}`);
               stationId = null; // Don't cross-link CPOs
             }
+          } else {
+            console.log(`[road-cdr-sync] No station found for evseControllerId=${evseCtrlId} (session ${sessionId})`);
           }
+        } else if (session.chargePointId) {
+          // MSP sessions: try matching chargePointId to station evse_id (less common)
+          console.log(`[road-cdr-sync] Session ${sessionId} has no evseControllerId, chargePointId=${session.chargePointId} — skipping station link (MSP session)`);
         }
 
         // Build cdr_token
@@ -337,56 +314,35 @@ async function syncAccountSessions(
         const emspCountryCode = session.externalProvider?.country ?? null;
         const emspPartyId = session.externalProvider?.partyId ?? null;
 
-        // Driver info from user
+        // Driver info
         const driverExternalId = session.userId ?? null;
 
         const row = {
-          // OCPI identifiers
           country_code: COUNTRY_CODE,
           party_id: PARTY_ID,
           cdr_id: roadCdrId,
-
-          // Road-specific tracking
           gfx_cdr_id: roadCdrId,
           source: "road",
-
-          // Timing
           start_date_time: session.startedAt,
           end_date_time: session.endedAt,
-
-          // Token and location
           cdr_token: cdrToken,
           cdr_location: cdrLocation,
-
-          // Energy
           total_energy: session.kwh ?? 0,
           total_time: durationHours ?? 0,
           total_parking_time: 0,
-
-          // Cost
           currency: session.currency ?? session.priceWithFX?.originalCurrency ?? "EUR",
           total_cost: totalCost,
           total_cost_incl_vat: totalCostInclVat,
           total_vat: totalVat,
           vat_rate: vatRate,
-
-          // EMSP / roaming
           emsp_country_code: emspCountryCode,
           emsp_party_id: emspPartyId,
           emsp_external_id: session.roamingId ?? null,
-
-          // Driver
           driver_external_id: driverExternalId,
-
-          // Raw OCPI record if available
           charging_periods: session.rawRecord?.charging_periods
             ? JSON.stringify(session.rawRecord.charging_periods)
             : "[]",
-
-          // Station link (CPO-isolated)
           station_id: stationId,
-
-          // Timestamps
           last_updated: new Date().toISOString(),
         };
 
@@ -411,7 +367,6 @@ async function syncAccountSessions(
     currentSkip += sessions.length;
     pagesProcessed++;
 
-    // If fewer than PAGE_SIZE, we've reached the end
     if (sessions.length < PAGE_SIZE) break;
   }
 

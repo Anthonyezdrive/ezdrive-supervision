@@ -152,8 +152,10 @@ function applyStepSize(
 export function calculateTariff(
   input: TariffCalculationInput,
   tariffElements: TariffElement[],
-  vatRate: number = 8.5
+  vatRate: number = 8.5,
+  scheduleMultiplier?: number
 ): TariffCalculationResult {
+  const multiplier = scheduleMultiplier ?? 1.0;
   let energyCost = 0;
   let timeCost = 0;
   let parkingCost = 0;
@@ -175,12 +177,12 @@ export function calculateTariff(
       switch (component.type) {
         case 'ENERGY': {
           const billed = applyStepSize(input.energyKwh, component.step_size, 'ENERGY');
-          energyCost += billed * component.price;
+          energyCost += billed * component.price * multiplier;
           break;
         }
         case 'TIME': {
           const billed = applyStepSize(input.durationHours, component.step_size, 'TIME');
-          timeCost += billed * component.price;
+          timeCost += billed * component.price * multiplier;
           break;
         }
         case 'PARKING_TIME': {
@@ -268,6 +270,88 @@ export async function resolveTariff(
   // ── Step 3: Hardcoded defaults (last resort) ──
   logger.warn({ chargepointId, connType }, 'Using hardcoded default tariff');
   return isdc ? DEFAULT_DC_TARIFF : DEFAULT_AC_TARIFF;
+}
+
+// --- Schedule & Group Tariff Resolution ---
+
+/**
+ * Resolve a time-of-day price multiplier from tariff_schedules.
+ * Queries for the current day_of_week and time range.
+ * Returns price_multiplier or 1.0 if no matching schedule is found.
+ */
+export async function resolveScheduleMultiplier(
+  tariffId: string,
+  sessionTime?: Date
+): Promise<number> {
+  try {
+    const now = sessionTime ?? new Date();
+    // JS getDay(): 0=Sunday … 6=Saturday — store as ISO weekday (1=Mon … 7=Sun)
+    const dayOfWeek = now.getDay() === 0 ? 7 : now.getDay();
+    const timeStr = now.toTimeString().slice(0, 8); // HH:MM:SS
+
+    const schedule = await queryOne<{ price_multiplier: number }>(
+      `SELECT price_multiplier
+       FROM tariff_schedules
+       WHERE tariff_id = $1
+         AND day_of_week = $2
+         AND start_time <= $3::time
+         AND end_time   >  $3::time
+       ORDER BY priority DESC NULLS LAST
+       LIMIT 1`,
+      [tariffId, dayOfWeek, timeStr]
+    );
+
+    if (schedule?.price_multiplier != null) {
+      logger.info(
+        { tariffId, dayOfWeek, timeStr, multiplier: schedule.price_multiplier },
+        'Resolved schedule multiplier'
+      );
+      return schedule.price_multiplier;
+    }
+
+    return 1.0;
+  } catch (err) {
+    logger.warn({ err, tariffId }, 'Failed to resolve schedule multiplier, defaulting to 1.0');
+    return 1.0;
+  }
+}
+
+/**
+ * Resolve group-specific tariff elements for an access group + station.
+ * Queries access_group_tariffs → ocpi_tariffs to find a tariff override
+ * that applies to the given group and station.
+ * Returns null if no group tariff is configured.
+ */
+export async function resolveGroupTariff(
+  groupId: string,
+  stationId: string
+): Promise<TariffElement[] | null> {
+  try {
+    const row = await queryOne<{ elements: TariffElement[]; tariff_id: string }>(
+      `SELECT t.elements, t.tariff_id
+       FROM access_group_tariffs agt
+       JOIN ocpi_tariffs t ON t.id = agt.tariff_id
+       WHERE agt.group_id = $1
+         AND (agt.station_id = $2 OR agt.station_id IS NULL)
+         AND (agt.valid_from IS NULL OR agt.valid_from <= now())
+         AND (agt.valid_to IS NULL OR agt.valid_to > now())
+       ORDER BY
+         CASE WHEN agt.station_id = $2 THEN 0 ELSE 1 END,
+         agt.priority DESC NULLS LAST
+       LIMIT 1`,
+      [groupId, stationId]
+    );
+
+    if (row?.elements && Array.isArray(row.elements) && row.elements.length > 0) {
+      logger.info({ groupId, stationId, tariffId: row.tariff_id }, 'Resolved group tariff');
+      return row.elements;
+    }
+
+    return null;
+  } catch (err) {
+    logger.warn({ err, groupId, stationId }, 'Failed to resolve group tariff');
+    return null;
+  }
 }
 
 function isConnectorDC(connectorType?: string): boolean {

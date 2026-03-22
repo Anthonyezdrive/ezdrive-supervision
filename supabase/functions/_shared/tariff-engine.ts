@@ -6,6 +6,7 @@
 // ============================================
 
 import type { OcpiTariffElement, OcpiPriceComponent, OcpiTariffRestrictions } from "./ocpi-types.ts";
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // --- Interfaces ---
 
@@ -152,13 +153,16 @@ function matchesRestrictions(
  * @param input - Session data (energy, duration, parking time)
  * @param tariffElements - OCPI tariff elements with price components
  * @param vatRate - VAT rate percentage (default: 8.5% for DOM-TOM)
+ * @param scheduleMultiplier - Optional multiplier for ENERGY and TIME prices (from tariff_schedules)
  * @returns Detailed cost breakdown
  */
 export function calculateTariff(
   input: TariffCalculationInput,
   tariffElements: OcpiTariffElement[],
-  vatRate: number = 8.5
+  vatRate: number = 8.5,
+  scheduleMultiplier?: number
 ): TariffCalculationResult {
+  const multiplier = scheduleMultiplier ?? 1.0;
   const breakdown: PriceBreakdown[] = [];
   let energyCost = 0;
   let timeCost = 0;
@@ -178,14 +182,14 @@ export function calculateTariff(
         case "ENERGY":
           volume = input.energyKwh;
           billedVolume = applyStepSize(volume, component.step_size, "ENERGY");
-          cost = billedVolume * component.price;
+          cost = billedVolume * component.price * multiplier;
           energyCost += cost;
           break;
 
         case "TIME":
           volume = input.durationHours;
           billedVolume = applyStepSize(volume, component.step_size, "TIME");
-          cost = billedVolume * component.price;
+          cost = billedVolume * component.price * multiplier;
           timeCost += cost;
           break;
 
@@ -251,4 +255,165 @@ export function getDefaultTariffElements(
     return DEFAULT_DC_TARIFF;
   }
   return DEFAULT_AC_TARIFF;
+}
+
+// --- Schedule Multiplier Resolution ---
+
+/**
+ * Resolve a time-of-day price multiplier from the tariff_schedules table.
+ * Calls the `resolve_tariff_multiplier` SQL function.
+ *
+ * @param supabase - Supabase client
+ * @param tariffId - UUID of the tariff
+ * @param sessionTime - Point in time to evaluate (defaults to now)
+ * @returns The price multiplier (e.g. 1.5 for peak), or 1.0 if no schedule matches
+ */
+export async function resolveScheduleMultiplier(
+  supabase: SupabaseClient,
+  tariffId: string,
+  sessionTime?: Date
+): Promise<number> {
+  try {
+    const timeParam = sessionTime?.toISOString() ?? new Date().toISOString();
+    const { data, error } = await supabase.rpc("resolve_tariff_multiplier", {
+      p_tariff_id: tariffId,
+      p_time: timeParam,
+    });
+
+    if (error) {
+      console.error("[tariff-engine] resolve_tariff_multiplier error:", error.message);
+      return 1.0;
+    }
+
+    // The SQL function returns a single numeric value
+    return typeof data === "number" ? data : 1.0;
+  } catch (err) {
+    console.error("[tariff-engine] resolveScheduleMultiplier exception:", err);
+    return 1.0;
+  }
+}
+
+// --- Access Group Tariff Resolution ---
+
+/**
+ * Resolve group-specific tariff elements from `access_group_tariffs`.
+ * Calls the `resolve_access_group_tariff` SQL function which returns
+ * the OCPI tariff elements array for the group/station combination.
+ *
+ * @param supabase - Supabase client
+ * @param groupId - UUID of the access group
+ * @param stationId - UUID of the station
+ * @returns OCPI tariff elements if a group tariff exists, otherwise null
+ */
+export async function resolveGroupTariffElements(
+  supabase: SupabaseClient,
+  groupId: string,
+  stationId: string
+): Promise<OcpiTariffElement[] | null> {
+  try {
+    const { data, error } = await supabase.rpc("resolve_access_group_tariff", {
+      p_group_id: groupId,
+      p_station_id: stationId,
+    });
+
+    if (error) {
+      console.error("[tariff-engine] resolve_access_group_tariff error:", error.message);
+      return null;
+    }
+
+    // The SQL function returns tariff elements JSON or null
+    if (!data) return null;
+
+    // data may be a tariff row with elements, or directly the elements array
+    if (Array.isArray(data)) {
+      return data as OcpiTariffElement[];
+    }
+    if (data.elements && Array.isArray(data.elements)) {
+      return data.elements as OcpiTariffElement[];
+    }
+
+    return null;
+  } catch (err) {
+    console.error("[tariff-engine] resolveGroupTariffElements exception:", err);
+    return null;
+  }
+}
+
+// --- Idle Fee Calculation ---
+
+export interface IdleFeeResult {
+  fee_cents: number;
+  grace_period_minutes: number;
+  capped: boolean;
+}
+
+/**
+ * Calculate idle (parking) fees from the `idle_fee_config` table.
+ * Applies grace period, per-minute fee, and optional max cap.
+ *
+ * @param supabase - Supabase client
+ * @param stationId - UUID of the charging station
+ * @param parkingMinutes - Total parking minutes after charge completed
+ * @returns Idle fee details (fee in cents, grace period, whether cap was applied)
+ */
+export async function calculateIdleFee(
+  supabase: SupabaseClient,
+  stationId: string,
+  parkingMinutes: number
+): Promise<IdleFeeResult> {
+  const defaultResult: IdleFeeResult = {
+    fee_cents: 0,
+    grace_period_minutes: 0,
+    capped: false,
+  };
+
+  try {
+    const { data, error } = await supabase
+      .from("idle_fee_config")
+      .select("grace_period_minutes, fee_per_minute_cents, max_fee_cents")
+      .eq("station_id", stationId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("[tariff-engine] idle_fee_config query error:", error.message);
+      return defaultResult;
+    }
+
+    if (!data) {
+      // No idle fee configured for this station
+      return defaultResult;
+    }
+
+    const gracePeriod: number = data.grace_period_minutes ?? 0;
+    const feePerMinute: number = data.fee_per_minute_cents ?? 0;
+    const maxFee: number | null = data.max_fee_cents ?? null;
+
+    // Billable minutes = parking time minus grace period, minimum 0
+    const billableMinutes = Math.max(0, parkingMinutes - gracePeriod);
+
+    if (billableMinutes === 0 || feePerMinute === 0) {
+      return {
+        fee_cents: 0,
+        grace_period_minutes: gracePeriod,
+        capped: false,
+      };
+    }
+
+    let feeCents = Math.round(billableMinutes * feePerMinute);
+    let capped = false;
+
+    if (maxFee !== null && feeCents > maxFee) {
+      feeCents = maxFee;
+      capped = true;
+    }
+
+    return {
+      fee_cents: feeCents,
+      grace_period_minutes: gracePeriod,
+      capped,
+    };
+  } catch (err) {
+    console.error("[tariff-engine] calculateIdleFee exception:", err);
+    return defaultResult;
+  }
 }
