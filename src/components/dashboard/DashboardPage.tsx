@@ -196,7 +196,11 @@ export function DashboardPage() {
       const [sessionsRes, activeRes, customersRes, invoicesRes, energyRes, subsRes, cdrCountRes, cdrEnergyRes] = await Promise.all([
         safe(() => txAllQuery ? txAllQuery : Promise.resolve(emptyResult), emptyResult),
         safe(() => txActiveQuery ? txActiveQuery : Promise.resolve(emptyResult), emptyResult),
-        safe(() => supabase.from("all_consumers").select("*", { count: "exact", head: true }), emptyResult),
+        safe(() => {
+          let q = supabase.from("all_consumers").select("*", { count: "exact", head: true });
+          if (selectedCpoId) q = q.eq("cpo_id", selectedCpoId);
+          return q;
+        }, emptyResult),
         safe(() => supabase.from("invoices").select("total_cents").eq("status", "paid"), emptyResult),
         safe(() => txEnergyQuery ? txEnergyQuery : Promise.resolve(emptyResult), emptyResult),
         safe(() => supabase.from("user_subscriptions").select("*", { count: "exact", head: true }).eq("status", "ACTIVE"), emptyResult),
