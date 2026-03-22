@@ -18,6 +18,7 @@ import {
   Eye,
   Send,
   Banknote,
+  RefreshCw,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
@@ -479,6 +480,45 @@ export function XDriveBPU() {
     );
   }, [calculation, existingInvoice, partnerCode, selectedMonth, partner, bpuConfig]);
 
+  // ── Pennylane sync ─────────────────────────────────────
+  const [pennylaneToast, setPennylaneToast] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
+
+  const pennylaneMutation = useMutation({
+    mutationFn: async (invId: string) => {
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/xdrive-pennylane-sync`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({ action: "sync_bpu", invoiceId: invId }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || "Erreur Pennylane");
+      return data;
+    },
+    onSuccess: () => {
+      setPennylaneToast({ type: "success", message: "Facture synchronisée dans Pennylane" });
+      setTimeout(() => setPennylaneToast(null), 4000);
+      queryClient.invalidateQueries({
+        queryKey: ["xdrive-bpu-invoice", partnerId, selectedMonth],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["xdrive-bpu-history", partnerId],
+      });
+    },
+    onError: (err: Error) => {
+      setPennylaneToast({ type: "error", message: err.message });
+      setTimeout(() => setPennylaneToast(null), 6000);
+    },
+  });
+
   // ── Add optional service ────────────────────────────────
   const addOptional = (code: string) => {
     if (selectedOptionals.some((o) => o.code === code)) return;
@@ -794,7 +834,44 @@ export function XDriveBPU() {
             Exporter PDF
           </button>
         )}
+        {isEZDriveAdmin &&
+          existingInvoice &&
+          (existingInvoice.status === "validated" || existingInvoice.status === "sent") && (
+            existingInvoice.pennylane_invoice_id ? (
+              <span className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
+                <CheckCircle2 className="w-4 h-4" />
+                Synchronisé Pennylane
+              </span>
+            ) : (
+              <button
+                onClick={() => pennylaneMutation.mutate(existingInvoice.id)}
+                disabled={pennylaneMutation.isPending}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-400 hover:bg-violet-500/20 transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${pennylaneMutation.isPending ? "animate-spin" : ""}`} />
+                {pennylaneMutation.isPending ? "Synchronisation..." : "Synchroniser Pennylane"}
+              </button>
+            )
+          )}
       </div>
+
+      {/* ── Pennylane toast ─────────────────────────────── */}
+      {pennylaneToast && (
+        <div
+          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg text-sm font-medium transition-all ${
+            pennylaneToast.type === "success"
+              ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+              : "bg-red-500/15 border-red-500/30 text-red-400"
+          }`}
+        >
+          {pennylaneToast.type === "success" ? (
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+          )}
+          {pennylaneToast.message}
+        </div>
+      )}
 
       {/* ── Invoice preview ─────────────────────────────── */}
       {calculation && (

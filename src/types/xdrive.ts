@@ -96,6 +96,7 @@ export interface XDriveBPUInvoice {
   pdc_inventory: Record<string, unknown>;
   status: 'draft' | 'review' | 'validated' | 'sent' | 'paid';
   pdf_url: string | null;
+  pennylane_invoice_id: string | null;
 }
 
 export interface XDrivePartnerInvoice {
@@ -116,6 +117,7 @@ export interface XDrivePartnerInvoice {
   generated_by: string | null;
   generated_at: string | null;
   pdf_url: string | null;
+  pennylane_invoice_id: string | null;
   created_at: string;
   updated_at: string;
   // Joined fields
