@@ -94,9 +94,14 @@ function getTimeRangeForFilter(filter: TimeFilter, customFrom?: string, customTo
 
 export function DashboardPage() {
   const navigate = useNavigate();
-  const { selectedCpoId } = useCpo();
+  const { selectedCpoId, selectedCpo } = useCpo();
   const { data: kpis, isLoading, isError, refetch } = useStationKPIs(selectedCpoId);
   const { data: stations } = useStations(selectedCpoId);
+
+  // CPOs connected to Road.io have consumer/subscription data
+  // GreenFlux CPOs (totalenergies, ezdrive-ag, ocpp-direct) don't
+  const ROAD_CPO_CODES = ["ezdrive-reunion", "vcity-ag", "vcity-reunion"];
+  const isRoadCpo = !selectedCpoId || (selectedCpo && ROAD_CPO_CODES.includes(selectedCpo.code));
 
   // ── Time filter state ─────────────────────────────────
   const [timeRange, setTimeRange] = useState<TimeRange>(getDefaultTimeRange);
@@ -815,14 +820,19 @@ export function DashboardPage() {
       </div>
 
       {/* ── Business Metrics ────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <MetricCard icon={Users} label="Clients inscrits" value={businessMetrics?.totalCustomers ?? 0} color="#9B59B6" />
-        <MetricCard icon={CreditCard} label="Abonnements actifs" value={businessMetrics?.activeSubscriptions ?? 0} color="#3498DB" />
+      <div className={`grid grid-cols-2 ${isRoadCpo ? "lg:grid-cols-4" : "lg:grid-cols-2"} gap-3`}>
+        {isRoadCpo && (
+          <MetricCard icon={Users} label="Clients inscrits" value={businessMetrics?.totalCustomers ?? 0} color="#9B59B6" />
+        )}
+        {isRoadCpo && (
+          <MetricCard icon={CreditCard} label="Abonnements actifs" value={businessMetrics?.activeSubscriptions ?? 0} color="#3498DB" />
+        )}
         <MetricCard icon={Zap} label="Énergie totale" value={`${((businessMetrics?.totalEnergy ?? 0) / 1000).toFixed(1)} MWh`} color="#F39C12" compareValue={compareMode && compareMetrics ? compareMetrics.totalEnergy / 1000 : undefined} />
         <MetricCard icon={TrendingUp} label="Revenu total" value={`${((businessMetrics?.totalRevenue ?? 0) / 100).toLocaleString("fr-FR")} €`} color="#00D4AA" compareValue={compareMode && compareMetrics ? compareMetrics.totalRevenue / 100 : undefined} />
       </div>
 
-      {/* ── Road Connectivity + Activity KPIs ──────────────── */}
+      {/* ── Road Connectivity + Activity KPIs (Road CPOs only) ── */}
+      {isRoadCpo && (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="bg-surface border border-border rounded-xl p-4">
           <div className="flex items-center gap-3 mb-2">
@@ -861,6 +871,7 @@ export function DashboardPage() {
           </p>
         </div>
       </div>
+      )}
 
       {/* ── New KPIs: Occupation, Avg kWh, kWh by Territory ── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
