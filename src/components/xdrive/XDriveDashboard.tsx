@@ -140,7 +140,7 @@ export function XDriveDashboard() {
   const { partner, theme } = useOutletContext<XDriveOutletContext>();
 
   // Period state
-  const [preset, setPreset] = useState<PeriodPreset>("month");
+  const [preset, setPreset] = useState<PeriodPreset>("year");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [useCustom, setUseCustom] = useState(false);
@@ -386,7 +386,20 @@ export function XDriveDashboard() {
         />
       </div>
 
+      {/* ── No data message ──────────────────────────────────── */}
+      {!isLoading && cdrs.length === 0 && (
+        <div className="bg-surface border border-border rounded-2xl p-8 text-center">
+          <p className="text-foreground-muted text-sm">
+            Aucune session de recharge sur cette période.
+          </p>
+          <p className="text-foreground-muted/60 text-xs mt-1">
+            Essayez de sélectionner une période plus large (Mois, Trimestre ou Année).
+          </p>
+        </div>
+      )}
+
       {/* ── Monthly trend bar chart ──────────────────────────── */}
+      {(preset === "month" || preset === "quarter" || preset === "year" || useCustom) && cdrs.length > 0 && (
       <div className="bg-surface border border-border rounded-2xl p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -446,6 +459,8 @@ export function XDriveDashboard() {
           </BarChart>
         </ResponsiveContainer>
       </div>
+
+      )}
 
       {/* ── Bottom charts row ────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
