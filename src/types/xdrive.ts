@@ -7,6 +7,7 @@ export interface XDrivePartner {
   logo_url: string | null;
   theme_config: XDriveTheme;
   enabled_modules: XDriveModule[];
+  read_only_modules?: XDriveModule[];
   contact_email: string | null;
   created_at: string;
 }
@@ -94,4 +95,28 @@ export interface XDriveBPUInvoice {
   pdc_inventory: Record<string, unknown>;
   status: 'draft' | 'review' | 'validated' | 'sent' | 'paid';
   pdf_url: string | null;
+}
+
+export interface XDrivePartnerInvoice {
+  id: string;
+  partner_id: string;
+  invoice_number: string;
+  period_month: string;
+  ca_reseau_ht: number;
+  ca_reseau_ttc: number;
+  sessions_count: number;
+  energy_kwh: number;
+  bpu_invoice_id: string | null;
+  bpu_invoice_number: string | null;
+  bpu_amount_ht: number;
+  solde_net: number;
+  notes: string | null;
+  status: 'brouillon' | 'generee' | 'envoyee' | 'payee' | 'contestee';
+  generated_by: string | null;
+  generated_at: string | null;
+  pdf_url: string | null;
+  created_at: string;
+  updated_at: string;
+  // Joined fields
+  xdrive_bpu_invoices?: { invoice_number: string; total_ht: number } | null;
 }

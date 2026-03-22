@@ -8,6 +8,7 @@ import {
   Receipt,
   FileCheck,
   Download,
+  Eye,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -21,11 +22,13 @@ import type { XDrivePartner, XDriveModule } from "@/types/xdrive";
 interface XDriveContextValue {
   partner: XDrivePartner | null;
   isEZDriveAdmin: boolean;
+  isReadOnly: (module: XDriveModule) => boolean;
 }
 
 const XDriveContext = createContext<XDriveContextValue>({
   partner: null,
   isEZDriveAdmin: false,
+  isReadOnly: () => false,
 });
 
 export function useXDriveContext() {
@@ -77,6 +80,7 @@ function XDriveLayoutInner() {
   const partners = isEZDriveAdmin ? (allPartners ?? []) : [];
 
   // Partner selector state (admins can switch)
+  // For B2B users, auto-select their partner (no dropdown shown)
   const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(null);
 
   const activePartner: XDrivePartner | null = isEZDriveAdmin
@@ -85,6 +89,13 @@ function XDriveLayoutInner() {
 
   const theme = activePartner?.theme_config ?? DEFAULT_THEME;
   const enabledModules = activePartner?.enabled_modules ?? (XDRIVE_TABS.map((t) => t.module) as XDriveModule[]);
+  const readOnlyModules = activePartner?.read_only_modules ?? [];
+
+  // Helper: check if a module is read-only for the current user
+  const isReadOnly = (module: XDriveModule): boolean => {
+    if (isEZDriveAdmin) return false; // EZDrive admins always have full access
+    return readOnlyModules.includes(module);
+  };
 
   // Filter tabs by enabled modules and role
   const visibleTabs = XDRIVE_TABS.filter((tab) => {
@@ -94,7 +105,7 @@ function XDriveLayoutInner() {
   });
 
   return (
-    <XDriveContext.Provider value={{ partner: activePartner, isEZDriveAdmin }}>
+    <XDriveContext.Provider value={{ partner: activePartner, isEZDriveAdmin, isReadOnly }}>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -131,7 +142,7 @@ function XDriveLayoutInner() {
           </div>
 
           <div className="flex items-center gap-4">
-            {/* EZDrive admin: partner selector */}
+            {/* EZDrive admin: partner selector (B2B users see no dropdown — auto-selected) */}
             {isEZDriveAdmin && partners.length > 1 && (
               <div>
                 <label className="block text-xs text-foreground-muted uppercase tracking-wider mb-1">
@@ -164,39 +175,51 @@ function XDriveLayoutInner() {
 
         {/* Tab navigation */}
         <div className="flex items-center gap-1 border-b border-border overflow-x-auto">
-          {visibleTabs.map((tab) => (
-            <NavLink
-              key={tab.to}
-              to={tab.to}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-[1px]",
+          {visibleTabs.map((tab) => {
+            const tabReadOnly = isReadOnly(tab.module);
+            return (
+              <NavLink
+                key={tab.to}
+                to={tab.to}
+                className={({ isActive }) =>
+                  cn(
+                    "flex items-center gap-2 px-4 py-3 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-[1px]",
+                    isActive
+                      ? "border-b-2"
+                      : "text-foreground-muted border-transparent hover:text-foreground hover:border-foreground-muted/30"
+                  )
+                }
+                style={({ isActive }) =>
                   isActive
-                    ? "border-b-2"
-                    : "text-foreground-muted border-transparent hover:text-foreground hover:border-foreground-muted/30"
-                )
-              }
-              style={({ isActive }) =>
-                isActive
-                  ? { color: theme.primaryColor, borderBottomColor: theme.primaryColor }
-                  : {}
-              }
-            >
-              <tab.icon className="w-4 h-4" />
-              {tab.label}
-            </NavLink>
-          ))}
+                    ? { color: theme.primaryColor, borderBottomColor: theme.primaryColor }
+                    : {}
+                }
+              >
+                <tab.icon className="w-4 h-4" />
+                {tab.label}
+                {/* Read-only badge for partner users */}
+                {tabReadOnly && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-surface-elevated text-foreground-muted border border-border ml-1">
+                    <Eye className="w-3 h-3" />
+                    Lecture seule
+                  </span>
+                )}
+              </NavLink>
+            );
+          })}
         </div>
 
         {/* Page content */}
         <SectionErrorBoundary section="Portail X-DRIVE" fallbackUrl="/xdrive/dashboard">
-          <Outlet context={{ partner: activePartner, isEZDriveAdmin, theme }} />
+          <Outlet context={{ partner: activePartner, isEZDriveAdmin, theme, isReadOnly }} />
         </SectionErrorBoundary>
 
-        {/* Footer branding */}
+        {/* Co-branding footer */}
         <div className="flex items-center justify-center gap-2 pt-6 pb-2">
           <img src="/logo-ezdrive.png" alt="EZDrive" className="h-4 opacity-30" />
-          <span className="text-[11px] text-foreground-muted/40">Propulsé par EZDrive</span>
+          <span className="text-[11px] text-foreground-muted/40">
+            Propulsé par EZDrive {activePartner ? `× ${activePartner.display_name}` : ""}
+          </span>
         </div>
       </div>
     </XDriveContext.Provider>
