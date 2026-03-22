@@ -105,7 +105,7 @@ export function useXDriveCDRs(
       if (customerExternalIds.length === 0) return [];
 
       const selectCols =
-        "id, start_date_time, end_date_time, total_energy, total_time, total_cost, total_retail_cost, total_retail_cost_incl_vat, customer_external_id, driver_external_id, cdr_token, cdr_location, emsp_country_code, emsp_party_id, station_id, auth_id, charger_type, source";
+        "id, start_date_time, end_date_time, total_energy, total_time, total_cost, total_retail_cost, total_retail_cost_incl_vat, customer_external_id, driver_external_id, cdr_token, cdr_location, emsp_country_code, emsp_party_id, station_id, charger_type, source";
 
       const PAGE = 1000;
       let allRows: B2BCdr[] = [];
