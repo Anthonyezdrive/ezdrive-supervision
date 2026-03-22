@@ -3,12 +3,14 @@
 // Format compatible with Android EzDriveApiService.kt
 // ============================================================
 
-import { corsHeaders } from "./cors.ts";
+import { corsHeaders, getCorsHeaders } from "./cors.ts";
 
-const API_HEADERS = {
-  ...corsHeaders,
-  "Content-Type": "application/json",
-};
+function getApiHeaders(req?: Request): Record<string, string> {
+  return {
+    ...(req ? getCorsHeaders(req) : corsHeaders),
+    "Content-Type": "application/json",
+  };
+}
 
 function now(): string {
   return new Date().toISOString();
@@ -17,7 +19,7 @@ function now(): string {
 /**
  * Successful response — matches ApiResponse<T> on Android
  */
-export function apiSuccess<T>(data: T, message = "OK", httpStatus = 200): Response {
+export function apiSuccess<T>(data: T, message = "OK", httpStatus = 200, req?: Request): Response {
   return new Response(
     JSON.stringify({
       status_code: httpStatus,
@@ -25,15 +27,15 @@ export function apiSuccess<T>(data: T, message = "OK", httpStatus = 200): Respon
       data,
       timestamp: now(),
     }),
-    { status: httpStatus, headers: API_HEADERS },
+    { status: httpStatus, headers: getApiHeaders(req) },
   );
 }
 
 /**
  * Created response (HTTP 201)
  */
-export function apiCreated<T>(data: T, message = "Created"): Response {
-  return apiSuccess(data, message, 201);
+export function apiCreated<T>(data: T, message = "Created", req?: Request): Response {
+  return apiSuccess(data, message, 201, req);
 }
 
 /**
@@ -42,6 +44,7 @@ export function apiCreated<T>(data: T, message = "Created"): Response {
 export function apiPaginated<T>(
   items: T[],
   options: { total: number; offset: number; limit: number },
+  req?: Request,
 ): Response {
   return new Response(
     JSON.stringify({
@@ -56,7 +59,7 @@ export function apiPaginated<T>(
       },
       timestamp: now(),
     }),
-    { status: 200, headers: API_HEADERS },
+    { status: 200, headers: getApiHeaders(req) },
   );
 }
 
@@ -67,6 +70,7 @@ export function apiError(
   httpStatus: number,
   message: string,
   details?: Record<string, string>,
+  req?: Request,
 ): Response {
   return new Response(
     JSON.stringify({
@@ -76,29 +80,29 @@ export function apiError(
       error: details ? { code: String(httpStatus), message, details } : undefined,
       timestamp: now(),
     }),
-    { status: httpStatus, headers: API_HEADERS },
+    { status: httpStatus, headers: getApiHeaders(req) },
   );
 }
 
 /**
  * Shorthand errors
  */
-export const apiBadRequest = (msg = "Bad Request", details?: Record<string, string>) =>
-  apiError(400, msg, details);
-export const apiUnauthorized = (msg = "Unauthorized") => apiError(401, msg);
-export const apiForbidden = (msg = "Forbidden") => apiError(403, msg);
-export const apiNotFound = (msg = "Not Found") => apiError(404, msg);
-export const apiConflict = (msg = "Conflict") => apiError(409, msg);
-export const apiServerError = (msg = "Internal Server Error") => apiError(500, msg);
+export const apiBadRequest = (msg = "Bad Request", details?: Record<string, string>, req?: Request) =>
+  apiError(400, msg, details, req);
+export const apiUnauthorized = (msg = "Unauthorized", req?: Request) => apiError(401, msg, undefined, req);
+export const apiForbidden = (msg = "Forbidden", req?: Request) => apiError(403, msg, undefined, req);
+export const apiNotFound = (msg = "Not Found", req?: Request) => apiError(404, msg, undefined, req);
+export const apiConflict = (msg = "Conflict", req?: Request) => apiError(409, msg, undefined, req);
+export const apiServerError = (msg = "Internal Server Error", req?: Request) => apiError(500, msg, undefined, req);
 
 /**
- * CORS preflight
+ * CORS preflight — pass req for dynamic origin reflection on web-facing endpoints
  */
-export function apiCorsResponse(): Response {
+export function apiCorsResponse(req?: Request): Response {
   return new Response(null, {
     status: 204,
     headers: {
-      ...corsHeaders,
+      ...(req ? getCorsHeaders(req) : corsHeaders),
       "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
     },
   });

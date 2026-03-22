@@ -27,6 +27,7 @@
 // ============================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getCorsHeaders } from "../_shared/cors.ts";
 import { checkRateLimit, RATE_LIMITS, rateLimitResponse } from "../_shared/rate-limiter.ts";
 import {
   createPaymentIntent,
@@ -82,15 +83,14 @@ interface SpotPaymentIntent {
 
 // ─── Main Handler ─────────────────────────────────────────
 
-const spotCorsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, apikey",
-};
-
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: spotCorsHeaders });
+    return new Response(null, {
+      headers: {
+        ...getCorsHeaders(req),
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+      },
+    });
   }
 
   // Rate limiting

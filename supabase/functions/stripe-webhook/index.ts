@@ -7,7 +7,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { constructWebhookEvent } from "../_shared/stripe-client.ts";
-import { corsHeaders } from "../_shared/cors.ts";
+import { getCorsHeaders } from "../_shared/cors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -25,14 +25,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return new Response(null, {
       status: 204,
       headers: {
-        ...corsHeaders,
+        ...getCorsHeaders(req),
         "Access-Control-Allow-Methods": "POST, OPTIONS",
       },
     });
   }
 
   if (req.method !== "POST") {
-    return jsonResponse(405, { error: "Method not allowed" });
+    return jsonResponse(405, { error: "Method not allowed" }, req);
   }
 
   try {
@@ -42,7 +42,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     if (!signature) {
       console.error("[Stripe Webhook] Missing stripe-signature header");
-      return jsonResponse(400, { error: "Missing signature" });
+      return jsonResponse(400, { error: "Missing signature" }, req);
     }
 
     // 2. Verify webhook signature (throws if invalid)
@@ -51,7 +51,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       event = constructWebhookEvent(body, signature);
     } catch (err) {
       console.error("[Stripe Webhook] Signature verification failed:", err);
-      return jsonResponse(400, { error: "Invalid signature" });
+      return jsonResponse(400, { error: "Invalid signature" }, req);
     }
 
     console.log(`[Stripe Webhook] Received event: ${event.type} (${event.id})`);
@@ -94,10 +94,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
         console.log(`[Stripe Webhook] Unhandled event type: ${event.type}`);
     }
 
-    return jsonResponse(200, { received: true });
+    return jsonResponse(200, { received: true }, req);
   } catch (err) {
     console.error("[Stripe Webhook] Error:", err);
-    return jsonResponse(500, { error: "Webhook processing failed" });
+    return jsonResponse(500, { error: "Webhook processing failed" }, req);
   }
 });
 
@@ -378,11 +378,11 @@ async function handleChargeRefunded(charge: Record<string, unknown>): Promise<vo
 
 // ─── Helper ─────────────────────────────────────────────────
 
-function jsonResponse(status: number, data: unknown): Response {
+function jsonResponse(status: number, data: unknown, req?: Request): Response {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
-      ...corsHeaders,
+      ...(req ? getCorsHeaders(req) : getCorsHeaders()),
       "Content-Type": "application/json",
     },
   });
