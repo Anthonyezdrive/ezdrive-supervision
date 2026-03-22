@@ -63,6 +63,15 @@ const B2BDriversPage = lazyNamed(() => import("@/components/b2b/B2BDriversPage")
 const B2BCompanyPage = lazyNamed(() => import("@/components/b2b/B2BCompanyPage"), "B2BCompanyPage");
 const B2BSessionsPage = lazyNamed(() => import("@/components/b2b/B2BSessionsPage"), "B2BSessionsPage");
 const B2BFleetPage = lazyNamed(() => import("@/components/b2b/B2BFleetPage"), "B2BFleetPage");
+// ── Portail X-DRIVE ──────────────────────────────────────
+const XDriveLayout = lazyNamed(() => import("@/components/xdrive/XDriveLayout"), "XDriveLayout");
+const XDriveDashboard = lazyNamed(() => import("@/components/xdrive/XDriveDashboard"), "XDriveDashboard");
+const XDriveCDRs = lazyNamed(() => import("@/components/xdrive/XDriveCDRs"), "XDriveCDRs");
+const XDriveBreakdown = lazyNamed(() => import("@/components/xdrive/XDriveBreakdown"), "XDriveBreakdown");
+const XDriveReconciliation = lazyNamed(() => import("@/components/xdrive/XDriveReconciliation"), "XDriveReconciliation");
+const XDriveBPU = lazyNamed(() => import("@/components/xdrive/XDriveBPU"), "XDriveBPU");
+const XDriveBilling = lazyNamed(() => import("@/components/xdrive/XDriveBilling"), "XDriveBilling");
+const XDriveExports = lazyNamed(() => import("@/components/xdrive/XDriveExports"), "XDriveExports");
 // ── Auth & Public (lazy) ─────────────────────────────────
 const ResetPasswordPage = lazyNamed(() => import("@/components/auth/ResetPasswordPage"), "ResetPasswordPage");
 const StripeOnboardingCompletePage = lazyNamed(() => import("@/components/stripe/StripeOnboardingCompletePage"), "StripeOnboardingCompletePage");
@@ -200,6 +209,18 @@ export default function App() {
                   <Route path="drivers" element={<B2BDriversPage />} />
                   <Route path="fleet" element={<B2BFleetPage />} />
                   <Route path="company" element={<B2BCompanyPage />} />
+                </Route>
+
+                {/* ── Portail X-DRIVE ── */}
+                <Route path="/xdrive" element={<XDriveLayout />}>
+                  <Route index element={<Navigate to="dashboard" replace />} />
+                  <Route path="dashboard" element={<XDriveDashboard />} />
+                  <Route path="cdrs" element={<XDriveCDRs />} />
+                  <Route path="breakdown" element={<XDriveBreakdown />} />
+                  <Route path="reconciliation" element={<XDriveReconciliation />} />
+                  <Route path="bpu" element={<XDriveBPU />} />
+                  <Route path="billing" element={<XDriveBilling />} />
+                  <Route path="exports" element={<XDriveExports />} />
                 </Route>
               </Route>
             </Route>

@@ -186,6 +186,19 @@ const NAV_SECTIONS: NavSection[] = [
       { to: "/b2b/company", label: "Mon Entreprise", icon: Building2 },
     ],
   },
+  {
+    id: "xdrive-portal",
+    label: "X-DRIVE",
+    requiredPermissions: ["admin.users", "admin.settings"],
+    items: [
+      { to: "/xdrive/dashboard", label: "Dashboard", icon: LayoutDashboard, requiredPermissions: ["admin.users", "admin.settings"] },
+      { to: "/xdrive/cdrs", label: "CDR détaillés", icon: FileText, requiredPermissions: ["admin.users", "admin.settings"] },
+      { to: "/xdrive/breakdown", label: "Ventilation", icon: PieChart, requiredPermissions: ["admin.users", "admin.settings"] },
+      { to: "/xdrive/reconciliation", label: "Rapprochement", icon: Handshake, requiredPermissions: ["admin.users", "admin.settings"] },
+      { to: "/xdrive/billing", label: "Facturation", icon: Building2, requiredPermissions: ["admin.users", "admin.settings"] },
+      { to: "/xdrive/exports", label: "Exports", icon: FileText, requiredPermissions: ["admin.users", "admin.settings"] },
+    ],
+  },
 ];
 
 // ── Helper: get all items from a section (flat) ───────────
