@@ -85,11 +85,65 @@ serve(async (req: Request) => {
       counts[table] = count ?? 0;
     }
 
-    // 4. Build result
+    // 4. X-DRIVE table checks
+    const xdriveChecks: Record<string, unknown> = {};
+
+    // xdrive_partners — must have at least 1 row
+    const { count: partnersCount } = await supabase
+      .from("xdrive_partners")
+      .select("*", { count: "exact", head: true });
+    xdriveChecks["xdrive_partners"] = {
+      count: partnersCount ?? 0,
+      status: (partnersCount ?? 0) >= 1 ? "ok" : "warn_empty",
+    };
+
+    // xdrive_bpu_config — must have at least 1 row
+    const { count: bpuConfigCount } = await supabase
+      .from("xdrive_bpu_config")
+      .select("*", { count: "exact", head: true });
+    xdriveChecks["xdrive_bpu_config"] = {
+      count: bpuConfigCount ?? 0,
+      status: (bpuConfigCount ?? 0) >= 1 ? "ok" : "warn_empty",
+    };
+
+    // xdrive_reconciliations — latest entry
+    const { data: latestReconciliation } = await supabase
+      .from("xdrive_reconciliations")
+      .select("id, period_month, status, updated_at")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    xdriveChecks["xdrive_reconciliations"] = {
+      latest: latestReconciliation ?? null,
+      status: latestReconciliation ? "ok" : "no_data",
+    };
+
+    // xdrive_bpu_invoices — latest entry
+    const { data: latestBpuInvoice } = await supabase
+      .from("xdrive_bpu_invoices")
+      .select("id, period_month, status, updated_at")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    xdriveChecks["xdrive_bpu_invoices"] = {
+      latest: latestBpuInvoice ?? null,
+      status: latestBpuInvoice ? "ok" : "no_data",
+    };
+
+    const xdriveWarnCount = Object.values(xdriveChecks).filter(
+      (c) => (c as { status: string }).status !== "ok"
+    ).length;
+
+    // 5. Build result
     const staleCount = syncs.filter((s) => s.status === "stale").length;
     const neverSynced = syncs.filter((s) => s.status === "never_synced").length;
 
-    const overallStatus = staleCount > 0 || neverSynced > 0 ? "degraded" : "healthy";
+    const overallStatus =
+      staleCount > 0 || neverSynced > 0
+        ? "degraded"
+        : xdriveWarnCount > 0
+        ? "degraded"
+        : "healthy";
 
     const result = {
       status: overallStatus,
@@ -102,6 +156,7 @@ serve(async (req: Request) => {
         never_synced: neverSynced,
       },
       db_counts: counts,
+      xdrive: xdriveChecks,
       crons: crons ?? "rpc_not_available",
     };
 
