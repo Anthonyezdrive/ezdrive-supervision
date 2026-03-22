@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -13,7 +13,8 @@ import {
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
-import { useXDrivePartner, useXDrivePartners } from "@/hooks/useXDrivePartner";
+import { useXDrivePartner, useXDrivePartnerByCpo } from "@/hooks/useXDrivePartner";
+import { useCpo } from "@/contexts/CpoContext";
 import { SectionErrorBoundary } from "@/components/ui/SectionErrorBoundary";
 import { B2BFilterProvider } from "@/contexts/B2BFilterContext";
 import type { XDrivePartner, XDriveModule } from "@/types/xdrive";
@@ -70,22 +71,21 @@ function XDriveLayoutInner() {
   const { isAdmin } = usePermissions();
   const isEZDriveAdmin = isAdmin;
 
+  // CPO context — drives which partner is shown
+  const { selectedCpoId, selectedCpo } = useCpo();
+
   // For B2B users — look up their partner by b2b_client_id
   // profile.b2b_client_id may not exist on UserProfile type; we cast safely
   const b2bClientId = (profile as Record<string, unknown>)?.b2b_client_id as string | undefined;
 
-  // Admin: fetch all partners; B2B user: fetch own partner
-  const { data: allPartners } = useXDrivePartners();
+  // Admin: auto-resolve partner from selected CPO; B2B user: fetch own partner
+  const { data: cpoPartner, isLoading: cpoPartnerLoading } = useXDrivePartnerByCpo(
+    isEZDriveAdmin ? selectedCpoId : null
+  );
   const { data: myPartner } = useXDrivePartner(!isEZDriveAdmin ? b2bClientId : undefined);
 
-  const partners = isEZDriveAdmin ? (allPartners ?? []) : [];
-
-  // Partner selector state (admins can switch)
-  // For B2B users, auto-select their partner (no dropdown shown)
-  const [selectedPartnerId, setSelectedPartnerId] = useState<string | null>(null);
-
   const activePartner: XDrivePartner | null = isEZDriveAdmin
-    ? (partners.find((p) => p.id === selectedPartnerId) ?? partners[0] ?? null)
+    ? (cpoPartner ?? null)
     : (myPartner ?? null);
 
   const theme = activePartner?.theme_config ?? DEFAULT_THEME;
@@ -104,6 +104,25 @@ function XDriveLayoutInner() {
     if (!enabledModules.includes(tab.module)) return false;
     return true;
   });
+
+  // If admin has selected a CPO but no partner is configured for it, show a placeholder
+  if (isEZDriveAdmin && selectedCpoId && !cpoPartnerLoading && !activePartner) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
+        <div className="w-16 h-16 rounded-2xl bg-surface-elevated border border-border flex items-center justify-center">
+          <Eye className="w-7 h-7 text-foreground-muted" />
+        </div>
+        <div>
+          <h2 className="text-lg font-heading font-semibold text-foreground">
+            Aucun portail X-DRIVE configuré
+          </h2>
+          <p className="text-sm text-foreground-muted mt-1">
+            Le CPO <span className="font-medium text-foreground">{selectedCpo?.name ?? selectedCpoId}</span> n'a pas de partenaire X-DRIVE associé.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <XDriveContext.Provider value={{ partner: activePartner, isEZDriveAdmin, isReadOnly }}>
@@ -138,31 +157,16 @@ function XDriveLayoutInner() {
               </h1>
               <p className="text-sm text-foreground-muted mt-0.5">
                 Portail partenaire — supervision et facturation
+                {selectedCpo && (
+                  <span className="ml-2 text-xs text-foreground-muted/60">
+                    — {selectedCpo.name}
+                  </span>
+                )}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-4">
-            {/* EZDrive admin: partner selector (B2B users see no dropdown — auto-selected) */}
-            {isEZDriveAdmin && partners.length > 1 && (
-              <div>
-                <label className="block text-xs text-foreground-muted uppercase tracking-wider mb-1">
-                  Partenaire
-                </label>
-                <select
-                  value={activePartner?.id ?? ""}
-                  onChange={(e) => setSelectedPartnerId(e.target.value || null)}
-                  className="px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground focus:border-border-focus focus:outline-none min-w-[200px]"
-                >
-                  {partners.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.display_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
             {/* EZDrive branding */}
             <div className="flex items-center gap-2">
               <div className="h-8 w-px bg-border hidden sm:block" />

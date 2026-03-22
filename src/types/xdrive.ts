@@ -9,6 +9,7 @@ export interface XDrivePartner {
   enabled_modules: XDriveModule[];
   read_only_modules?: XDriveModule[];
   contact_email: string | null;
+  cpo_id: string | null;
   created_at: string;
 }
 

@@ -32,3 +32,20 @@ export function useXDrivePartners() {
     },
   });
 }
+
+export function useXDrivePartnerByCpo(cpoId: string | null) {
+  return useQuery({
+    queryKey: ["xdrive-partner-by-cpo", cpoId],
+    queryFn: async () => {
+      if (!cpoId) return null;
+      const { data, error } = await supabase
+        .from("xdrive_partners")
+        .select("*")
+        .eq("cpo_id", cpoId)
+        .maybeSingle();
+      if (error) throw error;
+      return data as XDrivePartner | null;
+    },
+    enabled: !!cpoId,
+  });
+}
