@@ -128,13 +128,35 @@ export function DashboardPage() {
     setTimeRange(getTimeRangeForFilter("custom", customFrom, customTo));
   };
 
-  // ── Resolve CPO station names for CDR filtering ───────
+  // ── Resolve CPO station names + customer_external_ids for CDR filtering ───────
   const { data: cpoStationNames } = useQuery({
     queryKey: ["cpo-station-names", selectedCpoId ?? "all"],
     queryFn: async () => {
       if (!selectedCpoId) return null;
       const { data } = await supabase.from("stations").select("name").eq("cpo_id", selectedCpoId);
       return (data ?? []).map((s) => s.name).filter(Boolean);
+    },
+    staleTime: 60000,
+  });
+
+  // Resolve customer_external_ids for CDR filtering via xdrive_partners → b2b_clients
+  const { data: cpoCustomerExternalIds } = useQuery({
+    queryKey: ["cpo-customer-external-ids", selectedCpoId ?? "all"],
+    queryFn: async () => {
+      if (!selectedCpoId) return null;
+      // Find xdrive_partner for this CPO → get b2b_client → get customer_external_ids
+      const { data: partner } = await supabase
+        .from("xdrive_partners")
+        .select("b2b_client_id")
+        .eq("cpo_id", selectedCpoId)
+        .maybeSingle();
+      if (!partner?.b2b_client_id) return null;
+      const { data: client } = await supabase
+        .from("b2b_clients")
+        .select("customer_external_ids")
+        .eq("id", partner.b2b_client_id)
+        .maybeSingle();
+      return client?.customer_external_ids ?? null;
     },
     staleTime: 60000,
   });
@@ -182,7 +204,6 @@ export function DashboardPage() {
       );
 
       // CDR queries with time range filter
-      const nameFilter = cpoStationNames?.slice(0, 50);
       let cdrQuery = supabase.from("ocpi_cdrs").select("*", { count: "exact", head: true })
         .gte("start_date_time", timeRange.from)
         .lte("start_date_time", timeRange.to + "T23:59:59");
@@ -190,12 +211,22 @@ export function DashboardPage() {
         .gte("start_date_time", timeRange.from)
         .lte("start_date_time", timeRange.to + "T23:59:59");
 
-      if (nameFilter && nameFilter.length > 0) {
-        cdrQuery = cdrQuery.in("cdr_location->>name", nameFilter);
-        cdrEnergyQuery = cdrEnergyQuery.in("cdr_location->>name", nameFilter);
-      } else if (selectedCpoId) {
-        cdrQuery = cdrQuery.eq("id", "00000000-0000-0000-0000-000000000000");
-        cdrEnergyQuery = cdrEnergyQuery.eq("id", "00000000-0000-0000-0000-000000000000");
+      if (selectedCpoId) {
+        // Prefer customer_external_ids (reliable for GreenFlux CPOs)
+        // Fallback to station name matching
+        if (cpoCustomerExternalIds && cpoCustomerExternalIds.length > 0) {
+          cdrQuery = cdrQuery.in("customer_external_id", cpoCustomerExternalIds);
+          cdrEnergyQuery = cdrEnergyQuery.in("customer_external_id", cpoCustomerExternalIds);
+        } else {
+          const nameFilter = cpoStationNames?.slice(0, 50);
+          if (nameFilter && nameFilter.length > 0) {
+            cdrQuery = cdrQuery.in("cdr_location->>name", nameFilter);
+            cdrEnergyQuery = cdrEnergyQuery.in("cdr_location->>name", nameFilter);
+          } else {
+            cdrQuery = cdrQuery.eq("id", "00000000-0000-0000-0000-000000000000");
+            cdrEnergyQuery = cdrEnergyQuery.eq("id", "00000000-0000-0000-0000-000000000000");
+          }
+        }
       }
 
       const [sessionsRes, activeRes, customersRes, invoicesRes, energyRes, subsRes, cdrCountRes, cdrEnergyRes] = await Promise.all([
@@ -253,14 +284,20 @@ export function DashboardPage() {
     retry: false,
     enabled: compareMode && !!compareFrom && !!compareTo,
     queryFn: async () => {
-      const nameFilter = cpoStationNames?.slice(0, 50);
       let query = supabase.from("ocpi_cdrs").select("total_energy, total_cost")
         .gte("start_date_time", compareFrom)
         .lte("start_date_time", compareTo + "T23:59:59");
-      if (nameFilter && nameFilter.length > 0) {
-        query = query.in("cdr_location->>name", nameFilter);
-      } else if (selectedCpoId) {
-        query = query.eq("id", "00000000-0000-0000-0000-000000000000");
+      if (selectedCpoId) {
+        if (cpoCustomerExternalIds && cpoCustomerExternalIds.length > 0) {
+          query = query.in("customer_external_id", cpoCustomerExternalIds);
+        } else {
+          const nameFilter = cpoStationNames?.slice(0, 50);
+          if (nameFilter && nameFilter.length > 0) {
+            query = query.in("cdr_location->>name", nameFilter);
+          } else {
+            query = query.eq("id", "00000000-0000-0000-0000-000000000000");
+          }
+        }
       }
       const { data } = await query.limit(50000);
       const cdrs = (data ?? []) as Array<{ total_energy?: number; total_cost?: number }>;
@@ -278,17 +315,22 @@ export function DashboardPage() {
     queryKey: ["dashboard-cdr-metrics", selectedCpoId ?? "all", timeRange.from, timeRange.to],
     retry: false,
     queryFn: async () => {
-      const nameFilter = cpoStationNames?.slice(0, 50);
-
       let query = supabase.from("ocpi_cdrs")
         .select("total_energy, total_time, total_cost, cdr_location, start_date_time, end_date_time")
         .gte("start_date_time", timeRange.from)
         .lte("start_date_time", timeRange.to + "T23:59:59");
 
-      if (nameFilter && nameFilter.length > 0) {
-        query = query.in("cdr_location->>name", nameFilter);
-      } else if (selectedCpoId) {
-        query = query.eq("id", "00000000-0000-0000-0000-000000000000");
+      if (selectedCpoId) {
+        if (cpoCustomerExternalIds && cpoCustomerExternalIds.length > 0) {
+          query = query.in("customer_external_id", cpoCustomerExternalIds);
+        } else {
+          const nameFilter = cpoStationNames?.slice(0, 50);
+          if (nameFilter && nameFilter.length > 0) {
+            query = query.in("cdr_location->>name", nameFilter);
+          } else {
+            query = query.eq("id", "00000000-0000-0000-0000-000000000000");
+          }
+        }
       }
 
       const { data, error } = await query.limit(50000);
@@ -357,17 +399,22 @@ export function DashboardPage() {
     queryKey: ["dashboard-top-flop", selectedCpoId ?? "all", timeRange.from, timeRange.to],
     retry: false,
     queryFn: async () => {
-      const nameFilter = cpoStationNames?.slice(0, 50);
-
       let query = supabase.from("ocpi_cdrs")
         .select("total_energy, total_cost, total_time, cdr_location, start_date_time, end_date_time")
         .gte("start_date_time", timeRange.from)
         .lte("start_date_time", timeRange.to + "T23:59:59");
 
-      if (nameFilter && nameFilter.length > 0) {
-        query = query.in("cdr_location->>name", nameFilter);
-      } else if (selectedCpoId) {
-        query = query.eq("id", "00000000-0000-0000-0000-000000000000");
+      if (selectedCpoId) {
+        if (cpoCustomerExternalIds && cpoCustomerExternalIds.length > 0) {
+          query = query.in("customer_external_id", cpoCustomerExternalIds);
+        } else {
+          const nameFilter = cpoStationNames?.slice(0, 50);
+          if (nameFilter && nameFilter.length > 0) {
+            query = query.in("cdr_location->>name", nameFilter);
+          } else {
+            query = query.eq("id", "00000000-0000-0000-0000-000000000000");
+          }
+        }
       }
 
       const { data, error } = await query.limit(50000);
