@@ -1,5 +1,13 @@
 {
   "buildCommand": "node_modules/.bin/vite build",
   "outputDirectory": "dist",
+  "redirects": [
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "total.pro.ezdrive.fr" }],
+      "destination": "/xdrive/dashboard",
+      "permanent": false
+    }
+  ],
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }
