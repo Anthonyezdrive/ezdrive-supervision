@@ -4,6 +4,7 @@
 // ============================================================
 
 import { useState, useMemo, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { useStations } from "@/hooks/useStations";
 import { useCPOs } from "@/hooks/useCPOs";
 import { useCpo } from "@/contexts/CpoContext";

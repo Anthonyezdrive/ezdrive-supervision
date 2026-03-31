@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { PageHelp } from "@/components/ui/PageHelp";
 import { useToast } from "@/contexts/ToastContext";
+import { useTranslation } from "react-i18next";
 import {
   CreditCard,
   Users,
@@ -158,6 +159,7 @@ function billingLabel(period: string): string {
 // ============================================================
 
 export function SubscriptionsPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { success: toastSuccess, error: toastError } = useToast();
   const [statusFilter, setStatusFilter] = useState<SubscriptionStatus | "ALL">("ALL");

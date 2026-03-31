@@ -27,6 +27,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/contexts/ToastContext";
 import { useCpo } from "@/contexts/CpoContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useTranslation } from "react-i18next";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -117,11 +118,6 @@ function ValidityBadge({ status }: { status: string }) {
   return <span className="inline-flex items-center px-2.5 py-0.5 rounded text-xs font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/25">Planifié</span>;
 }
 
-function TypeBadge({ type }: { type: "internal" | "external" }) {
-  if (type === "internal") return <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-500/15 text-blue-400 border border-blue-500/25">Internal</span>;
-  return <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-500/15 text-purple-400 border border-purple-500/25">External</span>;
-}
-
 const formatDate = (d: string | null) =>
   d ? new Date(d).toLocaleDateString("fr-FR", { day: "numeric", month: "2-digit", year: "numeric" }) : "Indéfini";
 
@@ -131,6 +127,7 @@ const formatDateFull = (d: string | null) =>
 // ── Main Page ─────────────────────────────────────────────────
 
 export function AgreementsPage() {
+  const { t } = useTranslation();
   const { selectedCpoId } = useCpo();
   const queryClient = useQueryClient();
   const { success: toastSuccess, error: toastError } = useToast();
@@ -457,7 +454,7 @@ export function AgreementsPage() {
       }).eq("id", id);
       if (error) throw error;
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: (_data, _variables) => {
       queryClient.invalidateQueries({ queryKey: ["roaming-agreements"] });
       closeModal();
       toastSuccess("Accord modifié", "Les modifications ont été enregistrées");

@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { PageHelp } from "@/components/ui/PageHelp";
 import {
   Activity,
@@ -12,7 +13,6 @@ import {
   FileText,
   X,
   AlertCircle,
-  Eye,
   Calculator,
   MessageSquare,
 } from "lucide-react";
@@ -352,6 +352,7 @@ function DetailField({
 // ── Component ────────────────────────────────────────────────
 
 export function SessionsPage() {
+  const { t } = useTranslation();
   const [page, setPage] = useState(0);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -763,7 +764,7 @@ export function SessionsPage() {
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 mx-6 mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2 text-red-700">
             <AlertCircle className="h-5 w-5" />
-            <span>Erreur lors du chargement des données. Veuillez réessayer.</span>
+            <span>{t("common.error")}</span>
           </div>
           <button onClick={() => refetch()} className="text-red-700 hover:text-red-900 font-medium text-sm">
             Réessayer
@@ -935,7 +936,7 @@ export function SessionsPage() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-foreground-muted" />
                 <input
                   type="text"
-                  placeholder="Rechercher ID, borne, tag..."
+                  placeholder={t("sessions.searchPlaceholder")}
                   value={searchQuery}
                   onChange={(e) => { setSearchQuery(e.target.value); setPage(0); }}
                   className="w-full pl-9 pr-3 py-2 bg-surface border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-primary/50 transition-colors"
@@ -976,7 +977,7 @@ export function SessionsPage() {
             <TableSkeleton rows={10} />
           ) : isError ? (
             <ErrorState
-              message="Impossible de charger les sessions"
+              message={t("sessions.noResults")}
               onRetry={() => refetch()}
             />
           ) : filteredSessions.length === 0 ? (

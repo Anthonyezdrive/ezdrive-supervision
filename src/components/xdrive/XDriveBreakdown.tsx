@@ -11,7 +11,6 @@ import {
   XAxis,
   YAxis,
   Legend,
-  CartesianGrid,
 } from "recharts";
 import { CreditCard, Wifi, TrendingUp } from "lucide-react";
 import {

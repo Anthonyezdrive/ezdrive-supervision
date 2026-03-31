@@ -5,7 +5,6 @@
 
 import { useState, useMemo } from "react";
 import {
-  X,
   Zap,
   Euro,
   AlertTriangle,
@@ -21,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { useCustomerDetail } from "@/hooks/useCustomerDetail";
 import { CustomerTimeline } from "@/components/customers/CustomerTimeline";
+import { useTranslation } from "react-i18next";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -65,7 +65,7 @@ function formatDateTimeFr(dateStr: string | null): string {
 }
 
 function formatDuration(startStr: string, stopStr: string | null): string {
-  if (!stopStr) return "En cours";
+  if (!stopStr) return "...";
   const diffMs = new Date(stopStr).getTime() - new Date(startStr).getTime();
   const totalMin = Math.floor(diffMs / 60000);
   if (totalMin < 60) return `${totalMin}min`;
@@ -81,19 +81,20 @@ function formatCents(cents: number): string {
 // ── Status badges ────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string | null }) {
+  const { t } = useTranslation();
   const s = (status ?? "").toLowerCase();
   let classes = "bg-foreground-muted/10 text-foreground-muted border-border";
-  let label = status ?? "Inconnu";
+  let label = status ?? t("customers.unknown", "Inconnu");
 
   if (s === "active" || s === "actif") {
     classes = "bg-emerald-500/10 text-emerald-400 border-emerald-500/25";
-    label = "Actif";
+    label = t("common.active");
   } else if (s === "inactive" || s === "inactif") {
     classes = "bg-red-500/10 text-red-400 border-red-500/25";
-    label = "Inactif";
+    label = t("common.inactive");
   } else if (s === "suspended" || s === "suspendu") {
     classes = "bg-amber-500/10 text-amber-400 border-amber-500/25";
-    label = "Suspendu";
+    label = t("customers.suspended", "Suspendu");
   }
 
   return (
@@ -109,22 +110,23 @@ function StatusBadge({ status }: { status: string | null }) {
 }
 
 function InvoiceStatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
   const map: Record<string, { classes: string; label: string }> = {
     paid: {
       classes: "bg-emerald-500/10 text-emerald-400 border-emerald-500/25",
-      label: "Payee",
+      label: t("status.paid"),
     },
     issued: {
       classes: "bg-blue-500/10 text-blue-400 border-blue-500/25",
-      label: "Emise",
+      label: t("status.issued"),
     },
     draft: {
       classes: "bg-foreground-muted/10 text-foreground-muted border-border",
-      label: "Brouillon",
+      label: t("status.draft"),
     },
     cancelled: {
       classes: "bg-red-500/10 text-red-400 border-red-500/25",
-      label: "Annulee",
+      label: t("status.cancelled"),
     },
   };
   const cfg = map[status] ?? map.draft;
@@ -142,44 +144,46 @@ function InvoiceStatusBadge({ status }: { status: string }) {
 }
 
 function TokenStatusBadge({ valid }: { valid: boolean }) {
+  const { t } = useTranslation();
   return valid ? (
     <span className="inline-flex items-center rounded-lg border px-2 py-0.5 text-xs font-semibold bg-emerald-500/10 text-emerald-400 border-emerald-500/25">
-      Valide
+      {t("customers.valid", "Valide")}
     </span>
   ) : (
     <span className="inline-flex items-center rounded-lg border px-2 py-0.5 text-xs font-semibold bg-red-500/10 text-red-400 border-red-500/25">
-      Invalide
+      {t("customers.invalid", "Invalide")}
     </span>
   );
 }
 
 function SubscriptionStatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
   const s = status?.toUpperCase();
   const map: Record<string, { classes: string; label: string }> = {
     ACTIVE: {
       classes: "bg-emerald-500/10 text-emerald-400 border-emerald-500/25",
-      label: "Actif",
+      label: t("common.active"),
     },
     CANCELLED: {
       classes: "bg-red-500/10 text-red-400 border-red-500/25",
-      label: "Annule",
+      label: t("status.cancelled"),
     },
     CANCELED: {
       classes: "bg-red-500/10 text-red-400 border-red-500/25",
-      label: "Annule",
+      label: t("status.cancelled"),
     },
     PAST_DUE: {
       classes: "bg-amber-500/10 text-amber-400 border-amber-500/25",
-      label: "Impaye",
+      label: t("customers.pastDue", "Impayé"),
     },
     TRIALING: {
       classes: "bg-blue-500/10 text-blue-400 border-blue-500/25",
-      label: "Essai",
+      label: t("customers.trialing", "Essai"),
     },
   };
   const cfg = map[s] ?? {
     classes: "bg-foreground-muted/10 text-foreground-muted border-border",
-    label: status ?? "Inconnu",
+    label: status ?? t("customers.unknown", "Inconnu"),
   };
 
   return (
@@ -195,19 +199,20 @@ function SubscriptionStatusBadge({ status }: { status: string }) {
 }
 
 function TicketStatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
   const s = (status ?? "").toLowerCase();
   let classes = "bg-foreground-muted/10 text-foreground-muted border-border";
-  let label = status ?? "Inconnu";
+  let label = status ?? t("customers.unknown", "Inconnu");
 
   if (s === "open" || s === "ouvert") {
     classes = "bg-amber-500/10 text-amber-400 border-amber-500/25";
-    label = "Ouvert";
+    label = t("customers.ticketOpen", "Ouvert");
   } else if (s === "in_progress" || s === "en_cours") {
     classes = "bg-blue-500/10 text-blue-400 border-blue-500/25";
-    label = "En cours";
+    label = t("customers.ticketInProgress", "En cours");
   } else if (s === "closed" || s === "ferme" || s === "resolved") {
     classes = "bg-emerald-500/10 text-emerald-400 border-emerald-500/25";
-    label = "Ferme";
+    label = t("customers.ticketClosed", "Fermé");
   }
 
   return (
@@ -268,20 +273,21 @@ function EmptyTab({ message }: { message: string }) {
 
 // ── Tab definitions ──────────────────────────────────────────
 
-const tabs: { key: TabKey; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { key: "sessions", label: "Sessions", icon: Zap },
-  { key: "factures", label: "Factures", icon: Receipt },
-  { key: "tokens", label: "Tokens", icon: KeyRound },
-  { key: "abonnements", label: "Abonnements", icon: CreditCard },
-  { key: "tickets", label: "Tickets", icon: Wrench },
-];
-
 // ── Main Component ───────────────────────────────────────────
 
 export function CustomerDetailPage({
   customerId,
   onClose,
 }: CustomerDetailPageProps) {
+  const { t } = useTranslation();
+
+  const tabs: { key: TabKey; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+    { key: "sessions", label: t("analytics.sessions"), icon: Zap },
+    { key: "factures", label: t("billing.invoices"), icon: Receipt },
+    { key: "tokens", label: "Tokens", icon: KeyRound },
+    { key: "abonnements", label: t("customers.subscriptions", "Abonnements"), icon: CreditCard },
+    { key: "tickets", label: "Tickets", icon: Wrench },
+  ];
   const { data, isLoading, error } = useCustomerDetail(customerId);
   const [activeTab, setActiveTab] = useState<TabKey>("sessions");
 
@@ -312,8 +318,8 @@ export function CustomerDetailPage({
     <SlideOver
       open={true}
       onClose={onClose}
-      title="Fiche client"
-      subtitle="Vue 360\u00B0"
+      title={t("customers.customerCard", "Fiche client")}
+      subtitle={t("customers.view360", "Vue 360\u00B0")}
       maxWidth="max-w-3xl"
     >
       <div className="p-6 space-y-6">
@@ -322,7 +328,7 @@ export function CustomerDetailPage({
           <div className="flex flex-col items-center justify-center py-20">
             <Loader2 className="w-8 h-8 text-primary animate-spin mb-3" />
             <p className="text-sm text-foreground-muted">
-              Chargement des donnees client...
+              {t("customers.loadingData", "Chargement des données client...")}
             </p>
           </div>
         )}
@@ -334,10 +340,10 @@ export function CustomerDetailPage({
               <AlertTriangle className="w-6 h-6 text-red-400" />
             </div>
             <p className="text-sm text-foreground font-medium">
-              Erreur de chargement
+              {t("customers.loadingError", "Erreur de chargement")}
             </p>
             <p className="text-xs text-foreground-muted mt-1">
-              Impossible de charger les donnees de ce client.
+              {t("customers.loadingErrorDesc", "Impossible de charger les données de ce client.")}
             </p>
           </div>
         )}
@@ -365,10 +371,10 @@ export function CustomerDetailPage({
                 <div className="flex items-center gap-4 mt-1 text-xs text-foreground-muted">
                   {profile.phone && <span>{profile.phone}</span>}
                   {profile.customer_name && (
-                    <span>Groupe : {profile.customer_name}</span>
+                    <span>{t("customers.group", "Groupe")} : {profile.customer_name}</span>
                   )}
                   <span>
-                    Inscrit le {formatDateFr(profile.created_at)}
+                    {t("customers.registeredOn", "Inscrit le")} {formatDateFr(profile.created_at)}
                   </span>
                 </div>
                 <p className="text-[11px] text-foreground-muted/60 font-mono mt-1">
@@ -381,25 +387,25 @@ export function CustomerDetailPage({
             {kpis && (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <KPICard
-                  label="Sessions totales"
+                  label={t("dashboard.totalSessions")}
                   value={kpis.totalSessions.toLocaleString("fr-FR")}
                   icon={Zap}
                   color="#4ECDC4"
                 />
                 <KPICard
-                  label="Energie totale"
+                  label={t("dashboard.totalEnergy")}
                   value={`${kpis.totalEnergy.toFixed(1)} kWh`}
                   icon={Activity}
                   color="#A78BFA"
                 />
                 <KPICard
-                  label="Total depense"
+                  label={t("customers.totalSpent", "Total dépensé")}
                   value={formatCents(kpis.totalSpent)}
                   icon={Euro}
                   color="#00D4AA"
                 />
                 <KPICard
-                  label="Solde impaye"
+                  label={t("customers.outstandingDebt", "Solde impayé")}
                   value={formatCents(kpis.outstandingDebt)}
                   icon={AlertTriangle}
                   color={kpis.outstandingDebt > 0 ? "#F87171" : "#8892B0"}
@@ -412,7 +418,7 @@ export function CustomerDetailPage({
               <div className="flex items-center gap-2 mb-3">
                 <Clock className="w-4 h-4 text-foreground-muted" />
                 <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider">
-                  Activite recente
+                  {t("customers.recentActivity", "Activité récente")}
                 </p>
               </div>
               <CustomerTimeline
@@ -452,26 +458,26 @@ export function CustomerDetailPage({
                 {/* Sessions tab */}
                 {activeTab === "sessions" && (
                   data.sessions.length === 0 ? (
-                    <EmptyTab message="Aucune session de charge enregistree" />
+                    <EmptyTab message={t("customers.noSession", "Aucune session de charge enregistrée")} />
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead className="border-b border-border">
                           <tr>
                             <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase tracking-wider">
-                              Date
+                              {t("common.date")}
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase tracking-wider">
-                              Station
+                              {t("sessions.station")}
                             </th>
                             <th className="px-4 py-3 text-right text-xs font-semibold text-foreground-muted uppercase tracking-wider">
-                              Energie
+                              {t("analytics.energy")}
                             </th>
                             <th className="px-4 py-3 text-right text-xs font-semibold text-foreground-muted uppercase tracking-wider">
-                              Duree
+                              {t("sessions.duration")}
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase tracking-wider">
-                              Statut
+                              {t("common.status")}
                             </th>
                           </tr>
                         </thead>
@@ -511,7 +517,7 @@ export function CustomerDetailPage({
                 {/* Factures tab */}
                 {activeTab === "factures" && (
                   data.invoices.length === 0 ? (
-                    <EmptyTab message="Aucune facture trouvee" />
+                    <EmptyTab message={t("customers.noInvoice", "Aucune facture trouvée")} />
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full">
@@ -521,13 +527,13 @@ export function CustomerDetailPage({
                               N\u00B0
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase tracking-wider">
-                              Date
+                              {t("common.date")}
                             </th>
                             <th className="px-4 py-3 text-right text-xs font-semibold text-foreground-muted uppercase tracking-wider">
-                              Montant
+                              {t("customers.amount", "Montant")}
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase tracking-wider">
-                              Statut
+                              {t("common.status")}
                             </th>
                           </tr>
                         </thead>
@@ -560,7 +566,7 @@ export function CustomerDetailPage({
                 {/* Tokens tab */}
                 {activeTab === "tokens" && (
                   data.tokens.length === 0 ? (
-                    <EmptyTab message="Aucun token OCPI associe" />
+                    <EmptyTab message={t("customers.noToken", "Aucun token OCPI associé")} />
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full">
@@ -573,10 +579,10 @@ export function CustomerDetailPage({
                               Type
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase tracking-wider">
-                              Statut
+                              {t("common.status")}
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase tracking-wider">
-                              Cree le
+                              {t("customers.createdAt", "Créé le")}
                             </th>
                           </tr>
                         </thead>
@@ -609,23 +615,23 @@ export function CustomerDetailPage({
                 {/* Abonnements tab */}
                 {activeTab === "abonnements" && (
                   data.subscriptions.length === 0 ? (
-                    <EmptyTab message="Aucun abonnement trouve" />
+                    <EmptyTab message={t("customers.noSubscription", "Aucun abonnement trouvé")} />
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead className="border-b border-border">
                           <tr>
                             <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase tracking-wider">
-                              Offre
+                              {t("customers.offer", "Offre")}
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase tracking-wider">
-                              Statut
+                              {t("common.status")}
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase tracking-wider">
-                              Debut
+                              {t("customers.startDate", "Début")}
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase tracking-wider">
-                              Fin
+                              {t("customers.endDate", "Fin")}
                             </th>
                           </tr>
                         </thead>
@@ -660,20 +666,20 @@ export function CustomerDetailPage({
                 {/* Tickets tab */}
                 {activeTab === "tickets" && (
                   data.tickets.length === 0 ? (
-                    <EmptyTab message="Aucun ticket de maintenance" />
+                    <EmptyTab message={t("customers.noTicket", "Aucun ticket de maintenance")} />
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full">
                         <thead className="border-b border-border">
                           <tr>
                             <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase tracking-wider">
-                              Titre
+                              {t("customers.ticketTitle", "Titre")}
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase tracking-wider">
-                              Statut
+                              {t("common.status")}
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-semibold text-foreground-muted uppercase tracking-wider">
-                              Cree le
+                              {t("customers.createdAt", "Créé le")}
                             </th>
                           </tr>
                         </thead>

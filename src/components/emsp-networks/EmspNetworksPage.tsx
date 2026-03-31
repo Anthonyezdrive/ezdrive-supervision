@@ -34,6 +34,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { KPICard } from "@/components/ui/KPICard";
 import { PageHelp } from "@/components/ui/PageHelp";
+import { useTranslation } from "react-i18next";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -259,6 +260,7 @@ function DetailRow({ label, value, isLink }: { label: string; value: string; isL
 // ── Main Page (2-level navigation) ────────────────────────────
 
 export function EmspNetworksPage() {
+  const { t } = useTranslation();
   const [selectedNetwork, setSelectedNetwork] = useState<EmspNetwork | null>(null);
 
   // Level 2: Network detail

@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { useToast } from "@/contexts/ToastContext";
 import { useCpo } from "@/contexts/CpoContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useTranslation } from "react-i18next";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -285,6 +286,7 @@ function RuleDetailModal({
 // ── Main Page ─────────────────────────────────────────────────
 
 export function ReimbursementPage() {
+  const { t } = useTranslation();
   const { selectedCpoId } = useCpo();
   const queryClient = useQueryClient();
   const { success: toastSuccess, error: toastError } = useToast();

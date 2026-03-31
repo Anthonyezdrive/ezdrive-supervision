@@ -4,7 +4,7 @@
 // ============================================================
 
 import { useState, useMemo } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import {
@@ -21,7 +21,7 @@ import {
   getFirstResponseTime,
   relativeTime,
 } from "@/hooks/useTickets";
-import type { Ticket, TicketComment } from "@/hooks/useTickets";
+import type { Ticket } from "@/hooks/useTickets";
 import {
   LifeBuoy,
   Plus,
@@ -55,19 +55,19 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 
 type Tab = "tickets" | "links" | "api";
 
-const STATUS_CONFIG: Record<string, { label: string; icon: typeof Clock; color: string; bg: string }> = {
-  open: { label: "Ouvert", icon: AlertCircle, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20" },
-  in_progress: { label: "En cours", icon: Clock, color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/20" },
-  resolved: { label: "Résolu", icon: CheckCircle2, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
-  closed: { label: "Fermé", icon: CheckCircle2, color: "text-foreground-muted", bg: "bg-foreground-muted/10 border-foreground-muted/20" },
-  archived: { label: "Archivé", icon: Archive, color: "text-foreground-muted", bg: "bg-foreground-muted/10 border-foreground-muted/20" },
+const STATUS_CONFIG_KEYS: Record<string, { labelKey: string; icon: typeof Clock; color: string; bg: string }> = {
+  open: { labelKey: "support.statusOpen", icon: AlertCircle, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20" },
+  in_progress: { labelKey: "support.statusInProgress", icon: Clock, color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/20" },
+  resolved: { labelKey: "support.statusResolved", icon: CheckCircle2, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
+  closed: { labelKey: "support.statusClosed", icon: CheckCircle2, color: "text-foreground-muted", bg: "bg-foreground-muted/10 border-foreground-muted/20" },
+  archived: { labelKey: "support.statusArchived", icon: Archive, color: "text-foreground-muted", bg: "bg-foreground-muted/10 border-foreground-muted/20" },
 };
 
-const PRIORITY_CONFIG: Record<string, { label: string; color: string }> = {
-  low: { label: "Basse", color: "text-foreground-muted" },
-  medium: { label: "Moyenne", color: "text-amber-400" },
-  high: { label: "Haute", color: "text-orange-400" },
-  critical: { label: "Critique", color: "text-red-400" },
+const PRIORITY_CONFIG_KEYS: Record<string, { labelKey: string; color: string }> = {
+  low: { labelKey: "support.low", color: "text-foreground-muted" },
+  medium: { labelKey: "support.medium", color: "text-amber-400" },
+  high: { labelKey: "support.high", color: "text-orange-400" },
+  critical: { labelKey: "support.criticalPriority", color: "text-red-400" },
 };
 
 const CATEGORIES = [
@@ -158,7 +158,7 @@ const METHOD_COLORS: Record<string, string> = {
 // ── Component ──────────────────────────────────────────────
 
 export function SupportPage() {
-  const queryClient = useQueryClient();
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>("tickets");
   const [showCreate, setShowCreate] = useState(false);
@@ -218,14 +218,14 @@ export function SupportPage() {
   const inputClass = "w-full px-3 py-2.5 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-primary/50 transition-colors";
 
   const tabs: { key: Tab; label: string; icon: typeof LifeBuoy }[] = [
-    { key: "tickets", label: "Tickets", icon: MessageSquare },
-    { key: "links", label: "Liens utiles", icon: ExternalLink },
-    { key: "api", label: "Documentation API", icon: BookOpen },
+    { key: "tickets", label: t("support.ticketsTab", "Tickets"), icon: MessageSquare },
+    { key: "links", label: t("support.linksTab", "Liens utiles"), icon: ExternalLink },
+    { key: "api", label: t("support.apiDocTab", "Documentation API"), icon: BookOpen },
   ];
 
   /** Get display name for a user id */
   const getProfileName = (userId: string | null): string => {
-    if (!userId || !profiles) return "Non assigné";
+    if (!userId || !profiles) return t("support.unassigned", "Non assigné");
     const p = profiles.find((pr) => pr.id === userId);
     return p?.full_name || p?.email || userId.slice(0, 8);
   };
@@ -234,13 +234,13 @@ export function SupportPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-heading text-xl font-bold text-foreground">Support & Ressources</h1>
-          <p className="text-sm text-foreground-muted mt-1">Tickets, documentation et liens utiles</p>
+          <h1 className="font-heading text-xl font-bold text-foreground">{t("support.titleResources", "Support & Ressources")}</h1>
+          <p className="text-sm text-foreground-muted mt-1">{t("support.descriptionResources", "Tickets, documentation et liens utiles")}</p>
         </div>
         {activeTab === "tickets" && (
           <button onClick={() => setShowCreate(true)} className="flex items-center gap-1.5 px-4 py-2 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors">
             <Plus className="w-4 h-4" />
-            Nouveau ticket
+            {t("support.newTicket")}
           </button>
         )}
       </div>
@@ -248,9 +248,9 @@ export function SupportPage() {
       {/* Error state */}
       {isError && (
         <div className="bg-danger/10 border border-danger/30 rounded-2xl p-4 flex items-center justify-between">
-          <p className="text-danger text-sm">Erreur de chargement des donnees</p>
+          <p className="text-danger text-sm">{t("b2b.loadingError", "Erreur de chargement des données")}</p>
           <button onClick={() => refetch()} className="text-sm text-danger hover:underline" type="button">
-            Reessayer
+            {t("b2b.retryBtn", "Réessayer")}
           </button>
         </div>
       )}
@@ -283,19 +283,19 @@ export function SupportPage() {
           <div className="grid grid-cols-4 gap-3">
             <div className="bg-surface border border-border rounded-xl p-4 text-center">
               <p className="text-2xl font-bold text-foreground">{kpis.total}</p>
-              <p className="text-xs text-foreground-muted">Total</p>
+              <p className="text-xs text-foreground-muted">{t("common.total")}</p>
             </div>
             <div className="bg-surface border border-border rounded-xl p-4 text-center">
               <p className="text-2xl font-bold text-blue-400">{kpis.open}</p>
-              <p className="text-xs text-foreground-muted">Ouverts</p>
+              <p className="text-xs text-foreground-muted">{t("support.statusOpen", "Ouverts")}</p>
             </div>
             <div className="bg-surface border border-border rounded-xl p-4 text-center">
               <p className="text-2xl font-bold text-amber-400">{kpis.inProgress}</p>
-              <p className="text-xs text-foreground-muted">En cours</p>
+              <p className="text-xs text-foreground-muted">{t("support.statusInProgress", "En cours")}</p>
             </div>
             <div className="bg-surface border border-border rounded-xl p-4 text-center">
               <p className="text-2xl font-bold text-emerald-400">{kpis.resolved}</p>
-              <p className="text-xs text-foreground-muted">Résolus</p>
+              <p className="text-xs text-foreground-muted">{t("support.statusResolved", "Résolus")}</p>
             </div>
           </div>
 
@@ -303,14 +303,14 @@ export function SupportPage() {
           <div className="flex gap-3 flex-wrap">
             <div className="relative flex-1 min-w-[200px] max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
-              <input type="text" placeholder="Rechercher un ticket..." value={search} onChange={(e) => setSearch(e.target.value)} className={cn(inputClass, "pl-9")} />
+              <input type="text" placeholder={t("support.searchTicket", "Rechercher un ticket...")} value={search} onChange={(e) => setSearch(e.target.value)} className={cn(inputClass, "pl-9")} />
             </div>
             <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setShowArchived(false); }} className="px-3 py-2 bg-surface border border-border rounded-xl text-sm text-foreground">
-              <option value="all">Tous les statuts</option>
-              <option value="open">Ouverts</option>
-              <option value="in_progress">En cours</option>
-              <option value="resolved">Résolus</option>
-              <option value="closed">Fermés</option>
+              <option value="all">{t("support.allStatuses", "Tous les statuts")}</option>
+              <option value="open">{t("support.statusOpen", "Ouverts")}</option>
+              <option value="in_progress">{t("support.statusInProgress", "En cours")}</option>
+              <option value="resolved">{t("support.statusResolved", "Résolus")}</option>
+              <option value="closed">{t("support.statusClosed", "Fermés")}</option>
             </select>
             <button
               onClick={() => { setShowArchived(!showArchived); setStatusFilter("all"); }}
@@ -322,11 +322,11 @@ export function SupportPage() {
               )}
             >
               <Archive className="w-4 h-4" />
-              Archivés
+              {t("support.statusArchived", "Archivés")}
             </button>
             <select value={assigneeFilter} onChange={(e) => setAssigneeFilter(e.target.value)} className="px-3 py-2 bg-surface border border-border rounded-xl text-sm text-foreground">
-              <option value="all">Tous les assignés</option>
-              <option value="unassigned">Non assigné</option>
+              <option value="all">{t("support.allAssignees", "Tous les assignés")}</option>
+              <option value="unassigned">{t("support.unassigned", "Non assigné")}</option>
               {profiles?.map((p) => (
                 <option key={p.id} value={p.id}>{p.full_name || p.email || p.id.slice(0, 8)}</option>
               ))}
@@ -339,14 +339,14 @@ export function SupportPage() {
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-48 bg-surface border border-border rounded-2xl">
               <LifeBuoy className="w-8 h-8 text-foreground-muted/40 mb-2" />
-              <p className="text-foreground-muted">Aucun ticket</p>
-              <button onClick={() => setShowCreate(true)} className="mt-2 text-xs text-primary hover:underline">+ Créer un ticket</button>
+              <p className="text-foreground-muted">{t("support.noTicket", "Aucun ticket")}</p>
+              <button onClick={() => setShowCreate(true)} className="mt-2 text-xs text-primary hover:underline">+ {t("support.createTicket", "Créer un ticket")}</button>
             </div>
           ) : (
             <div className="space-y-2">
               {filtered.map((ticket) => {
-                const statusCfg = STATUS_CONFIG[ticket.status] ?? STATUS_CONFIG.open;
-                const priorityCfg = PRIORITY_CONFIG[ticket.priority] ?? PRIORITY_CONFIG.medium;
+                const statusCfg = STATUS_CONFIG_KEYS[ticket.status] ?? STATUS_CONFIG.open;
+                const priorityCfg = PRIORITY_CONFIG_KEYS[ticket.priority] ?? PRIORITY_CONFIG.medium;
                 const StatusIcon = statusCfg.icon;
                 const slaBadge = ticket.status !== "closed" && ticket.status !== "resolved" ? getSLABadge(ticket.created_at) : null;
 
@@ -362,10 +362,10 @@ export function SupportPage() {
                           <StatusIcon className={cn("w-4 h-4 shrink-0", statusCfg.color)} />
                           <h3 className="font-medium text-foreground text-sm truncate">{ticket.title}</h3>
                           <span className={cn("inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border", statusCfg.bg)}>
-                            {statusCfg.label}
+                            {t(statusCfg.labelKey)}
                           </span>
                           <span className={cn("text-[10px] font-semibold", priorityCfg.color)}>
-                            {priorityCfg.label}
+                            {t(priorityCfg.labelKey)}
                           </span>
                           {/* SLA badge */}
                           {slaBadge && (
@@ -388,7 +388,7 @@ export function SupportPage() {
                             </span>
                           )}
                           {ticket.resolution_notes && (
-                            <span className="text-[10px] text-emerald-400">Résolu : {ticket.resolution_notes}</span>
+                            <span className="text-[10px] text-emerald-400">{t("support.statusResolved", "Résolu")} : {ticket.resolution_notes}</span>
                           )}
                         </div>
                       </div>
@@ -398,15 +398,15 @@ export function SupportPage() {
                             onClick={() => updateTicketMutation.mutate({ id: ticket.id, status: "in_progress" })}
                             className="px-2 py-1 text-[10px] font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg hover:bg-amber-500/20 transition-colors whitespace-nowrap"
                           >
-                            Prendre en charge
+                            {t("support.takeOver", "Prendre en charge")}
                           </button>
                         )}
                         {ticket.status === "in_progress" && (
                           <button
-                            onClick={() => updateTicketMutation.mutate({ id: ticket.id, status: "resolved", resolution_notes: "Résolu" })}
+                            onClick={() => updateTicketMutation.mutate({ id: ticket.id, status: "resolved", resolution_notes: t("support.statusResolved", "Résolu") })}
                             className="px-2 py-1 text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-colors whitespace-nowrap"
                           >
-                            Marquer résolu
+                            {t("support.markResolved", "Marquer résolu")}
                           </button>
                         )}
                       </div>
@@ -468,9 +468,9 @@ export function SupportPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-surface-elevated">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-foreground-muted w-20">Méthode</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-foreground-muted">Endpoint</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-foreground-muted">Description</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-foreground-muted w-20">{t("support.method", "Méthode")}</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-foreground-muted">{t("support.endpoint", "Endpoint")}</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-foreground-muted">{t("common.description")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -523,17 +523,17 @@ export function SupportPage() {
       {/* Archive Confirm Dialog */}
       <ConfirmDialog
         open={!!archiveTicketId}
-        title="Archiver ce ticket ?"
-        description="Il ne sera plus visible dans la liste. Vous pourrez le retrouver dans l'onglet Archivés."
-        confirmLabel="Archiver"
-        loadingLabel="Archivage..."
+        title={t("support.archiveTitle", "Archiver ce ticket ?")}
+        description={t("support.archiveDesc", "Il ne sera plus visible dans la liste. Vous pourrez le retrouver dans l'onglet Archivés.")}
+        confirmLabel={t("support.archive", "Archiver")}
+        loadingLabel={t("support.archiving", "Archivage...")}
         variant="warning"
         loading={deleteMutation.isPending}
         onConfirm={() => {
           if (archiveTicketId) {
             deleteMutation.mutate(archiveTicketId, {
               onSuccess: () => {
-                toastSuccess("Ticket archivé");
+                toastSuccess(t("support.ticketArchived", "Ticket archivé"));
                 setArchiveTicketId(null);
               },
               onError: (err: Error) => {
@@ -558,6 +558,7 @@ function CreateTicketModal({ onClose, onSubmit, isLoading, error, profiles }: {
   error: string | null;
   profiles: { id: string; full_name: string | null; email: string | null }[];
 }) {
+  const { t } = useTranslation();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("general");
@@ -572,7 +573,7 @@ function CreateTicketModal({ onClose, onSubmit, isLoading, error, profiles }: {
       <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
         <div className="bg-surface border border-border rounded-2xl w-full max-w-lg shadow-2xl">
           <div className="flex items-center justify-between p-5 border-b border-border">
-            <h2 className="font-heading font-bold text-lg">Nouveau ticket</h2>
+            <h2 className="font-heading font-bold text-lg">{t("support.newTicket")}</h2>
             <button onClick={onClose} className="p-1.5 hover:bg-surface-elevated rounded-lg transition-colors">
               <X className="w-5 h-5 text-foreground-muted" />
             </button>
@@ -593,37 +594,37 @@ function CreateTicketModal({ onClose, onSubmit, isLoading, error, profiles }: {
             className="p-5 space-y-4"
           >
             <div>
-              <label className="block text-xs text-foreground-muted mb-1.5">Titre *</label>
+              <label className="block text-xs text-foreground-muted mb-1.5">{t("support.ticketTitle", "Titre")} *</label>
               <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Borne hors ligne depuis 24h" className={inputClass} />
             </div>
             <div>
-              <label className="block text-xs text-foreground-muted mb-1.5">Description *</label>
+              <label className="block text-xs text-foreground-muted mb-1.5">{t("common.description")} *</label>
               <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Décrivez le problème en détail..." rows={4} className={cn(inputClass, "resize-none")} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-foreground-muted mb-1.5">Catégorie</label>
+                <label className="block text-xs text-foreground-muted mb-1.5">{t("support.category", "Catégorie")}</label>
                 <select value={category} onChange={(e) => setCategory(e.target.value)} className={inputClass}>
                   {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-foreground-muted mb-1.5">Priorité</label>
+                <label className="block text-xs text-foreground-muted mb-1.5">{t("support.priority")}</label>
                 <select value={priority} onChange={(e) => setPriority(e.target.value)} className={inputClass}>
-                  <option value="low">Basse</option>
-                  <option value="medium">Moyenne</option>
-                  <option value="high">Haute</option>
-                  <option value="critical">Critique</option>
+                  <option value="low">{t("support.low")}</option>
+                  <option value="medium">{t("support.medium")}</option>
+                  <option value="high">{t("support.high")}</option>
+                  <option value="critical">{t("support.criticalPriority", "Critique")}</option>
                 </select>
               </div>
             </div>
             {/* Assignment dropdown */}
             <div>
-              <label className="block text-xs text-foreground-muted mb-1.5">Assigné à</label>
+              <label className="block text-xs text-foreground-muted mb-1.5">{t("support.assignedTo", "Assigné à")}</label>
               <div className="relative">
                 <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
                 <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} className={cn(inputClass, "pl-9")}>
-                  <option value="">Non assigné</option>
+                  <option value="">{t("support.unassigned", "Non assigné")}</option>
                   {profiles.map((p) => (
                     <option key={p.id} value={p.id}>{p.full_name || p.email || p.id.slice(0, 8)}</option>
                   ))}
@@ -632,10 +633,10 @@ function CreateTicketModal({ onClose, onSubmit, isLoading, error, profiles }: {
             </div>
             {error && <p className="text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{error}</p>}
             <div className="flex gap-3 pt-2">
-              <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-xl text-sm text-foreground-muted hover:text-foreground transition-colors">Annuler</button>
+              <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-xl text-sm text-foreground-muted hover:text-foreground transition-colors">{t("common.cancel")}</button>
               <button type="submit" disabled={isLoading || !title.trim() || !description.trim()} className="flex-1 py-2.5 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
                 {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-                Créer le ticket
+                {t("support.createTicket", "Créer le ticket")}
               </button>
             </div>
           </form>
@@ -651,7 +652,7 @@ function TicketDetailSlideOver({
   ticket,
   profiles,
   userId,
-  getProfileName,
+  getProfileName: _getProfileName,
   onClose,
   onAssign,
   onStatusChange,
@@ -668,14 +669,15 @@ function TicketDetailSlideOver({
   onCloseTicket: (ticketId: string, notes?: string) => void;
   onArchive: (ticketId: string) => void;
 }) {
+  const { t } = useTranslation();
   const [newComment, setNewComment] = useState("");
   const [assignTo, setAssignTo] = useState(ticket.assigned_to ?? "");
 
   const { data: comments, isLoading: commentsLoading } = useTicketComments(ticket.id);
   const addCommentMutation = useAddComment();
 
-  const statusCfg = STATUS_CONFIG[ticket.status] ?? STATUS_CONFIG.open;
-  const priorityCfg = PRIORITY_CONFIG[ticket.priority] ?? PRIORITY_CONFIG.medium;
+  const statusCfg = STATUS_CONFIG_KEYS[ticket.status] ?? STATUS_CONFIG.open;
+  const priorityCfg = PRIORITY_CONFIG_KEYS[ticket.priority] ?? PRIORITY_CONFIG.medium;
   const slaBadge = ticket.status !== "closed" && ticket.status !== "resolved" ? getSLABadge(ticket.created_at) : null;
   const firstResponse = comments ? getFirstResponseTime(ticket.created_at, comments) : null;
 
@@ -704,10 +706,10 @@ function TicketDetailSlideOver({
             <h2 className="font-heading font-bold text-lg text-foreground truncate">{ticket.title}</h2>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
               <span className={cn("inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border", statusCfg.bg)}>
-                {statusCfg.label}
+                {t(statusCfg.labelKey)}
               </span>
               <span className={cn("text-[10px] font-semibold", priorityCfg.color)}>
-                {priorityCfg.label}
+                {t(priorityCfg.labelKey)}
               </span>
               {slaBadge && (
                 <span className={cn("inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border", slaBadge.bg, slaBadge.color)}>
@@ -732,18 +734,18 @@ function TicketDetailSlideOver({
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
           {/* Description */}
           <div>
-            <h4 className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Description</h4>
+            <h4 className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">{t("common.description")}</h4>
             <p className="text-sm text-foreground leading-relaxed">{ticket.description}</p>
           </div>
 
           {/* Info grid */}
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-surface-elevated border border-border rounded-xl p-3">
-              <p className="text-[10px] text-foreground-muted uppercase tracking-wider mb-1">Catégorie</p>
+              <p className="text-[10px] text-foreground-muted uppercase tracking-wider mb-1">{t("support.category", "Catégorie")}</p>
               <p className="text-sm text-foreground">{CATEGORIES.find((c) => c.value === ticket.category)?.label ?? ticket.category}</p>
             </div>
             <div className="bg-surface-elevated border border-border rounded-xl p-3">
-              <p className="text-[10px] text-foreground-muted uppercase tracking-wider mb-1">Créé le</p>
+              <p className="text-[10px] text-foreground-muted uppercase tracking-wider mb-1">{t("admin.users.createdAt")}</p>
               <p className="text-sm text-foreground">
                 {new Date(ticket.created_at).toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
               </p>
@@ -752,7 +754,7 @@ function TicketDetailSlideOver({
 
           {/* Assignment */}
           <div>
-            <h4 className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Assigné à</h4>
+            <h4 className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">{t("support.assignedTo", "Assigné à")}</h4>
             <div className="relative">
               <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
               <select
@@ -760,7 +762,7 @@ function TicketDetailSlideOver({
                 onChange={(e) => handleAssignChange(e.target.value)}
                 className={cn(inputClass, "pl-9")}
               >
-                <option value="">Non assigné</option>
+                <option value="">{t("support.unassigned", "Non assigné")}</option>
                 {profiles.map((p) => (
                   <option key={p.id} value={p.id}>{p.full_name || p.email || p.id.slice(0, 8)}</option>
                 ))}
@@ -771,30 +773,30 @@ function TicketDetailSlideOver({
           {/* Status actions */}
           {ticket.status !== "closed" && ticket.status !== "archived" && (
             <div>
-              <h4 className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">Actions</h4>
+              <h4 className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-2">{t("common.actions")}</h4>
               <div className="flex gap-2 flex-wrap">
                 {ticket.status === "open" && (
                   <button
                     onClick={() => onStatusChange(ticket.id, "in_progress")}
                     className="px-3 py-1.5 text-xs font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg hover:bg-amber-500/20 transition-colors"
                   >
-                    Prendre en charge
+                    {t("support.takeOver", "Prendre en charge")}
                   </button>
                 )}
                 {ticket.status === "in_progress" && (
                   <button
-                    onClick={() => onStatusChange(ticket.id, "resolved", "Résolu")}
+                    onClick={() => onStatusChange(ticket.id, "resolved", t("support.statusResolved", "Résolu"))}
                     className="px-3 py-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-colors"
                   >
-                    Marquer résolu
+                    {t("support.markResolved", "Marquer résolu")}
                   </button>
                 )}
                 {(ticket.status === "resolved" || ticket.status === "in_progress" || ticket.status === "open") && (
                   <button
-                    onClick={() => onCloseTicket(ticket.id, "Fermé manuellement")}
+                    onClick={() => onCloseTicket(ticket.id, t("support.closedManually", "Fermé manuellement"))}
                     className="px-3 py-1.5 text-xs font-medium text-foreground-muted bg-foreground-muted/10 border border-foreground-muted/20 rounded-lg hover:bg-foreground-muted/20 transition-colors"
                   >
-                    Fermer le ticket
+                    {t("support.closeTicket", "Fermer le ticket")}
                   </button>
                 )}
                 <button
@@ -802,7 +804,7 @@ function TicketDetailSlideOver({
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-foreground-muted bg-foreground-muted/10 border border-foreground-muted/20 rounded-lg hover:bg-foreground-muted/20 transition-colors"
                 >
                   <Archive className="w-3.5 h-3.5" />
-                  Archiver
+                  {t("support.archive", "Archiver")}
                 </button>
               </div>
             </div>
@@ -811,7 +813,7 @@ function TicketDetailSlideOver({
           {/* Resolution notes */}
           {ticket.resolution_notes && (
             <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-3">
-              <p className="text-[10px] text-emerald-400 uppercase tracking-wider font-semibold mb-1">Notes de résolution</p>
+              <p className="text-[10px] text-emerald-400 uppercase tracking-wider font-semibold mb-1">{t("support.resolutionNotes", "Notes de résolution")}</p>
               <p className="text-sm text-foreground">{ticket.resolution_notes}</p>
             </div>
           )}
@@ -819,16 +821,16 @@ function TicketDetailSlideOver({
           {/* Comments thread */}
           <div>
             <h4 className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mb-3">
-              Commentaires {comments && comments.length > 0 && `(${comments.length})`}
+              {t("support.comments", "Commentaires")} {comments && comments.length > 0 && `(${comments.length})`}
             </h4>
 
             {commentsLoading ? (
               <div className="flex items-center gap-2 text-sm text-foreground-muted py-4">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Chargement...
+                {t("common.loading")}
               </div>
             ) : !comments || comments.length === 0 ? (
-              <p className="text-sm text-foreground-muted/60 py-4">Aucun commentaire pour le moment.</p>
+              <p className="text-sm text-foreground-muted/60 py-4">{t("support.noComment", "Aucun commentaire pour le moment.")}</p>
             ) : (
               <div className="relative pl-6">
                 {/* Timeline vertical line */}
@@ -867,7 +869,7 @@ function TicketDetailSlideOver({
             <textarea
               value={newComment}
               onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Ajouter un commentaire..."
+              placeholder={t("support.addCommentPlaceholder", "Ajouter un commentaire...")}
               rows={2}
               className={cn(inputClass, "resize-none flex-1")}
               onKeyDown={(e) => {
@@ -883,10 +885,10 @@ function TicketDetailSlideOver({
               className="self-end px-4 py-2.5 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-1.5"
             >
               {addCommentMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              Ajouter
+              {t("common.add")}
             </button>
           </div>
-          <p className="text-[10px] text-foreground-muted mt-1">Ctrl+Enter pour envoyer</p>
+          <p className="text-[10px] text-foreground-muted mt-1">{t("support.ctrlEnterToSend", "Ctrl+Enter pour envoyer")}</p>
         </div>
       </div>
     </>

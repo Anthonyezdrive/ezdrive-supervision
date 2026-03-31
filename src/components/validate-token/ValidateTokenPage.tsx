@@ -4,6 +4,7 @@
 // ============================================================
 
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   ScanLine,
@@ -83,6 +84,7 @@ const MODES: { key: SearchMode; label: string; icon: React.ComponentType<{ class
 // ── Component ─────────────────────────────────────────────────
 
 export function ValidateTokenPage() {
+  const { t } = useTranslation();
   const { selectedCpoId } = useCpo();
   const [mode, setMode] = useState<SearchMode>("auth_id");
   const [tokenInput, setTokenInput] = useState("");
@@ -286,10 +288,10 @@ export function ValidateTokenPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-heading font-bold text-foreground">
-          Valider un Token
+          {t("nav.validateToken")}
         </h1>
         <p className="text-sm text-foreground-muted mt-1">
-          Rechercher un token RFID ou OCPI et vérifier son association utilisateur
+          {t("validateToken.description", "Rechercher un token RFID ou OCPI et vérifier son association utilisateur")}
         </p>
       </div>
 
@@ -308,7 +310,7 @@ export function ValidateTokenPage() {
       <div className="bg-surface border border-border rounded-2xl p-6 max-w-xl">
         {/* Mode Selection */}
         <div className="space-y-3 mb-6">
-          <label className="text-sm font-medium text-foreground">Type de recherche</label>
+          <label className="text-sm font-medium text-foreground">{t("validateToken.searchType", "Type de recherche")}</label>
           <div className="flex gap-3">
             {MODES.map((m) => (
               <button
@@ -351,13 +353,13 @@ export function ValidateTokenPage() {
             ) : (
               <Search className="w-4 h-4" />
             )}
-            Valider
+            {t("validateToken.validate", "Valider")}
           </button>
         </div>
 
         {/* Station Selector (optional) */}
         <div className="mt-4 space-y-1.5">
-          <label className="text-sm text-foreground-muted">Station (optionnel)</label>
+          <label className="text-sm text-foreground-muted">{t("validateToken.stationOptional", "Station (optionnel)")}</label>
           <div className="relative">
             <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
             <select
@@ -365,7 +367,7 @@ export function ValidateTokenPage() {
               onChange={(e) => setStationId(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 bg-surface border border-border rounded-xl text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 appearance-none"
             >
-              <option value="">Toutes les stations</option>
+              <option value="">{t("validateToken.allStations", "Toutes les stations")}</option>
               {stations?.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}{s.evse_id ? ` (${s.evse_id})` : ""}
@@ -374,7 +376,7 @@ export function ValidateTokenPage() {
             </select>
           </div>
           <p className="text-xs text-foreground-muted/70">
-            Sélectionnez une station pour vérifier si le token y est autorisé
+            {t("validateToken.selectStationHint", "Sélectionnez une station pour vérifier si le token y est autorisé")}
           </p>
         </div>
       </div>
@@ -389,9 +391,9 @@ export function ValidateTokenPage() {
                 <XCircle className="w-6 h-6 text-red-400" />
               </div>
               <div>
-                <h3 className="text-base font-semibold text-foreground">Token introuvable</h3>
+                <h3 className="text-base font-semibold text-foreground">{t("validateToken.notFound", "Token introuvable")}</h3>
                 <p className="text-sm text-foreground-muted mt-0.5">
-                  Aucun token ne correspond à la valeur saisie dans les tables RFID et OCPI.
+                  {t("validateToken.notFoundDescription", "Aucun token ne correspond à la valeur saisie dans les tables RFID et OCPI.")}
                 </p>
               </div>
             </div>
@@ -405,7 +407,7 @@ export function ValidateTokenPage() {
                     <CheckCircle2 className="w-5 h-5 text-emerald-400" />
                   </div>
                   <div>
-                    <h3 className="text-base font-semibold text-foreground">Token trouvé</h3>
+                    <h3 className="text-base font-semibold text-foreground">{t("validateToken.found", "Token trouvé")}</h3>
                     <p className="text-xs text-foreground-muted">{result.token?.type} — {result.token?.uid}</p>
                   </div>
                   <span
@@ -523,7 +525,7 @@ export function ValidateTokenPage() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <h3 className="text-base font-semibold text-foreground">
-                        Contexte station
+                        {t("validateToken.stationContext", "Contexte station")}
                       </h3>
                       <p className="text-sm mt-0.5">
                         {result.stationContext.allowed ? (
@@ -594,8 +596,8 @@ export function ValidateTokenPage() {
                     <User className="w-5 h-5 text-amber-400" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-semibold text-foreground">Aucun utilisateur associé</h3>
-                    <p className="text-xs text-foreground-muted">Ce token n'est lié à aucun profil conducteur.</p>
+                    <h3 className="text-sm font-semibold text-foreground">{t("validateToken.noUser", "Aucun utilisateur associé")}</h3>
+                    <p className="text-xs text-foreground-muted">{t("validateToken.noUserDescription", "Ce token n'est lié à aucun profil conducteur.")}</p>
                   </div>
                 </div>
               )}

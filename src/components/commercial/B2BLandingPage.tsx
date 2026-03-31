@@ -1,8 +1,9 @@
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
-  Zap, BarChart3, Users, Download, MapPin, Shield,
+  Zap, Users, MapPin, Shield,
   Clock, Euro, Gauge, ChevronRight, ArrowRight, CheckCircle,
-  Building2, Plug, TrendingUp, FileSpreadsheet, AlertTriangle,
+  Building2, Plug, TrendingUp, AlertTriangle,
   Eye, Target, Lightbulb, ArrowUpRight, Star, Leaf,
 } from "lucide-react";
 
@@ -10,10 +11,10 @@ import {
 const EZ_GREEN = "#9ACC0E";
 const EZ_GREEN_HOVER = "#85B50C";
 const EZ_BLUE = "#00C3FF";
-const EZ_BLUE_HOVER = "#00A8D6";
 
 /* ────────────────────── HERO ────────────────────── */
 function Hero() {
+  const { t } = useTranslation();
   return (
     <section className="relative overflow-hidden py-20 sm:py-28 px-4">
       {/* Dual gradient glow — green + blue */}
@@ -28,18 +29,17 @@ function Hero() {
           style={{ backgroundColor: `${EZ_GREEN}15`, borderColor: `${EZ_GREEN}30`, color: EZ_GREEN }}
         >
           <Zap className="w-4 h-4" />
-          Plateforme de supervision EZDrive
+          {t("b2bLanding.platformBadge", "Plateforme de supervision EZDrive")}
         </div>
 
         <h1 className="text-4xl sm:text-5xl lg:text-6xl font-heading font-bold text-foreground leading-tight">
-          Transformez vos bornes en{" "}
-          <span style={{ color: EZ_GREEN }}>levier de performance</span>
+          {t("b2bLanding.heroTitle1", "Transformez vos bornes en")}{" "}
+          <span style={{ color: EZ_GREEN }}>{t("b2bLanding.heroTitle2", "levier de performance")}</span>
         </h1>
 
         <p className="text-lg sm:text-xl text-foreground-muted max-w-3xl mx-auto leading-relaxed">
-          Vos bornes de recharge produisent des milliers de données chaque jour.
-          Sans outil adapté, vous perdez en visibilité, en rentabilité et en contrôle.{" "}
-          <span className="text-foreground font-medium">EZDrive transforme ces données en décisions.</span>
+          {t("b2bLanding.heroSubtitle", "Vos bornes de recharge produisent des milliers de données chaque jour. Sans outil adapté, vous perdez en visibilité, en rentabilité et en contrôle.")}{" "}
+          <span className="text-foreground font-medium">{t("b2bLanding.heroHighlight", "EZDrive transforme ces données en décisions.")}</span>
         </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-4">
@@ -50,23 +50,23 @@ function Hero() {
             onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = EZ_GREEN_HOVER)}
             onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = EZ_GREEN)}
           >
-            Demander une démo gratuite
+            {t("b2bLanding.requestDemo", "Demander une démo gratuite")}
             <ArrowRight className="w-5 h-5" />
           </a>
           <Link
             to="/portail"
             className="inline-flex items-center gap-2 px-8 py-3.5 bg-surface-elevated hover:bg-surface border border-border rounded-xl font-medium text-foreground transition-colors"
           >
-            Accéder à mon portail
+            {t("auth.accessMyPortal")}
             <ChevronRight className="w-4 h-4" />
           </Link>
         </div>
 
         {/* Trust bar */}
         <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-2 pt-6 text-sm text-foreground-muted">
-          <span className="flex items-center gap-1.5"><CheckCircle className="w-4 h-4" style={{ color: EZ_GREEN }} /> Mise en service en 24h</span>
-          <span className="flex items-center gap-1.5"><CheckCircle className="w-4 h-4" style={{ color: EZ_GREEN }} /> Sans engagement</span>
-          <span className="flex items-center gap-1.5"><CheckCircle className="w-4 h-4" style={{ color: EZ_GREEN }} /> Support dédié</span>
+          <span className="flex items-center gap-1.5"><CheckCircle className="w-4 h-4" style={{ color: EZ_GREEN }} /> {t("b2bLanding.trust1", "Mise en service en 24h")}</span>
+          <span className="flex items-center gap-1.5"><CheckCircle className="w-4 h-4" style={{ color: EZ_GREEN }} /> {t("b2bLanding.trust2", "Sans engagement")}</span>
+          <span className="flex items-center gap-1.5"><CheckCircle className="w-4 h-4" style={{ color: EZ_GREEN }} /> {t("b2bLanding.trust3", "Support dédié")}</span>
         </div>
       </div>
     </section>
@@ -75,6 +75,7 @@ function Hero() {
 
 /* ────────────────────── PAIN POINTS ────────────────────── */
 function PainPoints() {
+  const { t } = useTranslation();
   const pains = [
     {
       icon: AlertTriangle,
@@ -98,10 +99,10 @@ function PainPoints() {
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-12">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-foreground">
-            Vous gérez des bornes de recharge ?
+            {t("b2bLanding.painTitle", "Vous gérez des bornes de recharge ?")}
           </h2>
           <p className="text-foreground-muted mt-2 max-w-2xl mx-auto">
-            Ces situations vous parlent sûrement. EZDrive les résout.
+            {t("b2bLanding.painSubtitle", "Ces situations vous parlent sûrement. EZDrive les résout.")}
           </p>
         </div>
 
@@ -131,6 +132,7 @@ function PainPoints() {
 
 /* ────────────────────── MOCK DASHBOARD ────────────────────── */
 function MockDashboard() {
+  const { t } = useTranslation();
   const kpis = [
     { label: "Durée totale", value: "757h48min", icon: Clock, color: EZ_BLUE },
     { label: "Volume total", value: "28 575 kWh", icon: Zap, color: EZ_GREEN },
@@ -159,11 +161,10 @@ function MockDashboard() {
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-10">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-foreground">
-            Une vision claire, des décisions rapides
+            {t("b2bLanding.dashboardTitle", "Une vision claire, des décisions rapides")}
           </h2>
           <p className="text-foreground-muted mt-2 max-w-2xl mx-auto">
-            Toutes vos données de recharge consolidées dans un tableau de bord unique,
-            mis à jour quotidiennement, accessible depuis n'importe quel appareil.
+            {t("b2bLanding.dashboardSubtitle", "Toutes vos données de recharge consolidées dans un tableau de bord unique, mis à jour quotidiennement, accessible depuis n'importe quel appareil.")}
           </p>
         </div>
 
@@ -260,6 +261,7 @@ function MockDashboard() {
 
 /* ────────────────────── VALUE PROPOSITIONS ────────────────────── */
 function ValueProps() {
+  const { t } = useTranslation();
   const values = [
     {
       icon: Target,
@@ -310,10 +312,10 @@ function ValueProps() {
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-12">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-foreground">
-            Ce qu'EZDrive change concrètement pour vous
+            {t("b2bLanding.valueTitle", "Ce qu'EZDrive change concrètement pour vous")}
           </h2>
           <p className="text-foreground-muted mt-2 max-w-2xl mx-auto">
-            Pas juste des graphiques. Des résultats mesurables sur votre exploitation.
+            {t("b2bLanding.valueSubtitle", "Pas juste des graphiques. Des résultats mesurables sur votre exploitation.")}
           </p>
         </div>
 
@@ -350,6 +352,7 @@ function ValueProps() {
 
 /* ────────────────────── USE CASES ────────────────────── */
 function UseCases() {
+  const { t } = useTranslation();
   const cases = [
     {
       icon: Building2,
@@ -384,11 +387,10 @@ function UseCases() {
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-12">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-foreground">
-            Adapté à votre modèle, quel qu'il soit
+            {t("b2bLanding.useCasesTitle", "Adapté à votre modèle, quel qu'il soit")}
           </h2>
           <p className="text-foreground-muted mt-2 max-w-2xl mx-auto">
-            Que vous soyez une entreprise avec des bornes pour vos salariés
-            ou un investisseur avec des stations publiques, EZDrive s'adapte.
+            {t("b2bLanding.useCasesSubtitle", "Que vous soyez une entreprise avec des bornes pour vos salariés ou un investisseur avec des stations publiques, EZDrive s'adapte.")}
           </p>
         </div>
 
@@ -442,6 +444,7 @@ function UseCases() {
 
 /* ────────────────────── WHY EZDRIVE ────────────────────── */
 function WhyEZDrive() {
+  const { t } = useTranslation();
   const diffs = [
     {
       icon: Lightbulb,
@@ -470,10 +473,10 @@ function WhyEZDrive() {
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-12">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-foreground">
-            Pourquoi choisir EZDrive ?
+            {t("b2bLanding.whyTitle", "Pourquoi choisir EZDrive ?")}
           </h2>
           <p className="text-foreground-muted mt-2 max-w-2xl mx-auto">
-            Ce qui nous distingue, c'est notre approche terrain et notre engagement à vos côtés.
+            {t("b2bLanding.whySubtitle", "Ce qui nous distingue, c'est notre approche terrain et notre engagement à vos côtés.")}
           </p>
         </div>
 
@@ -500,6 +503,7 @@ function WhyEZDrive() {
 
 /* ────────────────────── STATS ────────────────────── */
 function Stats() {
+  const { t } = useTranslation();
   const stats = [
     { value: "125 000+", label: "Sessions supervisées", icon: Zap, color: EZ_GREEN },
     { value: "50+", label: "Entreprises nous font confiance", icon: Building2, color: EZ_BLUE },
@@ -512,7 +516,7 @@ function Stats() {
       <div className="max-w-5xl mx-auto">
         <div className="text-center mb-10">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-foreground">
-            La confiance se mesure en chiffres
+            {t("b2bLanding.statsTitle", "La confiance se mesure en chiffres")}
           </h2>
         </div>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-6">
@@ -531,6 +535,7 @@ function Stats() {
 
 /* ────────────────────── HOW IT WORKS ────────────────────── */
 function HowItWorks() {
+  const { t } = useTranslation();
   const steps = [
     { num: "01", title: "Contactez-nous", desc: "Un appel de 15 min pour comprendre votre parc et vos besoins.", color: EZ_GREEN },
     { num: "02", title: "On configure tout", desc: "Connexion de vos bornes, import des conducteurs, paramétrage des tarifs.", color: EZ_BLUE },
@@ -542,10 +547,10 @@ function HowItWorks() {
       <div className="max-w-4xl mx-auto">
         <div className="text-center mb-12">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold text-foreground">
-            Démarrez en 3 étapes
+            {t("b2bLanding.howTitle", "Démarrez en 3 étapes")}
           </h2>
           <p className="text-foreground-muted mt-2">
-            Pas de cahier des charges, pas de développement. On s'occupe de tout.
+            {t("b2bLanding.howSubtitle", "Pas de cahier des charges, pas de développement. On s'occupe de tout.")}
           </p>
         </div>
 
@@ -577,6 +582,7 @@ function HowItWorks() {
 
 /* ────────────────────── CTA ────────────────────── */
 function CTA() {
+  const { t } = useTranslation();
   return (
     <section className="py-20 px-4">
       <div className="max-w-3xl mx-auto text-center">
@@ -587,11 +593,10 @@ function CTA() {
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[400px] h-[200px] blur-[100px] rounded-full opacity-20" style={{ background: `linear-gradient(90deg, ${EZ_GREEN}, ${EZ_BLUE})` }} />
           <div className="relative space-y-5">
             <h2 className="text-2xl sm:text-3xl font-heading font-bold text-foreground">
-              Prêt à reprendre le contrôle de vos bornes ?
+              {t("b2bLanding.ctaTitle", "Prêt à reprendre le contrôle de vos bornes ?")}
             </h2>
             <p className="text-foreground-muted max-w-lg mx-auto">
-              Réservez une démo de 15 minutes. On vous montre le portail avec vos propres données.
-              Aucun engagement, aucun frais de setup.
+              {t("b2bLanding.ctaSubtitle", "Réservez une démo de 15 minutes. On vous montre le portail avec vos propres données. Aucun engagement, aucun frais de setup.")}
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-2">
               <a
@@ -601,14 +606,14 @@ function CTA() {
                 onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = EZ_GREEN_HOVER)}
                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = EZ_GREEN)}
               >
-                Réserver ma démo gratuite
+                {t("b2bLanding.bookDemo", "Réserver ma démo gratuite")}
                 <ArrowRight className="w-5 h-5" />
               </a>
               <a
                 href="tel:+33596601234"
                 className="inline-flex items-center gap-2 text-sm text-foreground-muted hover:text-foreground transition-colors"
               >
-                ou appelez le 05 96 60 12 34
+                {t("b2bLanding.orCall", "ou appelez le 05 96 60 12 34")}
               </a>
             </div>
           </div>
@@ -620,18 +625,19 @@ function CTA() {
 
 /* ────────────────────── FOOTER ────────────────────── */
 function Footer() {
+  const { t } = useTranslation();
   return (
     <footer className="border-t border-border py-8 px-4">
       <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <img src="/logo-ezdrive.png" alt="EZDrive" className="h-8" />
           <span className="text-sm text-foreground-muted">
-            Supervision de bornes de recharge
+            {t("b2bLanding.footerTagline", "Supervision de bornes de recharge")}
           </span>
         </div>
         <div className="flex items-center gap-6 text-sm text-foreground-muted">
           <Link to="/portail" className="hover:text-foreground transition-colors">
-            Connexion portail
+            {t("b2bLanding.portalLogin", "Connexion portail")}
           </Link>
           <a href="mailto:contact@ezdrive.fr" className="hover:text-foreground transition-colors">
             Contact
@@ -647,6 +653,7 @@ function Footer() {
 
 /* ────────────────────── MAIN PAGE ────────────────────── */
 export function B2BLandingPage() {
+  const { t } = useTranslation();
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* Navbar */}
@@ -660,7 +667,7 @@ export function B2BLandingPage() {
               href="mailto:contact@ezdrive.fr?subject=Demande de démonstration portail B2B"
               className="hidden sm:inline-flex items-center gap-1.5 text-sm text-foreground-muted hover:text-foreground transition-colors"
             >
-              Demander une démo
+              {t("b2bLanding.requestDemoShort", "Demander une démo")}
             </a>
             <Link
               to="/portail"
@@ -669,7 +676,7 @@ export function B2BLandingPage() {
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = EZ_GREEN_HOVER)}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = EZ_GREEN)}
             >
-              Se connecter
+              {t("auth.signIn")}
             </Link>
           </div>
         </div>

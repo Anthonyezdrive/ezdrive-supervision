@@ -22,6 +22,7 @@ import type { B2BClient } from "@/types/b2b";
 import type { B2BUserRow } from "@/hooks/useB2BAdmin";
 import { useAllReimbursementConfigs, useUpdateReimbursementConfig } from "@/hooks/useReimbursements";
 import type { ReimbursementConfig } from "@/hooks/useReimbursements";
+import { useTranslation } from "react-i18next";
 
 const thClass =
   "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-foreground-muted";
@@ -37,6 +38,7 @@ function generatePassword(): string {
 }
 
 export function B2BAdminPage() {
+  const { t } = useTranslation();
   const { selectedCpoId: _selectedCpoId } = useCpo();
   const { success: toastSuccess, error: toastError } = useToast();
   const { data: clients, isLoading: loadingClients } = useB2BClientsAdmin();
@@ -103,18 +105,18 @@ export function B2BAdminPage() {
   // ── Handlers ──
   function handleCreateUser() {
     if (!userForm.email || !userForm.password || !userForm.clientId) {
-      toastError("Champs requis", "Email, mot de passe et client sont obligatoires");
+      toastError(t("b2bAdmin.requiredFields", "Champs requis"), t("b2bAdmin.emailPwdClientRequired", "Email, mot de passe et client sont obligatoires"));
       return;
     }
     createUser.mutate(
       { email: userForm.email, password: userForm.password, clientId: userForm.clientId, fullName: userForm.fullName || undefined },
       {
         onSuccess: () => {
-          toastSuccess("Compte B2B cr\u00e9\u00e9", `${userForm.email} peut maintenant se connecter`);
+          toastSuccess(t("b2bAdmin.b2bAccountCreated", "Compte B2B créé"), `${userForm.email} ${t("b2bAdmin.canNowLogin", "peut maintenant se connecter")}`);
           setShowCreateUser(false);
           setUserForm({ email: "", password: generatePassword(), fullName: "", clientId: "" });
         },
-        onError: (err) => toastError("Erreur", err.message),
+        onError: (err) => toastError(t("common.error", "Erreur"), err.message),
       }
     );
   }
@@ -145,11 +147,11 @@ export function B2BAdminPage() {
       },
       {
         onSuccess: () => {
-          toastSuccess("Client mis \u00e0 jour");
+          toastSuccess(t("b2bAdmin.clientUpdated", "Client mis à jour"));
           setShowEditClient(false);
           setEditingClient(null);
         },
-        onError: (err) => toastError("Erreur", err.message),
+        onError: (err) => toastError(t("common.error", "Erreur"), err.message),
       }
     );
   }
@@ -157,7 +159,7 @@ export function B2BAdminPage() {
   function handleCreateClient() {
     const ids = newClientForm.customer_external_ids.split(",").map((s) => s.trim()).filter(Boolean);
     if (!newClientForm.name || !newClientForm.slug || ids.length === 0) {
-      toastError("Champs requis", "Nom, slug et au moins un customer_external_id");
+      toastError(t("b2bAdmin.requiredFields", "Champs requis"), t("b2bAdmin.nameSlugIdRequired", "Nom, slug et au moins un customer_external_id"));
       return;
     }
     createClient.mutate(
@@ -169,11 +171,11 @@ export function B2BAdminPage() {
       },
       {
         onSuccess: () => {
-          toastSuccess("Client cr\u00e9\u00e9");
+          toastSuccess(t("b2bAdmin.clientCreated", "Client créé"));
           setShowCreateClient(false);
           setNewClientForm({ name: "", slug: "", customer_external_ids: "", redevance_rate: "0.33" });
         },
-        onError: (err) => toastError("Erreur", err.message),
+        onError: (err) => toastError(t("common.error", "Erreur"), err.message),
       }
     );
   }
@@ -183,12 +185,12 @@ export function B2BAdminPage() {
     if (deleteTarget.type === "user") {
       deleteUser.mutate(deleteTarget.id, {
         onSuccess: () => { toastSuccess("Utilisateur supprim\u00e9"); setDeleteTarget(null); },
-        onError: (err) => { toastError("Erreur", err.message); setDeleteTarget(null); },
+        onError: (err) => { toastError(t("common.error", "Erreur"), err.message); setDeleteTarget(null); },
       });
     } else {
       deleteClient.mutate(deleteTarget.id, {
         onSuccess: () => { toastSuccess("Client supprim\u00e9"); setDeleteTarget(null); },
-        onError: (err) => { toastError("Erreur", err.message); setDeleteTarget(null); },
+        onError: (err) => { toastError(t("common.error", "Erreur"), err.message); setDeleteTarget(null); },
       });
     }
   }
@@ -209,7 +211,7 @@ export function B2BAdminPage() {
     <div className="space-y-5">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-heading font-bold text-foreground">Gestion B2B</h1>
+        <h1 className="text-2xl font-heading font-bold text-foreground">{t("b2bAdmin.title", "Gestion B2B")}</h1>
         <p className="text-sm text-foreground-muted mt-0.5">
           Clients, comptes utilisateurs et acc\u00e8s au portail B2B
         </p>
@@ -232,19 +234,19 @@ export function B2BAdminPage() {
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
         <KPICard
-          label="Clients actifs"
+          label={t("b2bAdmin.activeClients", "Clients actifs")}
           value={String(activeClients)}
           icon={Building2}
           color="#00D4AA"
         />
         <KPICard
-          label="Total clients"
+          label={t("b2bAdmin.totalClients", "Total clients")}
           value={String((clients ?? []).length)}
           icon={Building2}
           color="#3498DB"
         />
         <KPICard
-          label="Utilisateurs B2B"
+          label={t("b2bAdmin.b2bUsers", "Utilisateurs B2B")}
           value={String(totalUsers)}
           icon={Users}
           color="#F39C12"
@@ -260,7 +262,7 @@ export function B2BAdminPage() {
               tab === "clients" ? "bg-primary text-white" : "text-foreground-muted hover:text-foreground"
             }`}
           >
-            Clients ({(clients ?? []).length})
+            {t("nav.clients")} ({(clients ?? []).length})
           </button>
           <button
             onClick={() => setTab("users")}
@@ -268,7 +270,7 @@ export function B2BAdminPage() {
               tab === "users" ? "bg-primary text-white" : "text-foreground-muted hover:text-foreground"
             }`}
           >
-            Utilisateurs ({totalUsers})
+            {t("nav.users")} ({totalUsers})
           </button>
           <button
             onClick={() => setTab("reimbursements")}
@@ -276,7 +278,7 @@ export function B2BAdminPage() {
               tab === "reimbursements" ? "bg-primary text-white" : "text-foreground-muted hover:text-foreground"
             }`}
           >
-            Remboursements ({(reimbursementConfigs ?? []).length})
+            {t("billing.reimbursements")} ({(reimbursementConfigs ?? []).length})
           </button>
         </div>
 
@@ -286,7 +288,7 @@ export function B2BAdminPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
           <input
             type="text"
-            placeholder="Rechercher..."
+            placeholder={t("common.search")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9 pr-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted focus:border-border-focus focus:outline-none w-full sm:w-64"
@@ -299,7 +301,7 @@ export function B2BAdminPage() {
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors"
           >
             <Plus className="w-4 h-4" />
-            Ajouter client
+            {t("b2bAdmin.addClient", "Ajouter client")}
           </button>
         )}
         {tab === "users" && (
@@ -402,7 +404,7 @@ export function B2BAdminPage() {
                 <tr className="border-b border-border">
                   <th className={thClass}>Email</th>
                   <th className={thClass}>Nom</th>
-                  <th className={thClass}>Client</th>
+                  <th className={thClass}>{t("b2bAdmin.clientLabel", "Client")}</th>
                   <th className={thClass}>Cr\u00e9\u00e9 le</th>
                   <th className={`${thClass} text-right`}>Actions</th>
                 </tr>
@@ -438,7 +440,7 @@ export function B2BAdminPage() {
                 {filteredUsers.length === 0 && (
                   <tr>
                     <td colSpan={5} className="px-4 py-12 text-center text-foreground-muted text-sm">
-                      Aucun utilisateur B2B
+                      {t("b2bAdmin.noB2BUser", "Aucun utilisateur B2B")}
                     </td>
                   </tr>
                 )}
@@ -453,7 +455,7 @@ export function B2BAdminPage() {
         <div className="bg-surface border border-border rounded-2xl overflow-hidden">
           <div className="px-6 py-4 border-b border-border flex items-center gap-3">
             <Euro className="w-5 h-5" style={{ color: "#2ECC71" }} />
-            <h3 className="text-sm font-heading font-bold text-foreground">Configuration des remboursements par client</h3>
+            <h3 className="text-sm font-heading font-bold text-foreground">{t("b2bAdmin.reimbursementConfig", "Configuration des remboursements par client")}</h3>
           </div>
           {loadingConfigs ? (
             <div className="p-6 space-y-3">
@@ -465,11 +467,11 @@ export function B2BAdminPage() {
                 <thead>
                   <tr className="border-b border-border">
                     <th className={thClass}>Client</th>
-                    <th className={`${thClass} text-right`}>Taux / kWh</th>
-                    <th className={`${thClass} text-right`}>Plafond mensuel</th>
-                    <th className={`${thClass} text-center`}>Approbation auto</th>
+                    <th className={`${thClass} text-right`}>{t("b2bAdmin.ratePerKwh", "Taux / kWh")}</th>
+                    <th className={`${thClass} text-right`}>{t("b2bAdmin.monthlyCeiling", "Plafond mensuel")}</th>
+                    <th className={`${thClass} text-center`}>{t("b2bAdmin.autoApproval", "Approbation auto")}</th>
                     <th className={`${thClass} text-center`}>Statut</th>
-                    <th className={`${thClass} text-center`}>Jour facturation</th>
+                    <th className={`${thClass} text-center`}>{t("b2bAdmin.billingDay", "Jour facturation")}</th>
                     <th className={`${thClass} text-right`}>Actions</th>
                   </tr>
                 </thead>
@@ -497,11 +499,11 @@ export function B2BAdminPage() {
                         <td className={`${tdClass} text-center`}>
                           {cfg.enabled ? (
                             <span className="inline-flex items-center gap-1.5 rounded-lg border px-2 py-0.5 text-xs font-semibold bg-emerald-500/10 text-emerald-400 border-emerald-500/25">
-                              Actif
+                              {t("common.active")}
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1.5 rounded-lg border px-2 py-0.5 text-xs font-semibold bg-red-500/10 text-red-400 border-red-500/25">
-                              Inactif
+                              {t("common.inactive")}
                             </span>
                           )}
                         </td>
@@ -531,7 +533,7 @@ export function B2BAdminPage() {
                   {(reimbursementConfigs ?? []).length === 0 && (
                     <tr>
                       <td colSpan={7} className="px-4 py-12 text-center text-foreground-muted text-sm">
-                        Aucune configuration de remboursement
+                        {t("b2bAdmin.noReimbursementConfig", "Aucune configuration de remboursement")}
                       </td>
                     </tr>
                   )}
@@ -630,7 +632,7 @@ export function B2BAdminPage() {
               onClick={() => setShowCreateUser(false)}
               className="px-4 py-2.5 text-sm text-foreground-muted hover:text-foreground border border-border rounded-xl transition-colors"
             >
-              Annuler
+              {t("common.cancel")}
             </button>
             <button
               onClick={handleCreateUser}
@@ -719,7 +721,7 @@ export function B2BAdminPage() {
               onClick={() => { setShowEditClient(false); setEditingClient(null); }}
               className="px-4 py-2.5 text-sm text-foreground-muted hover:text-foreground border border-border rounded-xl transition-colors"
             >
-              Annuler
+              {t("common.cancel")}
             </button>
             <button
               onClick={handleSaveClient}
@@ -727,7 +729,7 @@ export function B2BAdminPage() {
               className="px-5 py-2.5 text-sm font-semibold bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
             >
               {updateClient.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-              Enregistrer
+              {t("common.save")}
             </button>
           </div>
         </div>
@@ -737,7 +739,7 @@ export function B2BAdminPage() {
       <SlideOver
         open={showCreateClient}
         onClose={() => setShowCreateClient(false)}
-        title="Ajouter un client B2B"
+        title={t("b2bAdmin.addB2BClient", "Ajouter un client B2B")}
       >
         <div className="p-6 space-y-5">
           <div>
@@ -794,7 +796,7 @@ export function B2BAdminPage() {
               onClick={() => setShowCreateClient(false)}
               className="px-4 py-2.5 text-sm text-foreground-muted hover:text-foreground border border-border rounded-xl transition-colors"
             >
-              Annuler
+              {t("common.cancel")}
             </button>
             <button
               onClick={handleCreateClient}
@@ -885,7 +887,7 @@ export function B2BAdminPage() {
               onClick={() => { setShowEditConfig(false); setEditingConfig(null); }}
               className="px-4 py-2.5 text-sm text-foreground-muted hover:text-foreground border border-border rounded-xl transition-colors"
             >
-              Annuler
+              {t("common.cancel")}
             </button>
             <button
               onClick={() => {
@@ -905,7 +907,7 @@ export function B2BAdminPage() {
                       setShowEditConfig(false);
                       setEditingConfig(null);
                     },
-                    onError: (err) => toastError("Erreur", err.message),
+                    onError: (err) => toastError(t("common.error", "Erreur"), err.message),
                   }
                 );
               }}
@@ -913,7 +915,7 @@ export function B2BAdminPage() {
               className="px-5 py-2.5 text-sm font-semibold bg-primary text-white rounded-xl hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
             >
               {updateReimbursementConfig.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-              Enregistrer
+              {t("common.save")}
             </button>
           </div>
         </div>

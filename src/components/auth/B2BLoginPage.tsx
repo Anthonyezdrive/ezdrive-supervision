@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Navigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "@/contexts/AuthContext";
 import { ArrowLeft, Mail, CheckCircle } from "lucide-react";
 
@@ -11,6 +12,7 @@ type Mode = "login" | "forgot" | "sent";
  * B2B branding + direct redirect to /b2b/overview.
  */
 export function B2BLoginPage() {
+  const { t } = useTranslation();
   const { user, profile, loading, signIn, resetPassword } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -22,7 +24,7 @@ export function B2BLoginPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="animate-pulse-dot text-primary text-lg">
-          Chargement...
+          {t("common.loading")}
         </div>
       </div>
     );
@@ -78,7 +80,7 @@ export function B2BLoginPage() {
             className="h-14 mx-auto mb-3"
           />
           <p className="text-foreground-muted text-sm mt-1">
-            Portail Client — Suivi de vos bornes
+            {t("auth.b2bPortalSubtitle")}
           </p>
         </div>
 
@@ -90,15 +92,14 @@ export function B2BLoginPage() {
                 <CheckCircle className="w-6 h-6 text-success" />
               </div>
               <h2 className="text-lg font-semibold text-foreground">
-                Email envoyé !
+                {t("auth.emailSent")}
               </h2>
-              <p className="text-foreground-muted text-sm">
-                Si un compte existe avec l'adresse{" "}
-                <strong className="text-foreground">{email}</strong>, vous
-                recevrez un lien de réinitialisation dans quelques instants.
-              </p>
+              <p
+                className="text-foreground-muted text-sm"
+                dangerouslySetInnerHTML={{ __html: t("auth.emailSentDescription", { email }) }}
+              />
               <p className="text-foreground-muted text-xs">
-                Pensez à vérifier vos spams.
+                {t("auth.checkSpam")}
               </p>
             </div>
             <button
@@ -109,7 +110,7 @@ export function B2BLoginPage() {
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#85B50C")}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#9ACC0E")}
             >
-              Retour à la connexion
+              {t("auth.backToLogin")}
             </button>
           </div>
         )}
@@ -125,16 +126,16 @@ export function B2BLoginPage() {
                 <Mail className="w-6 h-6" style={{ color: "#00C3FF" }} />
               </div>
               <h2 className="text-lg font-semibold text-foreground">
-                Mot de passe oublié
+                {t("auth.forgotPasswordTitle")}
               </h2>
               <p className="text-foreground-muted text-sm">
-                Entrez votre email pour recevoir un lien de réinitialisation.
+                {t("auth.resetPasswordDescription")}
               </p>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-foreground-muted mb-1.5">
-                Email
+                {t("auth.email")}
               </label>
               <input
                 type="email"
@@ -161,7 +162,7 @@ export function B2BLoginPage() {
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#85B50C")}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#9ACC0E")}
             >
-              {submitting ? "Envoi en cours..." : "Envoyer le lien"}
+              {submitting ? t("auth.sendingResetLink") : t("auth.sendResetLink")}
             </button>
 
             <button
@@ -170,7 +171,7 @@ export function B2BLoginPage() {
               className="w-full flex items-center justify-center gap-1.5 text-sm text-foreground-muted hover:text-foreground transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
-              Retour à la connexion
+              {t("auth.backToLogin")}
             </button>
           </form>
         )}
@@ -185,7 +186,7 @@ export function B2BLoginPage() {
             <div className="absolute top-0 left-0 right-0 h-[3px]" style={{ background: "linear-gradient(90deg, #9ACC0E, #00C3FF)" }} />
             <div>
               <label className="block text-sm font-medium text-foreground-muted mb-1.5">
-                Email
+                {t("auth.email")}
               </label>
               <input
                 type="email"
@@ -201,7 +202,7 @@ export function B2BLoginPage() {
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-sm font-medium text-foreground-muted">
-                  Mot de passe
+                  {t("auth.password")}
                 </label>
                 <button
                   type="button"
@@ -209,7 +210,7 @@ export function B2BLoginPage() {
                   className="text-xs transition-colors"
                   style={{ color: "#00C3FF" }}
                 >
-                  Mot de passe oublié ?
+                  {t("auth.forgotPassword")}
                 </button>
               </div>
               <input
@@ -236,14 +237,14 @@ export function B2BLoginPage() {
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#85B50C")}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#9ACC0E")}
             >
-              {submitting ? "Connexion..." : "Accéder à mon portail"}
+              {submitting ? t("auth.signingIn") : t("auth.accessMyPortal")}
             </button>
           </form>
         )}
 
         {/* Footer */}
         <p className="text-center text-[11px] text-foreground-muted/50 mt-6">
-          Propulsé par EZDrive — Supervision de bornes de recharge
+          {t("auth.poweredBy")}
         </p>
       </div>
     </div>

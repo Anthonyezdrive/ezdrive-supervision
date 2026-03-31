@@ -44,6 +44,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { SyncButton } from "@/components/shared/SyncButton";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { useStationStatusHistory } from "@/hooks/useStationStatusHistory";
 import { OCPP_STATUS_CONFIG } from "@/lib/constants";
@@ -216,7 +217,6 @@ export function StationDetailView({ station, onBack, onEdit, onDeleted }: Props)
   const [cmdResult, setCmdResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
-
   async function handleDelete() {
     setDeleteLoading(true);
     try {
@@ -341,6 +341,9 @@ export function StationDetailView({ station, onBack, onEdit, onDeleted }: Props)
                 }`}>
                   {station.source === 'road' ? 'Road.io' : 'GreenFlux'}
                 </span>
+                {station.gfx_id && (
+                  <SyncButton functionName="gfx-station-detail" label="Refresh GFX" variant="icon" body={{ station_id: station.gfx_id }} />
+                )}
               </div>
               <p className="text-sm text-foreground-muted">{subtitle}</p>
             </div>
@@ -618,6 +621,7 @@ function DiagnosticTab({ station }: { station: Station }) {
   const [subTab, setSubTab] = useState<DiagSubTab>("notifications");
   const [timeRange, setTimeRange] = useState("24h");
   const [collapsed, setCollapsed] = useState(false);
+  const [expandedPayload, setExpandedPayload] = useState<string | null>(null);
 
   const timeFilter = useMemo(() => {
     const now = new Date();
@@ -817,7 +821,17 @@ function DiagnosticTab({ station }: { station: Station }) {
                           <td className="py-2.5 px-3 text-foreground">{subType}</td>
                           <td className="py-2.5 px-3 text-foreground">{n.connector_id ?? "1"}</td>
                           <td className="py-2.5 px-3">
-                            <button className="text-xs text-primary hover:underline">Afficher la charge utile</button>
+                            <button
+                              onClick={() => setExpandedPayload(expandedPayload === n.id ? null : n.id)}
+                              className="text-xs text-primary hover:underline"
+                            >
+                              {expandedPayload === n.id ? "Masquer" : "Afficher la charge utile"}
+                            </button>
+                            {expandedPayload === n.id && (
+                              <pre className="mt-2 p-2 bg-background rounded text-xs text-foreground-muted overflow-x-auto max-w-xs">
+                                {JSON.stringify({ old_status: (n as any).old_status, new_status: n.new_status, connector_id: n.connector_id, error_code: (n as any).error_code, vendor_error: (n as any).vendor_error_code, info: (n as any).info }, null, 2)}
+                              </pre>
+                            )}
                           </td>
                           <td className="py-2.5 px-3">
                             {n.new_status && (
@@ -1351,6 +1365,10 @@ interface AuthToken {
 function AuthorizationTab({ station }: { station: Station }) {
   const [clientsExpanded, setClientsExpanded] = useState(true);
   const [tokensExpanded, setTokensExpanded] = useState(false);
+  const [showAddClient, setShowAddClient] = useState(false);
+  const [newTokenUid, setNewTokenUid] = useState("");
+  const [addingClient, setAddingClient] = useState(false);
+  const queryClient = useQueryClient();
 
   // Fetch tokens that have been used at this station (via transactions)
   const chargepointId = (station as any).ocpp_identity ?? station.gfx_id;
@@ -1382,6 +1400,58 @@ function AuthorizationTab({ station }: { station: Station }) {
     },
     enabled: !!chargepointId,
   });
+
+  // Fetch access group for this station
+  const { data: accessGroup, refetch: refetchAccess } = useQuery({
+    queryKey: ["station-access-group", station.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("access_groups")
+        .select("*")
+        .contains("station_ids", [station.id])
+        .maybeSingle();
+      return data;
+    },
+  });
+
+  async function handleAddClient() {
+    if (!newTokenUid.trim()) return;
+    setAddingClient(true);
+    try {
+      if (accessGroup) {
+        // Update existing group — append token
+        const existing = accessGroup.token_uids ?? [];
+        if (existing.includes(newTokenUid.trim())) {
+          setAddingClient(false);
+          return;
+        }
+        await supabase
+          .from("access_groups")
+          .update({ token_uids: [...existing, newTokenUid.trim()] })
+          .eq("id", accessGroup.id);
+      } else {
+        // Create new access group for this station
+        await supabase
+          .from("access_groups")
+          .insert({
+            name: `Whitelist — ${station.name ?? station.id}`,
+            station_ids: [station.id],
+            token_uids: [newTokenUid.trim()],
+          });
+      }
+      setNewTokenUid("");
+      setShowAddClient(false);
+      refetchAccess();
+      refetchAuth();
+      queryClient.invalidateQueries({ queryKey: ["station-auth-tokens"] });
+    } catch (err) {
+      console.error("Erreur ajout client:", err);
+    } finally {
+      setAddingClient(false);
+    }
+  }
+
+  const whitelistedTokens = accessGroup?.token_uids ?? [];
 
   return (
     <div className="space-y-4">
@@ -1432,19 +1502,72 @@ function AuthorizationTab({ station }: { station: Station }) {
           {clientsExpanded && (
             <div className="px-6 py-4">
               <div className="flex items-center justify-between mb-4">
-                <span className="text-sm text-foreground-muted">non clients ensemble</span>
-                <button className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors">
+                <span className="text-sm text-foreground-muted">{whitelistedTokens.length} client{whitelistedTokens.length !== 1 ? "s" : ""} autorise{whitelistedTokens.length !== 1 ? "s" : ""}</span>
+                <button
+                  onClick={() => setShowAddClient(!showAddClient)}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
+                >
                   <Plus className="w-3.5 h-3.5" />
                   Ajouter Clients
-                  <ChevronDown className="w-3.5 h-3.5 ml-1" />
+                  <ChevronDown className={cn("w-3.5 h-3.5 ml-1 transition-transform", showAddClient && "rotate-180")} />
                 </button>
               </div>
-              <div className="flex flex-col items-center justify-center py-10 text-foreground-muted">
-                <p className="text-sm">Ajoutez des clients specifiques pour limiter le nombre de personnes pouvant charger sur ce chargeur.</p>
-                <p className="text-sm mt-1">
-                  <strong>Remarque</strong> : lorsqu'inoccupe, quiconque sera autorise a charger ici.
-                </p>
-              </div>
+
+              {showAddClient && (
+                <div className="mb-4 p-4 bg-surface-elevated border border-border rounded-xl space-y-3">
+                  <label className="block text-sm font-medium text-foreground">Token UID / ID Tag du client</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newTokenUid}
+                      onChange={(e) => setNewTokenUid(e.target.value)}
+                      placeholder="Ex: RFID-001 ou FR*EZD*E00001"
+                      className="flex-1 px-3 py-2 bg-surface border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-primary/50"
+                      onKeyDown={(e) => e.key === "Enter" && handleAddClient()}
+                    />
+                    <button
+                      onClick={handleAddClient}
+                      disabled={addingClient || !newTokenUid.trim()}
+                      className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-500 transition-colors disabled:opacity-50"
+                    >
+                      {addingClient ? <Loader2 className="w-4 h-4 animate-spin" /> : "Ajouter"}
+                    </button>
+                  </div>
+                  <p className="text-xs text-foreground-muted">Le token sera ajoute a la whitelist de cette station.</p>
+                </div>
+              )}
+
+              {whitelistedTokens.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-foreground-muted">
+                  <p className="text-sm">Ajoutez des clients specifiques pour limiter le nombre de personnes pouvant charger sur ce chargeur.</p>
+                  <p className="text-sm mt-1">
+                    <strong>Remarque</strong> : lorsqu'inoccupe, quiconque sera autorise a charger ici.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {whitelistedTokens.map((uid: string, idx: number) => (
+                    <div key={idx} className="flex items-center justify-between bg-surface-elevated border border-border rounded-xl px-4 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <CreditCard className="w-4 h-4 text-primary" />
+                        <span className="text-sm font-mono text-foreground">{uid}</span>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          if (!accessGroup) return;
+                          const updated = whitelistedTokens.filter((t: string) => t !== uid);
+                          await supabase.from("access_groups").update({ token_uids: updated }).eq("id", accessGroup.id);
+                          refetchAccess();
+                        }}
+                        className="text-red-400 hover:text-red-300 transition-colors p-1"
+                        title="Retirer ce token"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1533,6 +1656,17 @@ interface ScheduleEntry {
 
 function SchedulingTab({ station }: { station: Station }) {
   const chargepointId = (station as any).ocpp_identity ?? station.gfx_id;
+  const queryClient = useQueryClient();
+
+  // Schedule form state
+  const [showForm, setShowForm] = useState(false);
+  const [formPurpose, setFormPurpose] = useState<string>("TxDefaultProfile");
+  const [formKind, setFormKind] = useState<string>("Recurring");
+  const [formRecurrency, setFormRecurrency] = useState<string>("Daily");
+  const [formValidFrom, setFormValidFrom] = useState("");
+  const [formValidTo, setFormValidTo] = useState("");
+  const [formScheduleJson, setFormScheduleJson] = useState('{"duration":3600,"chargingRateUnit":"W","chargingSchedulePeriod":[{"startPeriod":0,"limit":7000}]}');
+  const [saving, setSaving] = useState(false);
 
   const { data: schedules, isLoading } = useQuery<ScheduleEntry[]>({
     queryKey: ["station-schedules", chargepointId],
@@ -1584,7 +1718,7 @@ function SchedulingTab({ station }: { station: Station }) {
                 Les changements d'etat programmes peuvent etre utilises pour definir des intervalles de date/heure specifiques auxquels l'etat d'une station de charge doit etre defini sur un etat OCPI specifique.
               </p>
               <p className="text-sm mt-3 text-foreground-muted/60">
-                Cliquez <button className="text-primary underline hover:no-underline">ici</button> pour programmer un etat
+                Cliquez <button onClick={() => setShowForm(true)} className="text-primary underline hover:no-underline">ici</button> pour programmer un etat
               </p>
             </div>
           ) : (
@@ -1618,16 +1752,120 @@ function SchedulingTab({ station }: { station: Station }) {
         </div>
       </div>
 
+      {/* Schedule form */}
+      {showForm && (
+        <div className="bg-surface border border-border rounded-2xl p-6 space-y-4">
+          <h4 className="text-sm font-semibold text-foreground">Nouveau profil de charge</h4>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1">Objectif *</label>
+              <select value={formPurpose} onChange={(e) => setFormPurpose(e.target.value)} className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-primary/50">
+                <option value="TxDefaultProfile">TxDefaultProfile</option>
+                <option value="TxProfile">TxProfile</option>
+                <option value="ChargePointMaxProfile">ChargePointMaxProfile</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1">Type *</label>
+              <select value={formKind} onChange={(e) => setFormKind(e.target.value)} className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-primary/50">
+                <option value="Absolute">Absolute</option>
+                <option value="Recurring">Recurring</option>
+                <option value="Relative">Relative</option>
+              </select>
+            </div>
+            {formKind === "Recurring" && (
+              <div>
+                <label className="block text-xs text-foreground-muted mb-1">Recurrence</label>
+                <select value={formRecurrency} onChange={(e) => setFormRecurrency(e.target.value)} className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-primary/50">
+                  <option value="Daily">Quotidien</option>
+                  <option value="Weekly">Hebdomadaire</option>
+                </select>
+              </div>
+            )}
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1">Valide du</label>
+              <input type="datetime-local" value={formValidFrom} onChange={(e) => setFormValidFrom(e.target.value)} className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-primary/50" />
+            </div>
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1">Valide jusqu'au</label>
+              <input type="datetime-local" value={formValidTo} onChange={(e) => setFormValidTo(e.target.value)} className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-primary/50" />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-foreground-muted mb-1">Schedule JSON (OCPP ChargingSchedule) *</label>
+            <textarea
+              rows={4}
+              value={formScheduleJson}
+              onChange={(e) => setFormScheduleJson(e.target.value)}
+              className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground font-mono focus:outline-none focus:border-primary/50"
+            />
+          </div>
+        </div>
+      )}
+
       {/* Footer actions */}
       <div className="flex items-center justify-between">
         <p className="text-xs text-red-400">* cette information est requise</p>
         <div className="flex gap-3">
-          <button className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-red-400 hover:text-red-300 transition-colors">
+          <button
+            onClick={() => {
+              setShowForm(false);
+              setFormPurpose("TxDefaultProfile");
+              setFormKind("Recurring");
+              setFormRecurrency("Daily");
+              setFormValidFrom("");
+              setFormValidTo("");
+              setFormScheduleJson('{"duration":3600,"chargingRateUnit":"W","chargingSchedulePeriod":[{"startPeriod":0,"limit":7000}]}');
+            }}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-red-400 hover:text-red-300 transition-colors"
+          >
             <X className="w-3.5 h-3.5" />
             Annuler
           </button>
-          <button className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors">
-            <Save className="w-3.5 h-3.5" />
+          <button
+            disabled={saving || !showForm}
+            onClick={async () => {
+              if (!chargepointId) return;
+              setSaving(true);
+              try {
+                let schedule: any;
+                try { schedule = JSON.parse(formScheduleJson); } catch { alert("JSON invalide"); setSaving(false); return; }
+
+                // Get the chargepoint UUID
+                const { data: cp } = await supabase
+                  .from("ocpp_chargepoints")
+                  .select("id")
+                  .eq("station_id", station.id)
+                  .maybeSingle();
+
+                if (!cp) { alert("Aucun chargepoint OCPP lie a cette station"); setSaving(false); return; }
+
+                await supabase.from("charging_profiles").insert({
+                  chargepoint_id: cp.id,
+                  connector_id: 0,
+                  stack_level: 0,
+                  purpose: formPurpose,
+                  kind: formKind,
+                  recurrency_kind: formKind === "Recurring" ? formRecurrency : null,
+                  valid_from: formValidFrom || null,
+                  valid_to: formValidTo || null,
+                  schedule,
+                  is_active: true,
+                });
+
+                setShowForm(false);
+                queryClient.invalidateQueries({ queryKey: ["station-schedules"] });
+              } catch (err) {
+                console.error("Erreur sauvegarde profil:", err);
+              } finally {
+                setSaving(false);
+              }
+            }}
+            className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
             Sauvegarder
           </button>
         </div>
@@ -1675,6 +1913,48 @@ function DetailsTab({
   const { data: history } = useStationStatusHistory(station.id);
   const connectors = parseConnectors(station);
   const queryClient = useQueryClient();
+
+  // Transaction start state
+  const [txEvseIdx, setTxEvseIdx] = useState<number | null>(null);
+  const [txIdTag, setTxIdTag] = useState("");
+  const [txLoading, setTxLoading] = useState(false);
+  const [txResult, setTxResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  async function startTransaction(connectorId: number) {
+    setTxLoading(true);
+    setTxResult(null);
+    try {
+      const { data: cp } = await supabase
+        .from("ocpp_chargepoints")
+        .select("id, identity, is_connected")
+        .eq("station_id", station.id)
+        .maybeSingle();
+
+      if (!cp) {
+        const srcLabel = station.source === "gfx" ? "GreenFlux" : station.source === "road" ? "Road.io" : station.source;
+        setTxResult({ ok: false, msg: `Remote Start non disponible pour les stations ${srcLabel}. Seules les bornes OCPP directes sont supportees.` });
+        return;
+      }
+
+      if (!cp.is_connected) {
+        setTxResult({ ok: false, msg: `Chargepoint ${cp.identity} non connecte` });
+        return;
+      }
+
+      const res = await apiPost("ocpp/command", {
+        command: "RemoteStartTransaction",
+        chargepoint_id: cp.id,
+        payload: { connectorId, idTag: txIdTag || "DASHBOARD" },
+      });
+      setTxResult({ ok: true, msg: `Transaction demarree - ${(res as any)?.command_id ?? "OK"}` });
+    } catch (err) {
+      setTxResult({ ok: false, msg: err instanceof Error ? err.message : "Erreur demarrage transaction" });
+    } finally {
+      setTxLoading(false);
+      setTxEvseIdx(null);
+      setTxIdTag("");
+    }
+  }
 
   // Connector CRUD state
   const [showConnectorForm, setShowConnectorForm] = useState(false);
@@ -1999,11 +2279,58 @@ function DetailsTab({
             </div>
 
             <div className="px-5 py-4 space-y-4">
-              <button className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors">
-                <Zap className="w-4 h-4" />
-                Debut De La Transaction
-                <ChevronDown className="w-3.5 h-3.5 ml-1" />
-              </button>
+              {txEvseIdx === evseIdx ? (
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    placeholder="ID Tag (RFID ou laisser vide)"
+                    value={txIdTag}
+                    onChange={(e) => setTxIdTag(e.target.value)}
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground placeholder:text-foreground-muted focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => startTransaction(evseIdx + 1)}
+                      disabled={txLoading}
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-500 transition-colors disabled:opacity-50"
+                    >
+                      {txLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                      Confirmer
+                    </button>
+                    <button
+                      onClick={() => { setTxEvseIdx(null); setTxIdTag(""); }}
+                      className="px-4 py-2.5 bg-surface-elevated border border-border text-foreground-muted rounded-xl text-sm font-medium hover:text-foreground transition-colors"
+                    >
+                      Annuler
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="relative group">
+                  <button
+                    onClick={() => setTxEvseIdx(evseIdx)}
+                    disabled={cmdLoading !== null}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  >
+                    <Zap className="w-4 h-4" />
+                    Debut De La Transaction
+                    <ChevronDown className="w-3.5 h-3.5 ml-1" />
+                  </button>
+                  <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-72 px-3 py-2 bg-surface-elevated border border-border rounded-lg text-xs text-foreground-muted opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 z-50 shadow-lg">
+                    {station.source === "gfx"
+                      ? "Les stations GreenFlux ne supportent pas le Remote Start via API. Seules les bornes connectees directement en OCPP peuvent etre demarrees a distance."
+                      : station.source === "road"
+                      ? "Les stations Road.io ne supportent pas le Remote Start via API. Seules les bornes connectees directement en OCPP peuvent etre demarrees a distance."
+                      : "Envoie une commande OCPP RemoteStartTransaction a la borne. Un ID Tag optionnel peut etre specifie (defaut : DASHBOARD)."}
+                  </div>
+                </div>
+              )}
+
+              {txResult && (
+                <div className={`px-3 py-2 rounded-lg text-sm ${txResult.ok ? "bg-emerald-500/10 text-emerald-400" : "bg-red-500/10 text-red-400"}`}>
+                  {txResult.msg}
+                </div>
+              )}
 
               <div className="space-y-2.5">
                 <DetailField label="Identifiant" value={`FR-GFX-E${station.gfx_id ?? station.name}-${evseIdx + 1}`} />

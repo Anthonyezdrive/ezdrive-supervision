@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useOutletContext } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { SyncButton } from "@/components/shared/SyncButton";
 import {
   Scale,
   TrendingUp,
@@ -377,6 +378,7 @@ export function XDriveReconciliation() {
             <h2 className="text-lg font-heading font-bold text-foreground">Rapprochement financier</h2>
             <p className="text-xs text-foreground-muted">Comparaison CA CDR vs encaissements réels</p>
           </div>
+          <SyncButton functionName="xdrive-emsp-reconciliation" label="Réconciliation eMSP" invalidateKeys={["xdrive-reconciliation"]} variant="small" confirmMessage="Lancer la réconciliation eMSP ?" />
         </div>
 
         {/* Month nav */}
@@ -525,7 +527,7 @@ export function XDriveReconciliation() {
             </tr>
           </thead>
           <tbody>
-            {lines.map((line, idx) => {
+            {lines.map((line, _idx) => {
               const isInputLine = isEditing && ["B", "C", "D"].includes(line.key);
               const isSeparatorBefore = ["E", "G"].includes(line.key);
 

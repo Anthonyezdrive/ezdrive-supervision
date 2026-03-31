@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Users, Plus, Trash2, Shield, Building2, Crown, Truck, UserPlus, MapPin, Tag, X, Loader2, Search, Check } from "lucide-react";
-import { useAccessGroups, useAccessGroupMembers, useCreateAccessGroup, useUpdateAccessGroup, useDeleteAccessGroup, useAddGroupMember, useRemoveGroupMember, type AccessGroup } from "../../hooks/useAccessGroups";
+import { useAccessGroups, useAccessGroupMembers, useCreateAccessGroup, useDeleteAccessGroup, useAddGroupMember, useRemoveGroupMember, type AccessGroup } from "../../hooks/useAccessGroups";
 import { supabase } from "@/lib/supabase";
 
 const GROUP_TYPE_LABELS: Record<string, { label: string; color: string; icon: typeof Users }> = {
@@ -15,9 +16,9 @@ const GROUP_TYPE_LABELS: Record<string, { label: string; color: string; icon: ty
 };
 
 export default function AccessGroupsPage() {
+  const { t } = useTranslation();
   const { data: groups = [], isLoading } = useAccessGroups();
   const createGroup = useCreateAccessGroup();
-  const _updateGroup = useUpdateAccessGroup();
   const deleteGroup = useDeleteAccessGroup();
 
   const [selectedGroup, setSelectedGroup] = useState<AccessGroup | null>(null);
@@ -32,7 +33,7 @@ export default function AccessGroupsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Supprimer ce groupe ?")) return;
+    if (!confirm(t("accessGroups.confirmDelete", "Supprimer ce groupe ?"))) return;
     await deleteGroup.mutateAsync(id);
     if (selectedGroup?.id === id) setSelectedGroup(null);
   };
@@ -44,10 +45,10 @@ export default function AccessGroupsPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
             <Shield className="w-7 h-7 text-emerald-600" />
-            Groupes d'accès
+            {t("admin.accessGroups.title")}
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            Gérez les accès aux bornes et les tarifs par groupe de conducteurs
+            {t("admin.accessGroups.description")}
           </p>
         </div>
         <button
@@ -55,17 +56,17 @@ export default function AccessGroupsPage() {
           className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors text-sm font-medium"
         >
           <Plus className="w-4 h-4" />
-          Nouveau groupe
+          {t("accessGroups.newGroup", "Nouveau groupe")}
         </button>
       </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-4 gap-4 mb-6">
         {[
-          { label: "Groupes", value: groups.length, color: "text-emerald-600" },
-          { label: "Membres total", value: groups.reduce((s, g) => s + g.member_count, 0), color: "text-blue-600" },
-          { label: "Bornes couvertes", value: groups.reduce((s, g) => s + g.station_count, 0), color: "text-purple-600" },
-          { label: "Avec tarif", value: groups.filter(g => !g.is_default).length, color: "text-amber-600" },
+          { label: t("accessGroups.groups", "Groupes"), value: groups.length, color: "text-emerald-600" },
+          { label: t("accessGroups.totalMembers", "Membres total"), value: groups.reduce((s, g) => s + g.member_count, 0), color: "text-blue-600" },
+          { label: t("accessGroups.coveredStations", "Bornes couvertes"), value: groups.reduce((s, g) => s + g.station_count, 0), color: "text-purple-600" },
+          { label: t("accessGroups.withTariff", "Avec tarif"), value: groups.filter(g => !g.is_default).length, color: "text-amber-600" },
         ].map((kpi) => (
           <div key={kpi.label} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
             <div className="text-sm text-gray-500">{kpi.label}</div>
@@ -108,12 +109,12 @@ export default function AccessGroupsPage() {
                 </div>
                 {group.description && <p className="text-sm text-gray-500 mb-3 line-clamp-2">{group.description}</p>}
                 <div className="flex items-center gap-4 text-sm text-gray-500">
-                  <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" />{group.member_count} membres</span>
-                  <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" />{group.station_count} bornes</span>
+                  <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" />{group.member_count} {t("accessGroups.members", "membres")}</span>
+                  <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5" />{group.station_count} {t("accessGroups.stations", "bornes")}</span>
                 </div>
                 {group.is_default && (
                   <div className="mt-2 text-xs text-emerald-600 bg-emerald-50 rounded px-2 py-1 inline-block">
-                    Groupe par défaut
+                    {t("accessGroups.defaultGroup", "Groupe par défaut")}
                   </div>
                 )}
               </div>
@@ -127,7 +128,7 @@ export default function AccessGroupsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold">Nouveau groupe</h2>
+              <h2 className="text-lg font-bold">{t("accessGroups.newGroup", "Nouveau groupe")}</h2>
               <button onClick={() => setShowCreate(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="space-y-4">
@@ -146,7 +147,7 @@ export default function AccessGroupsPage() {
                 </select>
               </div>
               <button onClick={handleCreate} disabled={!editForm.name || createGroup.isPending} className="w-full py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:bg-gray-300">
-                {createGroup.isPending ? "Création..." : "Créer le groupe"}
+                {createGroup.isPending ? t("common.loading") : t("accessGroups.createGroup", "Créer le groupe")}
               </button>
             </div>
           </div>
@@ -165,7 +166,6 @@ function MembersPanel({ group, onClose }: { group: AccessGroup; onClose: () => v
   const { data: members = [], isLoading } = useAccessGroupMembers(group.id);
   const addMember = useAddGroupMember();
   const removeMember = useRemoveGroupMember();
-  const updateGroup = useUpdateAccessGroup();
   const queryClient = useQueryClient();
   const [tokenInput, setTokenInput] = useState("");
 

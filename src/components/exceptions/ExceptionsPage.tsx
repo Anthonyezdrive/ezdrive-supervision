@@ -32,6 +32,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { KPICard } from "@/components/ui/KPICard";
 import { PageHelp } from "@/components/ui/PageHelp";
+import { useTranslation } from "react-i18next";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -137,6 +138,7 @@ function CategoryBadge({ category }: { category: ExceptionGroup["category"] }) {
 // ── Main Page ─────────────────────────────────────────────────
 
 export function ExceptionsPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { success: toastSuccess, error: toastError } = useToast();
   const [activeTab, setActiveTab] = useState<"groups" | "rules">("groups");
@@ -157,7 +159,7 @@ export function ExceptionsPage() {
 
   // ── CSV Import states ──
   const [csvModalOpen, setCsvModalOpen] = useState(false);
-  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [_csvFile, setCsvFile] = useState<File | null>(null);
   const [csvPreview, setCsvPreview] = useState<string[]>([]);
   const [csvAllUids, setCsvAllUids] = useState<string[]>([]);
   const [csvImporting, setCsvImporting] = useState(false);

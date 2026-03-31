@@ -20,6 +20,7 @@ import {
   Calculator,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
 
 // ============================================================
 // Billing Profiles, Tariff Rules & Territory VAT — Antilles-Guyane
@@ -90,6 +91,7 @@ const TABS: { key: Tab; label: string; icon: React.ComponentType<{ className?: s
 // ── Main Page ──────────────────────────────────────────────────
 
 export function BillingProfilesPage() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>("profiles");
 
   return (

@@ -20,6 +20,7 @@ import { PageHelp } from "@/components/ui/PageHelp";
 import { useToast } from "@/contexts/ToastContext";
 import { B2BFleetManagement, TokenRequestsSection } from "@/components/b2b/B2BFleetManagement";
 import type { B2BClient } from "@/types/b2b";
+import { useTranslation } from "react-i18next";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -64,26 +65,26 @@ const thClass =
   "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-foreground-muted";
 const tdClass = "px-4 py-3.5 text-sm text-foreground whitespace-nowrap";
 
-function statusBadge(status: string) {
+function statusBadge(status: string, t: (key: string, fallback?: string) => string) {
   const s = status?.toLowerCase() ?? "inactive";
   if (s === "active")
     return (
       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400">
         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-        Actif
+        {t("b2b.statusActive")}
       </span>
     );
   if (s === "suspended" || s === "blocked")
     return (
       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-500/10 text-red-400">
         <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
-        {s === "blocked" ? "Bloque" : "Suspendu"}
+        {s === "blocked" ? t("b2b.statusBlocked") : t("b2b.statusSuspended")}
       </span>
     );
   return (
     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-500/10 text-gray-400">
       <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
-      Inactif
+      {t("b2b.statusInactive")}
     </span>
   );
 }
@@ -109,6 +110,7 @@ function tokenShort(uid: string): string {
 // ---------------------------------------------------------------------------
 
 export function B2BFleetPage() {
+  const { t } = useTranslation();
   const { activeClient } = useOutletContext<{
     activeClient: B2BClient | null;
     customerExternalIds: string[];
@@ -224,11 +226,11 @@ export function B2BFleetPage() {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["b2b-fleet-tokens"] });
       toastSuccess(
-        variables.action === "block" ? "Token bloque" : "Token debloque"
+        variables.action === "block" ? t("b2b.tokenBlocked") : t("b2b.tokenUnblocked")
       );
     },
     onError: () => {
-      toastError("Erreur lors de la mise a jour du token");
+      toastError(t("b2b.tokenUpdateError"));
     },
   });
 
@@ -245,12 +247,12 @@ export function B2BFleetPage() {
       if (error) throw error;
     },
     onSuccess: () => {
-      toastSuccess("Conducteur retire de la flotte");
+      toastSuccess(t("b2b.driverRemoved"));
       queryClient.invalidateQueries({ queryKey: ["b2b-fleet-drivers"] });
       setConfirmRemoveDriver(null);
     },
     onError: () => {
-      toastError("Erreur lors du retrait du conducteur");
+      toastError(t("b2b.driverRemoveError"));
       setConfirmRemoveDriver(null);
     },
   });
@@ -283,12 +285,12 @@ export function B2BFleetPage() {
       if (error) throw error;
     },
     onSuccess: () => {
-      toastSuccess("Conducteur mis a jour");
+      toastSuccess(t("b2b.driverUpdated"));
       queryClient.invalidateQueries({ queryKey: ["b2b-fleet-drivers"] });
       setEditingDriver(null);
     },
     onError: (err: Error) => {
-      toastError(err.message || "Erreur lors de la mise a jour du conducteur");
+      toastError(err.message || t("b2b.driverUpdateError"));
     },
   });
 
@@ -419,9 +421,9 @@ export function B2BFleetPage() {
     return (
       <div className="space-y-6">
         <div className="bg-danger/10 border border-danger/30 rounded-2xl p-4 flex items-center justify-between">
-          <p className="text-danger text-sm">Erreur de chargement des donnees</p>
+          <p className="text-danger text-sm">{t("b2b.loadingError")}</p>
           <button onClick={() => refetch()} className="text-sm text-danger hover:underline" type="button">
-            Reessayer
+            {t("b2b.retryBtn")}
           </button>
         </div>
       </div>
@@ -435,7 +437,7 @@ export function B2BFleetPage() {
   if (!activeClient) {
     return (
       <div className="flex items-center justify-center h-64 text-foreground-muted text-sm">
-        Selectionnez un client pour afficher la flotte.
+        {t("b2b.selectClientForFleet")}
       </div>
     );
   }
@@ -448,7 +450,7 @@ export function B2BFleetPage() {
     <div className="space-y-6">
       {/* Help */}
       <PageHelp
-        summary="Gestion de la flotte — visualisez vos conducteurs et leurs tokens RFID"
+        summary={t("b2b.fleetHelp")}
         items={[
           {
             label: "Conducteur",
@@ -483,25 +485,25 @@ export function B2BFleetPage() {
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard
-          label="Conducteurs actifs"
+          label={t("b2b.activeDrivers")}
           value={String(activeDrivers)}
           icon={Users}
           color="#9ACC0E"
         />
         <KPICard
-          label="Tokens actifs"
+          label={t("b2b.activeTokens")}
           value={String(activeTokens)}
           icon={CreditCard}
           color="#00C3FF"
         />
         <KPICard
-          label="Sessions totales"
+          label={t("b2b.totalSessions")}
           value={totalSessions.toLocaleString("fr-FR")}
           icon={Activity}
           color="#F39C12"
         />
         <KPICard
-          label="Energie totale"
+          label={t("b2b.totalConsumption", "Énergie totale")}
           value={`${formatEnergy(totalEnergy)} kWh`}
           icon={Zap}
           color="#9ACC0E"
@@ -514,7 +516,7 @@ export function B2BFleetPage() {
       <div className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <h3 className="text-base font-semibold text-foreground">
-            Conducteurs ({filteredDrivers.length})
+            {t("b2b.driversTitle")} ({filteredDrivers.length})
           </h3>
 
           <div className="flex items-center gap-3">
@@ -539,10 +541,10 @@ export function B2BFleetPage() {
                 }
                 className="appearance-none pl-3 pr-8 py-2 text-sm bg-surface border border-border rounded-xl text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer"
               >
-                <option value="all">Tous</option>
-                <option value="active">Actif</option>
-                <option value="inactive">Inactif</option>
-                <option value="suspended">Suspendu</option>
+                <option value="all">{t("b2b.allFilter")}</option>
+                <option value="active">{t("b2b.activeFilter")}</option>
+                <option value="inactive">{t("b2b.inactiveFilter")}</option>
+                <option value="suspended">{t("b2b.suspendedFilter")}</option>
               </select>
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-foreground-muted pointer-events-none" />
             </div>
@@ -565,13 +567,13 @@ export function B2BFleetPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
-                  <th className={thClass}>Nom</th>
-                  <th className={thClass}>Email</th>
-                  <th className={thClass}>Ville</th>
-                  <th className={thClass}>Statut</th>
-                  <th className={cn(thClass, "text-right")}>Sessions</th>
-                  <th className={cn(thClass, "text-right")}>Energie</th>
-                  <th className={thClass}>Derniere session</th>
+                  <th className={thClass}>{t("common.name")}</th>
+                  <th className={thClass}>{t("common.email")}</th>
+                  <th className={thClass}>{t("b2b.city")}</th>
+                  <th className={thClass}>{t("common.status")}</th>
+                  <th className={cn(thClass, "text-right")}>{t("b2b.sessionsCount", "Sessions")}</th>
+                  <th className={cn(thClass, "text-right")}>{t("b2b.energy")}</th>
+                  <th className={thClass}>{t("b2b.lastSession")}</th>
                   <th className={cn(thClass, "text-right")}>Action</th>
                 </tr>
               </thead>
@@ -582,7 +584,7 @@ export function B2BFleetPage() {
                       colSpan={8}
                       className="px-4 py-12 text-center text-foreground-muted text-sm"
                     >
-                      Aucun conducteur trouve
+                      {t("b2b.noDriverFound")}
                     </td>
                   </tr>
                 ) : (
@@ -600,7 +602,7 @@ export function B2BFleetPage() {
                       </td>
                       <td className={tdClass}>{d.email ?? "—"}</td>
                       <td className={tdClass}>{d.city ?? "—"}</td>
-                      <td className={tdClass}>{statusBadge(d.status)}</td>
+                      <td className={tdClass}>{statusBadge(d.status, t)}</td>
                       <td className={cn(tdClass, "text-right tabular-nums")}>
                         {d.total_sessions ?? 0}
                       </td>
@@ -622,7 +624,7 @@ export function B2BFleetPage() {
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-surface-elevated border border-border text-foreground hover:bg-surface transition-colors"
                           >
                             <Pencil className="w-3.5 h-3.5" />
-                            Modifier
+                            {t("b2b.modify")}
                           </button>
                           <button
                             onClick={(e) => {
@@ -632,7 +634,7 @@ export function B2BFleetPage() {
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
                           >
                             <UserMinus className="w-3.5 h-3.5" />
-                            Retirer
+                            {t("b2b.removeFromFleet")}
                           </button>
                         </div>
                       </td>
@@ -650,7 +652,7 @@ export function B2BFleetPage() {
       {/* ================================================================= */}
       <div className="space-y-4">
         <h3 className="text-base font-semibold text-foreground">
-          Tokens ({tokens.length})
+          {t("b2b.tokensTitle")} ({tokens.length})
         </h3>
 
         <div className="bg-surface border border-border rounded-2xl overflow-hidden">
@@ -658,12 +660,12 @@ export function B2BFleetPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border">
-                  <th className={thClass}>Token UID</th>
-                  <th className={thClass}>Conducteur</th>
+                  <th className={thClass}>{t("b2b.tokenUID")}</th>
+                  <th className={thClass}>{t("b2b.driverLabel", "Conducteur")}</th>
                   <th className={thClass}>Statut</th>
-                  <th className={cn(thClass, "text-right")}>Sessions</th>
-                  <th className={cn(thClass, "text-right")}>Energie</th>
-                  <th className={thClass}>Derniere utilisation</th>
+                  <th className={cn(thClass, "text-right")}>{t("b2b.sessionsCount", "Sessions")}</th>
+                  <th className={cn(thClass, "text-right")}>{t("b2b.energy")}</th>
+                  <th className={thClass}>{t("b2b.lastSession", "Dernière utilisation")}</th>
                   <th className={cn(thClass, "text-right")}>Action</th>
                 </tr>
               </thead>
@@ -674,60 +676,60 @@ export function B2BFleetPage() {
                       colSpan={7}
                       className="px-4 py-12 text-center text-foreground-muted text-sm"
                     >
-                      Aucun token
+                      {t("b2b.noToken")}
                     </td>
                   </tr>
                 ) : (
-                  tokens.map((t) => (
+                  tokens.map((tk) => (
                     <tr
-                      key={t.id}
+                      key={tk.id}
                       className="border-b border-border/50 hover:bg-surface-elevated/50 transition-colors"
                     >
                       <td className={cn(tdClass, "font-mono text-xs")}>
                         <div className="flex items-center gap-2">
                           <Nfc className="w-4 h-4 text-foreground-muted shrink-0" />
-                          {tokenShort(t.token_uid)}
+                          {tokenShort(tk.token_uid)}
                         </div>
                       </td>
-                      <td className={tdClass}>{t.driver_name ?? "—"}</td>
-                      <td className={tdClass}>{statusBadge(t.status)}</td>
+                      <td className={tdClass}>{tk.driver_name ?? "—"}</td>
+                      <td className={tdClass}>{statusBadge(tk.status, t)}</td>
                       <td className={cn(tdClass, "text-right tabular-nums")}>
-                        {t.total_sessions ?? 0}
+                        {tk.total_sessions ?? 0}
                       </td>
                       <td className={cn(tdClass, "text-right tabular-nums")}>
-                        {formatEnergy(t.total_energy_kwh)} kWh
+                        {formatEnergy(tk.total_energy_kwh)} kWh
                       </td>
                       <td className={tdClass}>
-                        {t.last_used_at
-                          ? formatRelativeTime(t.last_used_at)
+                        {tk.last_used_at
+                          ? formatRelativeTime(tk.last_used_at)
                           : "—"}
                       </td>
                       <td className={cn(tdClass, "text-right")}>
-                        {t.status?.toLowerCase() === "blocked" ? (
+                        {tk.status?.toLowerCase() === "blocked" ? (
                           <button
                             onClick={() =>
                               setConfirmBlock({
-                                tokenId: t.id,
+                                tokenId: tk.id,
                                 action: "unblock",
                               })
                             }
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors"
                           >
                             <ShieldOff className="w-3.5 h-3.5" />
-                            Debloquer
+                            {t("b2b.unblock")}
                           </button>
                         ) : (
                           <button
                             onClick={() =>
                               setConfirmBlock({
-                                tokenId: t.id,
+                                tokenId: tk.id,
                                 action: "block",
                               })
                             }
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors"
                           >
                             <Shield className="w-3.5 h-3.5" />
-                            Bloquer
+                            {t("b2b.block")}
                           </button>
                         )}
                       </td>
@@ -772,14 +774,14 @@ export function B2BFleetPage() {
         open={drawerOpen}
         onClose={closeDrawer}
         title={selectedDriver ? driverDisplayName(selectedDriver) : ""}
-        subtitle="Detail du conducteur"
+        subtitle={t("b2b.driverDetailSubtitle")}
       >
         {selectedDriver && (
           <div className="p-6 space-y-6">
             {/* Driver info */}
             <div className="space-y-3">
               <h4 className="text-sm font-semibold text-foreground-muted uppercase tracking-wider">
-                Informations
+                {t("b2b.information")}
               </h4>
               <div className="grid grid-cols-2 gap-3">
                 <InfoCell label="Email" value={selectedDriver.email} />
@@ -792,7 +794,7 @@ export function B2BFleetPage() {
                 <InfoCell
                   label="Statut"
                   value={null}
-                  custom={statusBadge(selectedDriver.status)}
+                  custom={statusBadge(selectedDriver.status, t)}
                 />
                 <InfoCell
                   label="Sessions"
@@ -821,42 +823,42 @@ export function B2BFleetPage() {
 
               {driverTokens.length === 0 ? (
                 <p className="text-sm text-foreground-muted py-4">
-                  Aucun token associe a ce conducteur.
+                  {t("b2b.noToken")} associe a ce conducteur.
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {driverTokens.map((t) => (
+                  {driverTokens.map((tk) => (
                     <div
-                      key={t.id}
+                      key={tk.id}
                       className="bg-surface-elevated/50 border border-border rounded-xl p-4 space-y-2"
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <Nfc className="w-4 h-4 text-foreground-muted" />
                           <span className="text-sm font-mono font-medium text-foreground">
-                            {tokenShort(t.token_uid)}
+                            {tokenShort(tk.token_uid)}
                           </span>
                         </div>
-                        {statusBadge(t.status)}
+                        {statusBadge(tk.status, t)}
                       </div>
 
                       <div className="flex items-center justify-between text-xs text-foreground-muted">
                         <span>
-                          {t.total_sessions ?? 0} sessions
+                          {tk.total_sessions ?? 0} sessions
                         </span>
                         <span>
-                          {t.last_used_at
-                            ? formatRelativeTime(t.last_used_at)
+                          {tk.last_used_at
+                            ? formatRelativeTime(tk.last_used_at)
                             : "Jamais utilise"}
                         </span>
                       </div>
 
                       <div className="pt-1">
-                        {t.status?.toLowerCase() === "blocked" ? (
+                        {tk.status?.toLowerCase() === "blocked" ? (
                           <button
                             onClick={() =>
                               setConfirmBlock({
-                                tokenId: t.id,
+                                tokenId: tk.id,
                                 action: "unblock",
                               })
                             }
@@ -864,13 +866,13 @@ export function B2BFleetPage() {
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors disabled:opacity-50"
                           >
                             <ShieldOff className="w-3.5 h-3.5" />
-                            Debloquer
+                            {t("b2b.unblock")}
                           </button>
                         ) : (
                           <button
                             onClick={() =>
                               setConfirmBlock({
-                                tokenId: t.id,
+                                tokenId: tk.id,
                                 action: "block",
                               })
                             }
@@ -878,7 +880,7 @@ export function B2BFleetPage() {
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-colors disabled:opacity-50"
                           >
                             <Shield className="w-3.5 h-3.5" />
-                            Bloquer
+                            {t("b2b.block")}
                           </button>
                         )}
                       </div>

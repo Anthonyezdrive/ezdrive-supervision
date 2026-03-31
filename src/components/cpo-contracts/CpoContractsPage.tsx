@@ -28,6 +28,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { PageHelp } from "@/components/ui/PageHelp";
+import { useTranslation } from "react-i18next";
 
 // -- Types ----------------------------------------------------
 
@@ -201,6 +202,7 @@ function EmptyState({ icon: Icon, message }: { icon: typeof FileSignature; messa
 // ══════════════════════════════════════════════════════════════
 
 export function CpoContractsPage() {
+  const { t } = useTranslation();
   const [selectedContract, setSelectedContract] = useState<CpoContract | null>(null);
 
   if (selectedContract) {
@@ -1361,6 +1363,21 @@ function ContractBillingTab({ contractId }: { contractId: string }) {
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [openActions, setOpenActions] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addSaving, setAddSaving] = useState(false);
+  const [newRule, setNewRule] = useState({
+    tariff_code: "",
+    cpo_name: "",
+    emsp_name: "",
+    country_code: "FR",
+    price_per_kwh: "",
+    price_per_min: "",
+    start_fee: "",
+    idle_fee_per_min: "",
+    currency: "EUR",
+    valid_from: new Date().toISOString().split("T")[0],
+    remarks: "",
+  });
   const queryClient = useQueryClient();
   const { success: toastSuccess, error: toastError } = useToast();
 
@@ -1453,11 +1470,101 @@ function ContractBillingTab({ contractId }: { contractId: string }) {
           <Receipt className="w-4 h-4 text-foreground-muted" />
           <h3 className="text-sm font-semibold text-foreground">Regles de facturation</h3>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-xs font-semibold hover:bg-primary/90 transition-colors">
+        <button
+          onClick={() => setShowAddForm(!showAddForm)}
+          className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-xs font-semibold hover:bg-primary/90 transition-colors"
+        >
           <Plus className="w-3.5 h-3.5" />
           Ajouter une regle de facturation
         </button>
       </div>
+
+      {/* Add billing rule form */}
+      {showAddForm && (
+        <div className="bg-surface border border-border rounded-2xl p-5 space-y-4">
+          <h4 className="text-sm font-semibold text-foreground">Nouvelle regle de facturation</h4>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1">Code tarif *</label>
+              <input type="text" value={newRule.tariff_code} onChange={(e) => setNewRule({ ...newRule, tariff_code: e.target.value })} placeholder="EZD-STD-01" className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-primary/50" />
+            </div>
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1">CPO</label>
+              <input type="text" value={newRule.cpo_name} onChange={(e) => setNewRule({ ...newRule, cpo_name: e.target.value })} placeholder="EZDrive" className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-primary/50" />
+            </div>
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1">eMSP</label>
+              <input type="text" value={newRule.emsp_name} onChange={(e) => setNewRule({ ...newRule, emsp_name: e.target.value })} placeholder="Gireve" className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-primary/50" />
+            </div>
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1">Prix/kWh (EUR)</label>
+              <input type="number" step="0.01" value={newRule.price_per_kwh} onChange={(e) => setNewRule({ ...newRule, price_per_kwh: e.target.value })} placeholder="0.35" className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-primary/50" />
+            </div>
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1">Prix/min (EUR)</label>
+              <input type="number" step="0.01" value={newRule.price_per_min} onChange={(e) => setNewRule({ ...newRule, price_per_min: e.target.value })} placeholder="0.00" className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-primary/50" />
+            </div>
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1">Frais de session (EUR)</label>
+              <input type="number" step="0.01" value={newRule.start_fee} onChange={(e) => setNewRule({ ...newRule, start_fee: e.target.value })} placeholder="1.00" className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-primary/50" />
+            </div>
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1">Frais parking/min</label>
+              <input type="number" step="0.01" value={newRule.idle_fee_per_min} onChange={(e) => setNewRule({ ...newRule, idle_fee_per_min: e.target.value })} placeholder="0.10" className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-primary/50" />
+            </div>
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1">Pays</label>
+              <input type="text" value={newRule.country_code} onChange={(e) => setNewRule({ ...newRule, country_code: e.target.value })} className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-primary/50" />
+            </div>
+            <div>
+              <label className="block text-xs text-foreground-muted mb-1">Date debut</label>
+              <input type="date" value={newRule.valid_from} onChange={(e) => setNewRule({ ...newRule, valid_from: e.target.value })} className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-primary/50" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-foreground-muted mb-1">Remarques</label>
+            <input type="text" value={newRule.remarks} onChange={(e) => setNewRule({ ...newRule, remarks: e.target.value })} placeholder="Optionnel" className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-primary/50" />
+          </div>
+          <div className="flex justify-end gap-3">
+            <button onClick={() => setShowAddForm(false)} className="px-4 py-2 text-sm text-foreground-muted hover:text-foreground transition-colors">Annuler</button>
+            <button
+              disabled={addSaving || !newRule.tariff_code.trim()}
+              onClick={async () => {
+                setAddSaving(true);
+                try {
+                  const { error } = await supabase.from("reimbursement_rules").insert({
+                    cpo_contract_id: contractId,
+                    tariff_code: newRule.tariff_code,
+                    cpo_name: newRule.cpo_name || null,
+                    emsp_name: newRule.emsp_name || null,
+                    country_code: newRule.country_code || "FR",
+                    price_per_kwh: newRule.price_per_kwh ? parseFloat(newRule.price_per_kwh) : 0,
+                    price_per_min: newRule.price_per_min ? parseFloat(newRule.price_per_min) : 0,
+                    start_fee: newRule.start_fee ? parseFloat(newRule.start_fee) : 0,
+                    idle_fee_per_min: newRule.idle_fee_per_min ? parseFloat(newRule.idle_fee_per_min) : 0,
+                    currency: newRule.currency,
+                    valid_from: newRule.valid_from || null,
+                    remarks: newRule.remarks || null,
+                    status: "active",
+                  });
+                  if (error) throw error;
+                  queryClient.invalidateQueries({ queryKey: ["billing-rules-for-contract", contractId] });
+                  toastSuccess("Regle ajoutee", "La nouvelle regle de facturation a ete creee");
+                  setShowAddForm(false);
+                  setNewRule({ tariff_code: "", cpo_name: "", emsp_name: "", country_code: "FR", price_per_kwh: "", price_per_min: "", start_fee: "", idle_fee_per_min: "", currency: "EUR", valid_from: new Date().toISOString().split("T")[0], remarks: "" });
+                } catch (err: any) {
+                  toastError("Erreur", err.message ?? "Impossible de creer la regle");
+                } finally {
+                  setAddSaving(false);
+                }
+              }}
+              className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
+            >
+              {addSaving ? "Enregistrement..." : "Enregistrer"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Filter tabs */}
       <div className="flex items-center gap-1 bg-surface border border-border rounded-xl p-1 w-fit">

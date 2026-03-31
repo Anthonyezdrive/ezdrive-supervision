@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { LayoutDashboard, FileText, Radio, UserCheck, Building2, List, Truck } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { LayoutDashboard, FileText, Radio, UserCheck, Building2, List, Truck, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -18,19 +19,21 @@ interface B2BTab {
 }
 
 const B2B_TABS: B2BTab[] = [
-  { to: "/b2b/overview", label: "Vue d'ensemble", icon: LayoutDashboard }, // all roles
-  { to: "/b2b/monthly", label: "Rapport mensuel", icon: FileText, minRole: "manager" },
-  { to: "/b2b/sessions", label: "Sessions", icon: List, minRole: "manager" },
-  { to: "/b2b/chargepoints", label: "Par borne", icon: Radio, minRole: "manager" },
-  { to: "/b2b/drivers", label: "Par conducteur", icon: UserCheck, minRole: "manager" },
-  { to: "/b2b/fleet", label: "Flotte & Tokens", icon: Truck, minRole: "admin" },
-  { to: "/b2b/company", label: "Mon Entreprise", icon: Building2, minRole: "admin" },
+  { to: "/b2b/overview", label: "b2b.overview", icon: LayoutDashboard }, // all roles
+  { to: "/b2b/monthly", label: "b2b.monthly", icon: FileText, minRole: "manager" },
+  { to: "/b2b/sessions", label: "b2b.sessions", icon: List, minRole: "manager" },
+  { to: "/b2b/chargepoints", label: "b2b.chargepoints", icon: Radio, minRole: "manager" },
+  { to: "/b2b/drivers", label: "b2b.drivers", icon: UserCheck, minRole: "manager" },
+  { to: "/b2b/analytics", label: "b2b.analytics", icon: BarChart3, minRole: "manager" },
+  { to: "/b2b/fleet", label: "b2b.fleet", icon: Truck, minRole: "admin" },
+  { to: "/b2b/company", label: "b2b.company", icon: Building2, minRole: "admin" },
 ];
 
 const ROLE_LEVEL: Record<string, number> = { employee: 1, manager: 2, admin: 3 };
 
 function B2BLayoutInner() {
-  const { profile } = useAuth();
+  const { t } = useTranslation();
+  const { profile: _profile } = useAuth();
   const { isAdmin } = usePermissions();
   const { b2bRole, isEmployee, driverExternalId, tokenUids } = useB2BRole();
   const { selectedClientId, setSelectedClientId } = useB2BFilters();
@@ -74,10 +77,10 @@ function B2BLayoutInner() {
           )}
           <div>
             <h1 className="text-2xl font-heading font-bold text-foreground">
-              {activeClient?.name ?? "Portail B2B"}
+              {activeClient?.name ?? t("b2b.portalB2B")}
             </h1>
             <p className="text-sm text-foreground-muted mt-0.5">
-              Rapport d'activité des bornes de recharge
+              {t("b2b.activityReport")}
             </p>
           </div>
         </div>
@@ -87,7 +90,7 @@ function B2BLayoutInner() {
           {isAdmin && clients.length > 1 && (
             <div>
               <label className="block text-xs text-foreground-muted uppercase tracking-wider mb-1">
-                Client
+                {t("b2b.client")}
               </label>
               <select
                 value={activeClient?.id ?? ""}
@@ -144,13 +147,13 @@ function B2BLayoutInner() {
             style={({ isActive }) => isActive ? { color: "#9ACC0E", borderBottomColor: "#9ACC0E" } : {}}
           >
             <tab.icon className="w-4 h-4" />
-            {tab.label}
+            {t(tab.label)}
           </NavLink>
         ))}
       </div>
 
       {/* Page content — pass activeClient + role via context */}
-      <SectionErrorBoundary section="Portail B2B" fallbackUrl="/b2b/overview">
+      <SectionErrorBoundary section={t("b2b.portalB2B")} fallbackUrl="/b2b/overview">
         <Outlet context={{ activeClient, customerExternalIds, b2bRole, isEmployee, driverExternalId, tokenUids }} />
       </SectionErrorBoundary>
 
@@ -158,7 +161,7 @@ function B2BLayoutInner() {
       <div className="flex items-center justify-center gap-2 pt-6 pb-2">
         <img src="/logo-ezdrive.png" alt="EZDrive" className="h-4 opacity-30" />
         <span className="text-[11px] text-foreground-muted/40">
-          Propulsé par EZDrive
+          {t("b2b.poweredBy")}
         </span>
       </div>
     </div>

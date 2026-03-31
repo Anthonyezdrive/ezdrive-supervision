@@ -1,4 +1,4 @@
-import { LogOut, RefreshCw, Menu, Search, Command } from "lucide-react";
+import { LogOut, RefreshCw, Menu, Search, Command, Globe } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
 import { formatRelativeTime } from "@/lib/utils";
@@ -6,6 +6,7 @@ import { useStations } from "@/hooks/useStations";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useTranslation } from "react-i18next";
 
 interface TopBarProps {
   onMenuClick?: () => void;
@@ -18,6 +19,11 @@ export function TopBar({ onMenuClick, onSearchClick }: TopBarProps) {
   const [syncing, setSyncing] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { t, i18n } = useTranslation();
+
+  const toggleLang = () => {
+    i18n.changeLanguage(i18n.language === "fr" ? "en" : "fr");
+  };
 
   const lastSync = stations?.[0]?.last_synced_at;
 
@@ -42,12 +48,12 @@ export function TopBar({ onMenuClick, onSearchClick }: TopBarProps) {
       // Invalidate queries to refresh data immediately
       await queryClient.invalidateQueries();
       const msg = result?.total_synced
-        ? `✓ ${result.total_synced} bornes synchronisées${result.status_changes ? ` · ${result.status_changes} changements` : ""}`
-        : "Synchronisation réussie";
+        ? `✓ ${result.total_synced} ${t("topbar.syncSuccess")}${result.status_changes ? ` · ${result.status_changes} ${t("topbar.syncChanges")}` : ""}`
+        : `✓ ${t("topbar.sync")}`;
       toast(msg, "success");
     } catch (e) {
       console.error("Sync error:", e);
-      toast("Erreur lors de la synchronisation", "error");
+      toast(t("topbar.syncError"), "error");
     } finally {
       setSyncing(false);
     }
@@ -72,7 +78,7 @@ export function TopBar({ onMenuClick, onSearchClick }: TopBarProps) {
           <span className="hidden sm:inline">
             {lastSync
               ? `Sync ${formatRelativeTime(lastSync)}`
-              : "En attente de sync..."}
+              : t("topbar.syncWaiting")}
           </span>
           {dataUpdatedAt > 0 && (
             <span className="text-xs opacity-60 hidden lg:inline">
@@ -90,7 +96,7 @@ export function TopBar({ onMenuClick, onSearchClick }: TopBarProps) {
           className="flex items-center gap-2 px-3 py-1.5 bg-surface-elevated border border-border rounded-lg text-xs text-foreground-muted hover:text-foreground hover:border-border-focus transition-colors"
         >
           <Search className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Rechercher...</span>
+          <span className="hidden sm:inline">{t("topbar.search")}</span>
           <kbd className="hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-surface border border-border rounded text-[10px] font-mono ml-1">
             <Command className="w-2.5 h-2.5" />K
           </kbd>
@@ -104,7 +110,16 @@ export function TopBar({ onMenuClick, onSearchClick }: TopBarProps) {
           <RefreshCw
             className={`w-3.5 h-3.5 ${syncing ? "animate-spin" : ""}`}
           />
-          <span className="hidden sm:inline">Sync</span>
+          <span className="hidden sm:inline">{t("topbar.sync")}</span>
+        </button>
+
+        <button
+          onClick={toggleLang}
+          className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium text-foreground-muted hover:text-foreground bg-surface-elevated border border-border rounded-lg transition-colors"
+          title={t("settings.language")}
+        >
+          <Globe className="w-3.5 h-3.5" />
+          <span className="uppercase">{i18n.language}</span>
         </button>
 
         <div className="h-6 w-px bg-border hidden sm:block" />
@@ -123,7 +138,7 @@ export function TopBar({ onMenuClick, onSearchClick }: TopBarProps) {
         <button
           onClick={signOut}
           className="p-1.5 text-foreground-muted hover:text-danger transition-colors"
-          title="Déconnexion"
+          title={t("topbar.logout")}
         >
           <LogOut className="w-4 h-4" />
         </button>

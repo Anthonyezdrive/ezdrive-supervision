@@ -7,6 +7,7 @@ import { groupByChargePoint, formatDuration, formatNumber } from "@/lib/b2b-form
 import { downloadCSV, todayISO } from "@/lib/export";
 import { PageHelp } from "@/components/ui/PageHelp";
 import type { B2BClient } from "@/types/b2b";
+import { useTranslation } from "react-i18next";
 
 const CHART_COLORS = [
   "#9ACC0E", "#00C3FF", "#F39C12", "#FF6B6B", "#9B59B6",
@@ -27,6 +28,7 @@ const thClass =
 const tdClass = "px-4 py-3.5 text-sm text-foreground whitespace-nowrap";
 
 export function B2BChargepointsPage() {
+  const { t } = useTranslation();
   const { activeClient, customerExternalIds } =
     useOutletContext<{ activeClient: B2BClient | null; customerExternalIds: string[] }>();
   const { data: cdrs, isLoading } = useB2BCdrs(customerExternalIds);
@@ -80,20 +82,20 @@ export function B2BChargepointsPage() {
   return (
     <div className="space-y-6">
       <PageHelp
-        summary="Analyse par borne de recharge — volume, sessions et informations techniques"
+        summary={t("b2b.chargepointsHelpSummary", "Analyse par borne de recharge — volume, sessions et informations techniques")}
         items={[
-          { label: "Borne", description: "Point de charge identifié par son nom et sa localisation." },
-          { label: "Volume (kWh)", description: "Énergie totale consommée sur cette borne par vos collaborateurs." },
-          { label: "Fabricant/Modèle", description: "Informations techniques sur le matériel de la borne (si disponible)." },
-          { label: "Connexion", description: "Statut de connectivité de la borne : online (connectée) ou offline (déconnectée)." },
+          { label: t("b2b.chargepointLabel", "Borne"), description: t("b2b.chargepointDesc", "Point de charge identifié par son nom et sa localisation.") },
+          { label: t("b2b.volumeKwh", "Volume (kWh)"), description: t("b2b.volumeKwhDesc", "Énergie totale consommée sur cette borne par vos collaborateurs.") },
+          { label: t("b2b.vendorModelLabel", "Fabricant/Modèle"), description: t("b2b.vendorModelDesc", "Informations techniques sur le matériel de la borne (si disponible).") },
+          { label: t("b2b.connectionLabel", "Connexion"), description: t("b2b.connectionDesc", "Statut de connectivité de la borne : online (connectée) ou offline (déconnectée).") },
         ]}
-        tips={["Les données techniques (fabricant, modèle, puissance) proviennent de la synchronisation avec le serveur OCPP."]}
+        tips={[t("b2b.ocppTip", "Les données techniques (fabricant, modèle, puissance) proviennent de la synchronisation avec le serveur OCPP.")]}
       />
 
       {/* Donut chart + Legend */}
       <div className="bg-surface border border-border rounded-2xl p-6">
         <h3 className="text-base font-semibold text-foreground mb-4">
-          Répartition des Volumes délivrés par Borne
+          {t("b2b.volumeByChargepoint", "Répartition des Volumes délivrés par Borne")}
         </h3>
         {chartData.length > 0 ? (
           <div className="flex flex-col lg:flex-row items-center gap-6">
@@ -136,21 +138,21 @@ export function B2BChargepointsPage() {
           </div>
         ) : (
           <div className="flex items-center justify-center h-48 text-foreground-muted text-sm">
-            Aucune donnée
+            {t("common.noData", "Aucune donnée")}
           </div>
         )}
       </div>
 
       {/* Table */}
       <div className="flex items-center justify-between">
-        <h3 className="text-base font-semibold text-foreground">Détail par borne</h3>
+        <h3 className="text-base font-semibold text-foreground">{t("b2b.chargepointDetail", "Détail par borne")}</h3>
         <button
           onClick={handleExport}
           disabled={rows.length === 0}
           className="flex items-center gap-2 px-3 py-2 text-sm bg-surface-elevated border border-border rounded-xl text-foreground-muted hover:text-foreground hover:border-border-focus transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Download className="w-4 h-4" />
-          Export CSV
+          {t("b2b.exportCsv", "Export CSV")}
         </button>
       </div>
 
@@ -159,16 +161,16 @@ export function B2BChargepointsPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
-                <th className={thClass}>Borne</th>
-                <th className={thClass}>Site</th>
-                <th className={thClass}>Fabricant / Modèle</th>
-                <th className={`${thClass} text-center`}>Puissance</th>
-                <th className={`${thClass} text-center`}>Connexion</th>
-                <th className={`${thClass} text-right`}>Sessions</th>
-                <th className={`${thClass} text-right`}>Volume (kWh)</th>
-                <th className={`${thClass} text-right`}>Durée totale</th>
-                <th className={`${thClass} text-right`}>Saturation</th>
-                <th className={`${thClass} text-right`}>CO₂ évité</th>
+                <th className={thClass}>{t("b2b.chargepointLabel", "Borne")}</th>
+                <th className={thClass}>{t("b2b.site", "Site")}</th>
+                <th className={thClass}>{t("b2b.vendorModel", "Fabricant / Modèle")}</th>
+                <th className={`${thClass} text-center`}>{t("b2b.power", "Puissance")}</th>
+                <th className={`${thClass} text-center`}>{t("b2b.connection", "Connexion")}</th>
+                <th className={`${thClass} text-right`}>{t("b2b.sessionsCount", "Sessions")}</th>
+                <th className={`${thClass} text-right`}>{t("b2b.volumeKwh", "Volume (kWh)")}</th>
+                <th className={`${thClass} text-right`}>{t("b2b.totalDuration", "Durée totale")}</th>
+                <th className={`${thClass} text-right`}>{t("b2b.saturation", "Saturation")}</th>
+                <th className={`${thClass} text-right`}>{t("b2b.co2Avoided", "CO₂ évité")}</th>
               </tr>
             </thead>
             <tbody>
@@ -218,7 +220,7 @@ export function B2BChargepointsPage() {
               ))}
               {rows.length > 0 && (
                 <tr className="bg-surface-elevated/30 font-bold border-t-2" style={{ borderTopColor: "#9ACC0E40" }}>
-                  <td className={tdClass}>Total</td>
+                  <td className={tdClass}>{t("common.total", "Total")}</td>
                   <td className={tdClass} />
                   <td className={tdClass} />
                   <td className={tdClass} />

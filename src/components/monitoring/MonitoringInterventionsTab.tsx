@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/contexts/ToastContext";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { PhotoUpload } from "@/components/shared/PhotoUpload";
 import {
   useInterventions as useInterventionsHook,
   useAvailableTechnicians,
@@ -70,6 +71,7 @@ const EMPTY_INTERVENTION = {
   is_recurring: false,
   recurrence_interval: "" as string,
   next_occurrence: "" as string,
+  photos: [] as string[],
 };
 
 // ── LiveTimer ──────────────────────────────────────────────
@@ -324,6 +326,7 @@ export default function InterventionsTab() {
       is_recurring: intervention.is_recurring ?? false,
       recurrence_interval: intervention.recurrence_interval ?? "",
       next_occurrence: intervention.next_occurrence ?? "",
+      photos: intervention.photos ?? [],
     });
     setShowModal(true);
   }
@@ -352,6 +355,7 @@ export default function InterventionsTab() {
         is_recurring: form.is_recurring,
         recurrence_interval: form.recurrence_interval || null,
         next_occurrence: form.next_occurrence || null,
+        photos: form.photos.length > 0 ? form.photos : null,
       }, {
         onSuccess: () => closeModal(),
       });
@@ -739,6 +743,16 @@ export default function InterventionsTab() {
               </div>
             )}
           </div>
+
+          {/* Photos */}
+          <PhotoUpload
+            bucket="ezdrive-media"
+            folder={editing ? `interventions/${editing.id}` : `interventions/new-${Date.now()}`}
+            existingPhotos={form.photos}
+            onPhotosChange={(urls) => setForm((f) => ({ ...f, photos: urls }))}
+            maxFiles={10}
+            maxSizeMB={5}
+          />
 
           {editing && (
             <>

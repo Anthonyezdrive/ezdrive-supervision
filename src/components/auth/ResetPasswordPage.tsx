@@ -1,9 +1,11 @@
 import { useState, type FormEvent } from "react";
 import { Navigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "@/contexts/AuthContext";
 import { CheckCircle, Eye, EyeOff } from "lucide-react";
 
 export function ResetPasswordPage() {
+  const { t } = useTranslation();
   const { user, profile, loading, isRecovery, updatePassword } = useAuth();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -16,7 +18,7 @@ export function ResetPasswordPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="animate-pulse-dot text-primary text-lg">
-          Chargement...
+          {t("common.loading")}
         </div>
       </div>
     );
@@ -39,17 +41,17 @@ export function ResetPasswordPage() {
                 <CheckCircle className="w-7 h-7 text-success" />
               </div>
               <h2 className="text-lg font-semibold text-foreground">
-                Mot de passe mis à jour !
+                {t("auth.passwordUpdatedTitle")}
               </h2>
               <p className="text-foreground-muted text-sm">
-                Votre nouveau mot de passe a été enregistré avec succès.
+                {t("auth.passwordUpdatedDescription")}
               </p>
             </div>
             <a
               href={dest}
               className="block w-full py-2.5 bg-primary hover:bg-primary-hover text-foreground-inverse font-semibold rounded-xl transition-colors text-center"
             >
-              Accéder à mon espace
+              {t("auth.accessMySpace")}
             </a>
           </div>
         </div>
@@ -62,11 +64,11 @@ export function ResetPasswordPage() {
     setError(null);
 
     if (password.length < 8) {
-      setError("Le mot de passe doit contenir au moins 8 caractères.");
+      setError(t("auth.passwordMinLength"));
       return;
     }
     if (password !== confirm) {
-      setError("Les mots de passe ne correspondent pas.");
+      setError(t("auth.passwordsDoNotMatch"));
       return;
     }
 
@@ -91,10 +93,10 @@ export function ResetPasswordPage() {
             className="h-14 mx-auto mb-3"
           />
           <h1 className="font-heading text-2xl font-bold text-foreground">
-            Nouveau mot de passe
+            {t("auth.newPasswordTitle")}
           </h1>
           <p className="text-foreground-muted text-sm mt-1">
-            Choisissez un mot de passe sécurisé pour votre compte EZDrive.
+            {t("auth.newPasswordDescription")}
           </p>
         </div>
 
@@ -105,7 +107,7 @@ export function ResetPasswordPage() {
           {/* New password */}
           <div>
             <label className="block text-sm font-medium text-foreground-muted mb-1.5">
-              Nouveau mot de passe
+              {t("auth.newPassword")}
             </label>
             <div className="relative">
               <input
@@ -116,7 +118,7 @@ export function ResetPasswordPage() {
                 minLength={8}
                 autoFocus
                 className="w-full px-3 py-2.5 pr-10 bg-surface-elevated border border-border rounded-xl text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-border-focus transition-colors"
-                placeholder="Minimum 8 caractères"
+                placeholder={t("auth.newPasswordPlaceholder")}
               />
               <button
                 type="button"
@@ -131,7 +133,7 @@ export function ResetPasswordPage() {
           {/* Confirm password */}
           <div>
             <label className="block text-sm font-medium text-foreground-muted mb-1.5">
-              Confirmer le mot de passe
+              {t("auth.confirmPassword")}
             </label>
             <input
               type={showPassword ? "text" : "password"}
@@ -140,16 +142,16 @@ export function ResetPasswordPage() {
               required
               minLength={8}
               className="w-full px-3 py-2.5 bg-surface-elevated border border-border rounded-xl text-foreground placeholder:text-foreground-muted/50 focus:outline-none focus:border-border-focus transition-colors"
-              placeholder="Retapez votre mot de passe"
+              placeholder={t("auth.confirmPasswordPlaceholder")}
             />
           </div>
 
           {/* Password strength hints */}
           <div className="space-y-1.5">
-            <StrengthCheck ok={password.length >= 8} label="Au moins 8 caractères" />
-            <StrengthCheck ok={/[A-Z]/.test(password)} label="Une lettre majuscule" />
-            <StrengthCheck ok={/[0-9]/.test(password)} label="Un chiffre" />
-            <StrengthCheck ok={password.length > 0 && password === confirm} label="Les mots de passe correspondent" />
+            <StrengthCheck ok={password.length >= 8} label={t("auth.strengthAtLeast8")} />
+            <StrengthCheck ok={/[A-Z]/.test(password)} label={t("auth.strengthUppercase")} />
+            <StrengthCheck ok={/[0-9]/.test(password)} label={t("auth.strengthDigit")} />
+            <StrengthCheck ok={password.length > 0 && password === confirm} label={t("auth.strengthMatch")} />
           </div>
 
           {error && (
@@ -163,7 +165,7 @@ export function ResetPasswordPage() {
             disabled={submitting}
             className="w-full py-2.5 bg-primary hover:bg-primary-hover text-foreground-inverse font-semibold rounded-xl transition-colors disabled:opacity-50"
           >
-            {submitting ? "Mise à jour..." : "Enregistrer le nouveau mot de passe"}
+            {submitting ? t("auth.updatingPassword") : t("auth.saveNewPassword")}
           </button>
         </form>
       </div>

@@ -36,6 +36,7 @@ import {
 import { cn } from "@/lib/utils";
 import { RealtimeLoadChart } from "./RealtimeLoadChart";
 import { LoadHistoryChart } from "./LoadHistoryChart";
+import { useTranslation } from "react-i18next";
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -96,6 +97,7 @@ const DAYS_OF_WEEK = ["Normal", "Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi
 // ══════════════════════════════════════════════════════════════
 
 export function SmartChargingPage() {
+  const { t } = useTranslation();
   const [selectedGroup, setSelectedGroup] = useState<SmartChargingGroup | null>(null);
   const [editingGroup, setEditingGroup] = useState<SmartChargingGroup | null>(null);
   const queryClient = useQueryClient();
@@ -148,6 +150,8 @@ function GroupListView({ onSelect }: { onSelect: (group: SmartChargingGroup) => 
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [createDropdownOpen, setCreateDropdownOpen] = useState(false);
   const [rowMenuOpen, setRowMenuOpen] = useState<string | null>(null);
+  const [columnsOpen, setColumnsOpen] = useState(false);
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(new Set());
   const createRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -304,17 +308,38 @@ function GroupListView({ onSelect }: { onSelect: (group: SmartChargingGroup) => 
 
       {/* Tab */}
       <div className="flex gap-1">
-        <button className="px-4 py-2 bg-surface border border-border rounded-lg text-sm font-medium text-foreground">
+        <button onClick={() => { setFilterName(""); setFilterCpo(""); }} className="px-4 py-2 bg-surface border border-border rounded-lg text-sm font-medium text-foreground">
           All
         </button>
       </div>
 
       {/* Column controls */}
       <div className="flex items-center justify-end gap-2">
-        <button className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-sm text-foreground-muted hover:text-foreground transition-colors">
-          <Columns className="w-3.5 h-3.5" />
-          Columns
-        </button>
+        <div className="relative">
+          <button onClick={() => setColumnsOpen(!columnsOpen)} className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-sm text-foreground-muted hover:text-foreground transition-colors">
+            <Columns className="w-3.5 h-3.5" />
+            Columns
+          </button>
+          {columnsOpen && (
+            <div className="absolute right-0 mt-1 w-48 bg-surface border border-border rounded-xl shadow-xl z-50 py-1">
+              {["Nom", "Algorithme", "Structure", "EVSE", "CPO"].map((col) => (
+                <label key={col} className="flex items-center gap-2 px-3 py-2 hover:bg-surface-elevated cursor-pointer text-sm text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={!hiddenCols.has(col)}
+                    onChange={() => {
+                      const next = new Set(hiddenCols);
+                      next.has(col) ? next.delete(col) : next.add(col);
+                      setHiddenCols(next);
+                    }}
+                    className="rounded"
+                  />
+                  {col}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
         <button className="p-1.5 border border-border rounded-lg text-foreground-muted hover:text-foreground transition-colors">
           <MoreVertical className="w-4 h-4" />
         </button>
@@ -722,7 +747,19 @@ function GroupDetailView({
       <div className="bg-surface border border-border rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-border flex items-center justify-between">
           <h2 className="text-base font-semibold text-foreground">Historique des attributions</h2>
-          <button className="text-sm text-primary font-medium hover:text-primary/80 transition-colors">
+          <button
+            onClick={() => {
+              const csvContent = "Date,Groupe,Action,Details\n(Export a venir)";
+              const blob = new Blob([csvContent], { type: "text/csv" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `smart-charging-history-${new Date().toISOString().slice(0, 10)}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="text-sm text-primary font-medium hover:text-primary/80 transition-colors"
+          >
             Export
           </button>
         </div>
@@ -733,7 +770,10 @@ function GroupDetailView({
               {now.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" })}
               <ChevronDown className="w-3.5 h-3.5" />
             </div>
-            <button className="text-sm text-primary font-medium hover:text-primary/80 transition-colors">
+            <button
+              onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+              className="text-sm text-primary font-medium hover:text-primary/80 transition-colors"
+            >
               aujourd'hui
             </button>
             <span className="text-sm text-foreground-muted italic">
@@ -882,7 +922,10 @@ function GroupDetailView({
                   <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
                 </button>
               </div>
-              <button className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors">
+              <button
+                onClick={onEdit}
+                className="px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
+              >
                 G\u00e9rer Les EVSE Li\u00e9s
               </button>
             </div>
@@ -1355,7 +1398,8 @@ function GroupEditView({
     (group.capacityMethod as "default" | "file" | "api") || "default"
   );
   const [defaultCapacity, setDefaultCapacity] = useState(String(group.defaultCapacityKw || "20"));
-  const [configFile] = useState("dynamicCapacityDayOfWeekExample.xlsx");
+  const [configFile, setConfigFile] = useState("dynamicCapacityDayOfWeekExample.xlsx");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [timezone, setTimezone] = useState(group.timezone || "America/Guadeloupe");
 
   // Fetch EVSEs for this group
@@ -1554,9 +1598,22 @@ function GroupEditView({
                       <Globe className="w-4 h-4 text-foreground-muted shrink-0" />
                       <span className="text-sm text-foreground truncate">{configFile}</span>
                     </div>
-                    <button className="px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors shrink-0">
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors shrink-0"
+                    >
                       Browse
                     </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".csv,.xls,.xlsx"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) setConfigFile(file.name);
+                      }}
+                    />
                   </div>
                   <p className="text-xs text-foreground-muted mt-1">.csv, .xls (Excel) et .xlsx (Excel) pris en charge</p>
                 </div>

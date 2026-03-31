@@ -29,6 +29,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { KPICard } from "@/components/ui/KPICard";
 import { PageHelp } from "@/components/ui/PageHelp";
+import { useTranslation } from "react-i18next";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -146,6 +147,7 @@ function RoleCard({
   onClone: () => void;
   isCloning: boolean;
 }) {
+  const { t } = useTranslation();
   const totalPerms = PERMISSION_GROUPS.flatMap((g) => g.permissions).length;
   const grantedPerms = role.permissions.length;
   const pct = Math.round((grantedPerms / totalPerms) * 100);
@@ -168,7 +170,7 @@ function RoleCard({
             <h3 className="text-sm font-semibold text-foreground">{role.name}</h3>
             {role.is_system && (
               <span className="px-1.5 py-0.5 bg-foreground-muted/10 text-foreground-muted text-[10px] font-semibold rounded">
-                Système
+                {t("admin.roles.systemRole")}
               </span>
             )}
           </div>
@@ -179,11 +181,11 @@ function RoleCard({
         <div className="flex items-center gap-4 shrink-0">
           <div className="text-right hidden sm:block">
             <p className="text-sm font-semibold text-foreground">{role.user_count}</p>
-            <p className="text-[10px] text-foreground-muted">utilisateur{role.user_count !== 1 ? "s" : ""}</p>
+            <p className="text-[10px] text-foreground-muted">{t("nav.users", "utilisateurs")}</p>
           </div>
           <div className="text-right hidden sm:block">
             <p className="text-sm font-semibold text-foreground">{grantedPerms}/{totalPerms}</p>
-            <p className="text-[10px] text-foreground-muted">permissions</p>
+            <p className="text-[10px] text-foreground-muted">{t("admin.roles.permissions")}</p>
           </div>
           <ChevronDown
             className={cn(
@@ -253,7 +255,7 @@ function RoleCard({
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-foreground-muted hover:text-foreground bg-surface-elevated border border-border rounded-lg transition-colors"
             >
               <Pencil className="w-3 h-3" />
-              Modifier
+              {t("common.edit")}
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onClone(); }}
@@ -262,7 +264,7 @@ function RoleCard({
               title="Dupliquer ce rôle"
             >
               <Copy className="w-3 h-3" />
-              Dupliquer
+              {t("rolesPage.duplicate", "Dupliquer")}
             </button>
             {role.is_system ? (
               <button
@@ -271,7 +273,7 @@ function RoleCard({
                 title="Les rôles système ne peuvent pas être supprimés"
               >
                 <Trash2 className="w-3 h-3" />
-                Supprimer
+                {t("common.delete")}
               </button>
             ) : (
               <button
@@ -279,7 +281,7 @@ function RoleCard({
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-400 hover:text-red-300 bg-red-500/5 border border-red-500/20 rounded-lg transition-colors"
               >
                 <Trash2 className="w-3 h-3" />
-                Supprimer
+                {t("common.delete")}
               </button>
             )}
           </div>
@@ -292,6 +294,7 @@ function RoleCard({
 // ── Main Page ─────────────────────────────────────────────────
 
 export function RolesPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { success: toastSuccess, error: toastError } = useToast();
   const [activeTab, setActiveTab] = useState<"roles" | "groups">("roles");
@@ -373,10 +376,10 @@ export function RolesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roles"] });
       closeRoleModal();
-      toastSuccess("Rôle créé", "Le rôle a été ajouté avec succès");
+      toastSuccess(t("rolesPage.roleCreated", "Rôle créé"), t("rolesPage.roleCreatedDesc", "Le rôle a été ajouté avec succès"));
     },
     onError: (error: Error) => {
-      toastError("Erreur", error.message || "Une erreur est survenue");
+      toastError(t("common.error", "Erreur"), error.message || t("common.error"));
     },
   });
 
@@ -399,10 +402,10 @@ export function RolesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roles"] });
       closeRoleModal();
-      toastSuccess("Rôle modifié", "Les modifications ont été enregistrées");
+      toastSuccess(t("rolesPage.roleUpdated", "Rôle modifié"), t("rolesPage.roleUpdatedDesc", "Les modifications ont été enregistrées"));
     },
     onError: (error: Error) => {
-      toastError("Erreur", error.message || "Une erreur est survenue");
+      toastError(t("common.error", "Erreur"), error.message || t("common.error"));
     },
   });
 
@@ -414,11 +417,11 @@ export function RolesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roles"] });
       setConfirmDeleteRole(null);
-      toastSuccess("Rôle supprimé");
+      toastSuccess(t("rolesPage.roleDeleted", "Rôle supprimé"));
     },
     onError: (error: Error) => {
       setConfirmDeleteRole(null);
-      toastError("Erreur", error.message || "Une erreur est survenue");
+      toastError(t("common.error", "Erreur"), error.message || t("common.error"));
     },
   });
 
@@ -442,10 +445,10 @@ export function RolesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["roles"] });
-      toastSuccess("Rôle dupliqué", "Le rôle a été dupliqué avec succès");
+      toastSuccess(t("rolesPage.roleDuplicated", "Rôle dupliqué"), t("rolesPage.roleDuplicatedDesc", "Le rôle a été dupliqué avec succès"));
     },
     onError: (error: Error) => {
-      toastError("Erreur", error.message || "Une erreur est survenue");
+      toastError(t("common.error", "Erreur"), error.message || t("common.error"));
     },
   });
 
@@ -468,10 +471,10 @@ export function RolesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["user-groups"] });
       closeGroupModal();
-      toastSuccess("Groupe créé", "Le groupe a été ajouté avec succès");
+      toastSuccess(t("rolesPage.groupCreated", "Groupe créé"), t("rolesPage.groupCreatedDesc", "Le groupe a été ajouté avec succès"));
     },
     onError: (error: Error) => {
-      toastError("Erreur", error.message || "Une erreur est survenue");
+      toastError(t("common.error", "Erreur"), error.message || t("common.error"));
     },
   });
 
@@ -493,10 +496,10 @@ export function RolesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["user-groups"] });
       closeGroupModal();
-      toastSuccess("Groupe modifié");
+      toastSuccess(t("rolesPage.groupUpdated", "Groupe modifié"));
     },
     onError: (error: Error) => {
-      toastError("Erreur", error.message || "Une erreur est survenue");
+      toastError(t("common.error", "Erreur"), error.message || t("common.error"));
     },
   });
 
@@ -508,11 +511,11 @@ export function RolesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["user-groups"] });
       setConfirmDeleteGroup(null);
-      toastSuccess("Groupe supprimé");
+      toastSuccess(t("rolesPage.groupDeleted", "Groupe supprimé"));
     },
     onError: (error: Error) => {
       setConfirmDeleteGroup(null);
-      toastError("Erreur", error.message || "Une erreur est survenue");
+      toastError(t("common.error", "Erreur"), error.message || t("common.error"));
     },
   });
 
@@ -631,10 +634,10 @@ export function RolesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-heading text-xl font-bold text-foreground">
-            Rôles & Permissions
+            {t("admin.roles.title")}
           </h1>
           <p className="text-sm text-foreground-muted mt-0.5">
-            Gestion des accès et contrôle RBAC
+            {t("rolesPage.rbacSubtitle", "Gestion des accès et contrôle RBAC")}
           </p>
         </div>
         {activeTab === "roles" ? (
@@ -643,7 +646,7 @@ export function RolesPage() {
             className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
           >
             <Plus className="w-4 h-4" />
-            Nouveau rôle
+            {t("rolesPage.newRole", "Nouveau rôle")}
           </button>
         ) : (
           <button
@@ -651,7 +654,7 @@ export function RolesPage() {
             className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
           >
             <Plus className="w-4 h-4" />
-            Nouveau groupe
+            {t("rolesPage.newGroup", "Nouveau groupe")}
           </button>
         )}
       </div>
@@ -683,10 +686,10 @@ export function RolesPage() {
         </div>
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPICard label="Rôles définis" value={stats.totalRoles} icon={Shield} color="#EF4444" />
-          <KPICard label="Groupes" value={stats.totalGroups} icon={Users} color="#60A5FA" />
-          <KPICard label="Utilisateurs" value={stats.totalUsers} icon={Users} color="#34D399" />
-          <KPICard label="Permissions" value={stats.totalPermissions} icon={Lock} color="#FBBF24" />
+          <KPICard label={t("rolesPage.definedRoles", "Rôles définis")} value={stats.totalRoles} icon={Shield} color="#EF4444" />
+          <KPICard label={t("rolesPage.groups", "Groupes")} value={stats.totalGroups} icon={Users} color="#60A5FA" />
+          <KPICard label={t("nav.users")} value={stats.totalUsers} icon={Users} color="#34D399" />
+          <KPICard label={t("admin.roles.permissions")} value={stats.totalPermissions} icon={Lock} color="#FBBF24" />
         </div>
       )}
 
@@ -702,7 +705,7 @@ export function RolesPage() {
           )}
         >
           <Shield className="w-3.5 h-3.5" />
-          Rôles ({rolesList.length})
+          {t("nav.roles")} ({rolesList.length})
         </button>
         <button
           onClick={() => setActiveTab("groups")}
@@ -714,7 +717,7 @@ export function RolesPage() {
           )}
         >
           <Users className="w-3.5 h-3.5" />
-          Groupes ({groupsList.length})
+          {t("rolesPage.groups", "Groupes")} ({groupsList.length})
         </button>
       </div>
 
@@ -726,16 +729,16 @@ export function RolesPage() {
               <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
                 <Shield className="w-7 h-7 text-primary" />
               </div>
-              <p className="text-foreground font-medium text-lg">Aucun rôle</p>
+              <p className="text-foreground font-medium text-lg">{t("rolesPage.noRole", "Aucun rôle")}</p>
               <p className="text-sm text-foreground-muted mt-1">
-                Créez votre premier rôle pour gérer les permissions d'accès.
+                {t("rolesPage.createFirstRole", "Créez votre premier rôle pour gérer les permissions d'accès.")}
               </p>
               <button
                 onClick={openCreateRole}
                 className="mt-4 flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
               >
                 <Plus className="w-4 h-4" />
-                Nouveau rôle
+                {t("rolesPage.newRole", "Nouveau rôle")}
               </button>
             </div>
           ) : (
@@ -762,16 +765,16 @@ export function RolesPage() {
               <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-4">
                 <Users className="w-7 h-7 text-primary" />
               </div>
-              <p className="text-foreground font-medium text-lg">Aucun groupe</p>
+              <p className="text-foreground font-medium text-lg">{t("rolesPage.noGroup", "Aucun groupe")}</p>
               <p className="text-sm text-foreground-muted mt-1">
-                Créez des groupes pour organiser vos utilisateurs par équipe ou région.
+                {t("rolesPage.createFirstGroup", "Créez des groupes pour organiser vos utilisateurs par équipe ou région.")}
               </p>
               <button
                 onClick={openCreateGroup}
                 className="mt-4 flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
               >
                 <Plus className="w-4 h-4" />
-                Nouveau groupe
+                {t("rolesPage.newGroup", "Nouveau groupe")}
               </button>
             </div>
           ) : (
@@ -793,7 +796,7 @@ export function RolesPage() {
                 </span>
                 <div className="text-right">
                   <p className="text-sm font-semibold text-foreground">{group.member_count}</p>
-                  <p className="text-[10px] text-foreground-muted">membres</p>
+                  <p className="text-[10px] text-foreground-muted">{t("b2b.members", "membres")}</p>
                 </div>
                 <div className="flex items-center gap-1">
                   <button
@@ -821,7 +824,7 @@ export function RolesPage() {
       <SlideOver
         open={modalOpen}
         onClose={closeRoleModal}
-        title={editingRole ? "Modifier le rôle" : "Nouveau rôle"}
+        title={editingRole ? t("rolesPage.editRole", "Modifier le rôle") : t("rolesPage.newRole", "Nouveau rôle")}
       >
         <form onSubmit={handleRoleSubmit} className="flex-1 overflow-y-auto p-6 space-y-5">
           {/* Name */}
@@ -869,7 +872,7 @@ export function RolesPage() {
 
           {/* Permissions */}
           <div className="border-t border-border pt-4">
-            <p className="text-xs font-semibold text-foreground-muted mb-3 uppercase tracking-wider">Permissions</p>
+            <p className="text-xs font-semibold text-foreground-muted mb-3 uppercase tracking-wider">{t("admin.roles.permissions")}</p>
             <div className="space-y-4">
               {PERMISSION_GROUPS.map((group) => {
                 const groupKeys = group.permissions.map((p) => p.key);
@@ -953,7 +956,7 @@ export function RolesPage() {
               onClick={closeRoleModal}
               className="px-4 py-2 text-sm text-foreground-muted hover:text-foreground border border-border rounded-xl transition-colors"
             >
-              Annuler
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
@@ -974,7 +977,7 @@ export function RolesPage() {
       <SlideOver
         open={modalGroupOpen}
         onClose={closeGroupModal}
-        title={editingGroup ? "Modifier le groupe" : "Nouveau groupe"}
+        title={editingGroup ? t("rolesPage.editGroup", "Modifier le groupe") : t("rolesPage.newGroup", "Nouveau groupe")}
         maxWidth="max-w-md"
       >
         <form onSubmit={handleGroupSubmit} className="flex-1 overflow-y-auto p-6 space-y-5">
@@ -1011,7 +1014,7 @@ export function RolesPage() {
               onChange={(e) => setGroupForm((f) => ({ ...f, role_id: e.target.value }))}
               className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-lg text-sm text-foreground focus:outline-none focus:border-primary/50"
             >
-              <option value="">Sélectionner un rôle...</option>
+              <option value="">{t("rolesPage.selectRole", "Sélectionner un rôle...")}</option>
               {rolesList.map((role) => (
                 <option key={role.id} value={role.id}>
                   {role.name}
@@ -1034,7 +1037,7 @@ export function RolesPage() {
               onClick={closeGroupModal}
               className="px-4 py-2 text-sm text-foreground-muted hover:text-foreground border border-border rounded-xl transition-colors"
             >
-              Annuler
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
@@ -1060,9 +1063,9 @@ export function RolesPage() {
           }
         }}
         onCancel={() => setConfirmDeleteRole(null)}
-        title="Supprimer ce rôle ?"
+        title={t("rolesPage.deleteRoleTitle", "Supprimer ce rôle ?")}
         description={confirmDeleteRole ? `Le rôle "${confirmDeleteRole.name}" sera définitivement supprimé. Cette action est irréversible.` : ""}
-        confirmLabel="Supprimer"
+        confirmLabel={t("common.delete")}
         variant="danger"
         loading={deleteRoleMutation.isPending}
       />
@@ -1076,9 +1079,9 @@ export function RolesPage() {
           }
         }}
         onCancel={() => setConfirmDeleteGroup(null)}
-        title="Supprimer ce groupe ?"
+        title={t("rolesPage.deleteGroupTitle", "Supprimer ce groupe ?")}
         description={confirmDeleteGroup ? `Le groupe "${confirmDeleteGroup.name}" sera définitivement supprimé. Cette action est irréversible.` : ""}
-        confirmLabel="Supprimer"
+        confirmLabel={t("common.delete")}
         variant="danger"
         loading={deleteGroupMutation.isPending}
       />

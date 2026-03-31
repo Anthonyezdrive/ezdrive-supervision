@@ -8,7 +8,6 @@ import {
   Tooltip,
   ResponsiveContainer,
   Cell,
-  Legend,
   PieChart,
   Pie,
 } from "recharts";

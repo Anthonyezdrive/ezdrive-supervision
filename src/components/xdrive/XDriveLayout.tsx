@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import { useTranslation } from "react-i18next";
 import { NavLink, Outlet } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -47,6 +48,16 @@ interface XDriveTab {
   ezdriveOnly?: boolean;
 }
 
+const XDRIVE_TAB_KEYS: Record<XDriveModule, string> = {
+  dashboard: "xdrive.dashboard",
+  cdrs: "xdrive.cdrs",
+  breakdown: "xdrive.breakdown",
+  reconciliation: "xdrive.reconciliation",
+  bpu: "xdrive.bpu",
+  billing: "xdrive.billing",
+  exports: "xdrive.exports",
+};
+
 const XDRIVE_TABS: XDriveTab[] = [
   { to: "/xdrive/dashboard",      label: "Dashboard",             icon: LayoutDashboard, module: "dashboard" },
   { to: "/xdrive/cdrs",           label: "CDR détaillés",         icon: FileText,        module: "cdrs" },
@@ -67,6 +78,7 @@ const DEFAULT_THEME = {
 // ── Inner layout ──────────────────────────────────────────
 
 function XDriveLayoutInner() {
+  const { t } = useTranslation();
   const { profile } = useAuth();
   const { isAdmin } = usePermissions();
   const isEZDriveAdmin = isAdmin;
@@ -76,7 +88,7 @@ function XDriveLayoutInner() {
 
   // For B2B users — look up their partner by b2b_client_id
   // profile.b2b_client_id may not exist on UserProfile type; we cast safely
-  const b2bClientId = (profile as Record<string, unknown>)?.b2b_client_id as string | undefined;
+  const b2bClientId = (profile as unknown as Record<string, unknown>)?.b2b_client_id as string | undefined;
 
   // Admin: auto-resolve partner from selected CPO; B2B user: fetch own partner
   const { data: cpoPartner, isLoading: cpoPartnerLoading } = useXDrivePartnerByCpo(
@@ -114,10 +126,10 @@ function XDriveLayoutInner() {
         </div>
         <div>
           <h2 className="text-lg font-heading font-semibold text-foreground">
-            Aucun portail X-DRIVE configuré
+            {t("xdrive.noPortalConfigured", "Aucun portail X-DRIVE configuré")}
           </h2>
           <p className="text-sm text-foreground-muted mt-1">
-            Le CPO <span className="font-medium text-foreground">{selectedCpo?.name ?? selectedCpoId}</span> n'a pas de partenaire X-DRIVE associé.
+            {t("xdrive.noPartnerForCpo", "Le CPO {{cpo}} n'a pas de partenaire X-DRIVE associé.", { cpo: selectedCpo?.name ?? selectedCpoId })}
           </p>
         </div>
       </div>
@@ -156,7 +168,7 @@ function XDriveLayoutInner() {
                 {activePartner?.display_name ?? "X-DRIVE"}
               </h1>
               <p className="text-sm text-foreground-muted mt-0.5">
-                Portail partenaire — supervision et facturation
+                {t("xdrive.portalSubtitle", "Portail partenaire — supervision et facturation")}
                 {selectedCpo && (
                   <span className="ml-2 text-xs text-foreground-muted/60">
                     — {selectedCpo.name}
@@ -201,12 +213,12 @@ function XDriveLayoutInner() {
                 }
               >
                 <tab.icon className="w-4 h-4" />
-                {tab.label}
+                {t(XDRIVE_TAB_KEYS[tab.module], tab.label)}
                 {/* Read-only badge for partner users */}
                 {tabReadOnly && (
                   <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-surface-elevated text-foreground-muted border border-border ml-1">
                     <Eye className="w-3 h-3" />
-                    Lecture seule
+                    {t("common.readOnly", "Lecture seule")}
                   </span>
                 )}
               </NavLink>
@@ -216,7 +228,7 @@ function XDriveLayoutInner() {
 
         {/* Page content */}
         <B2BFilterProvider>
-          <SectionErrorBoundary section="Portail X-DRIVE" fallbackUrl="/xdrive/dashboard">
+          <SectionErrorBoundary section={t("xdrive.title")} fallbackUrl="/xdrive/dashboard">
             <Outlet context={{ partner: activePartner, isEZDriveAdmin, theme, isReadOnly }} />
           </SectionErrorBoundary>
         </B2BFilterProvider>
@@ -225,7 +237,7 @@ function XDriveLayoutInner() {
         <div className="flex items-center justify-center gap-2 pt-6 pb-2">
           <img src="/logo-ezdrive.png" alt="EZDrive" className="h-4 opacity-30" />
           <span className="text-[11px] text-foreground-muted/40">
-            Propulsé par EZDrive {activePartner ? `× ${activePartner.display_name}` : ""}
+            {t("xdrive.poweredBy", "Propulsé par EZDrive")} {activePartner ? `× ${activePartner.display_name}` : ""}
           </span>
         </div>
       </div>

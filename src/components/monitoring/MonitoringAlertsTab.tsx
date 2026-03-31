@@ -19,12 +19,10 @@ import {
   Info,
   Loader2,
   Clock,
-  Search,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import { useToast } from "@/contexts/ToastContext";
 import { useAlertRules, useAlertHistory, ALERT_TYPES, type AlertRule } from "./monitoring-shared";
 
 // ══════════════════════════════════════════════════════════════

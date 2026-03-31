@@ -14,14 +14,12 @@ import {
   Loader2,
   ImageIcon,
   Lock,
-  CreditCard,
   ShoppingCart,
   Bell,
   Nfc,
   Euro,
   ChevronDown,
   Wallet,
-  FileText,
   Info,
   Save,
 } from "lucide-react";
@@ -33,10 +31,12 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useToast } from "@/contexts/ToastContext";
 import { PageHelp } from "@/components/ui/PageHelp";
 import type { B2BClient } from "@/types/b2b";
+import { useTranslation } from "react-i18next";
 
 // ── Company Page ──────────────────────────────────────────
 
 export function B2BCompanyPage() {
+  const { t } = useTranslation();
   const { activeClient } =
     useOutletContext<{ activeClient: B2BClient | null; customerExternalIds: string[] }>();
   const { profile, user } = useAuth();
@@ -54,7 +54,7 @@ export function B2BCompanyPage() {
     return (
       <div className="flex flex-col items-center justify-center h-48 bg-surface border border-border rounded-2xl">
         <Building2 className="w-8 h-8 text-foreground-muted mb-3" />
-        <p className="text-foreground-muted">Aucun client sélectionné</p>
+        <p className="text-foreground-muted">{t("b2b.noClientSelected")}</p>
       </div>
     );
   }
@@ -90,11 +90,11 @@ export function B2BCompanyPage() {
   return (
     <div className="space-y-6">
       <PageHelp
-        summary="Gérez les informations de votre entreprise, votre logo et consultez les membres de votre équipe"
+        summary={t("b2b.companyPageHelp")}
         items={[
-          { label: "Logo", description: "Uploadez le logo de votre entreprise. Formats acceptés : JPG, PNG, WebP, SVG (max 2 Mo)." },
-          { label: "Nom", description: "Le nom affiché dans l'en-tête du portail et sur vos rapports." },
-          { label: "Équipe", description: "Liste des collaborateurs ayant accès à ce portail B2B." },
+          { label: t("b2b.helpLogo"), description: t("b2b.helpLogoDesc") },
+          { label: t("b2b.helpName"), description: t("b2b.helpNameDesc") },
+          { label: t("b2b.helpTeam"), description: t("b2b.helpTeamDesc") },
         ]}
       />
 
@@ -103,7 +103,7 @@ export function B2BCompanyPage() {
         <div className="flex items-center gap-3 mb-2">
           <Building2 className="w-5 h-5" style={{ color: "#9ACC0E" }} />
           <h3 className="text-base font-heading font-bold text-foreground">
-            Informations de l'entreprise
+            {t("b2b.companyInfo")}
           </h3>
         </div>
 
@@ -134,7 +134,7 @@ export function B2BCompanyPage() {
           </div>
           <div className="space-y-2">
             <p className="text-sm text-foreground-muted">
-              {activeClient.logo_url ? "Logo de l'entreprise" : "Aucun logo configuré"}
+              {activeClient.logo_url ? t("b2b.companyLogo") : t("b2b.noLogoConfigured")}
             </p>
             <button
               onClick={() => fileInputRef.current?.click()}
@@ -142,9 +142,9 @@ export function B2BCompanyPage() {
               className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg border border-border text-foreground-muted hover:text-foreground hover:bg-surface-elevated transition-colors disabled:opacity-50"
             >
               {activeClient.logo_url ? (
-                <><Pencil className="w-3.5 h-3.5" /> Changer le logo</>
+                <><Pencil className="w-3.5 h-3.5" /> {t("b2b.changeLogo")}</>
               ) : (
-                <><Upload className="w-3.5 h-3.5" /> Ajouter un logo</>
+                <><Upload className="w-3.5 h-3.5" /> {t("b2b.addLogo")}</>
               )}
             </button>
             <input
@@ -155,7 +155,7 @@ export function B2BCompanyPage() {
               className="hidden"
             />
             <p className="text-[11px] text-foreground-muted/60">
-              JPG, PNG, WebP ou SVG — max 2 Mo
+              {t("b2b.logoFormats")}
             </p>
           </div>
         </div>
@@ -164,7 +164,7 @@ export function B2BCompanyPage() {
         <div className="space-y-3 pt-2 border-t border-border">
           {/* Name (editable) */}
           <div className="flex items-center justify-between py-2">
-            <span className="text-sm text-foreground-muted">Nom</span>
+            <span className="text-sm text-foreground-muted">{t("common.name")}</span>
             {editingName ? (
               <div className="flex items-center gap-2">
                 <input
@@ -205,15 +205,15 @@ export function B2BCompanyPage() {
 
           {/* Slug */}
           <div className="flex items-center justify-between py-2 border-t border-border/50">
-            <span className="text-sm text-foreground-muted">Identifiant</span>
+            <span className="text-sm text-foreground-muted">{t("b2b.identifier")}</span>
             <span className="inline-flex items-center bg-foreground-muted/10 text-foreground-muted border border-border rounded-md px-2 py-0.5 text-xs font-mono">
               {activeClient.slug}
             </span>
           </div>
 
-          {/* Redevance rate */}
+          {/* Commission rate */}
           <div className="flex items-center justify-between py-2 border-t border-border/50">
-            <span className="text-sm text-foreground-muted">Taux redevance</span>
+            <span className="text-sm text-foreground-muted">{t("b2b.commissionRate")}</span>
             <span className="text-sm font-medium text-foreground">
               {((activeClient.redevance_rate ?? 0) * 100).toFixed(0)} %
             </span>
@@ -221,7 +221,7 @@ export function B2BCompanyPage() {
 
           {/* Status */}
           <div className="flex items-center justify-between py-2 border-t border-border/50">
-            <span className="text-sm text-foreground-muted">Statut</span>
+            <span className="text-sm text-foreground-muted">{t("common.status")}</span>
             <span
               className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold ${
                 activeClient.is_active
@@ -233,7 +233,7 @@ export function B2BCompanyPage() {
                 className="w-1.5 h-1.5 rounded-full"
                 style={{ backgroundColor: activeClient.is_active ? "#34D399" : "#F87171" }}
               />
-              {activeClient.is_active ? "Actif" : "Inactif"}
+              {activeClient.is_active ? t("common.active") : t("common.inactive")}
             </span>
           </div>
         </div>
@@ -244,7 +244,7 @@ export function B2BCompanyPage() {
         <div className="flex items-center gap-3 mb-2">
           <User className="w-5 h-5" style={{ color: "#00C3FF" }} />
           <h3 className="text-base font-heading font-bold text-foreground">
-            Mon profil
+            {t("b2b.myProfile")}
           </h3>
         </div>
 
@@ -287,7 +287,7 @@ export function B2BCompanyPage() {
           </div>
           {teamUsers && (
             <span className="text-xs text-foreground-muted bg-foreground-muted/10 rounded-full px-2.5 py-1">
-              {teamUsers.length} membre{teamUsers.length !== 1 ? "s" : ""}
+              {teamUsers.length} {teamUsers.length !== 1 ? t("b2b.members") : t("b2b.member")}
             </span>
           )}
         </div>
@@ -322,7 +322,7 @@ export function B2BCompanyPage() {
                         {u.full_name ?? u.email}
                         {isMe && (
                           <span className="ml-2 text-[10px] font-semibold bg-primary/10 text-primary border border-primary/25 rounded px-1.5 py-0.5">
-                            vous
+                            {t("b2b.you")}
                           </span>
                         )}
                       </p>
@@ -338,7 +338,7 @@ export function B2BCompanyPage() {
         ) : (
           <div className="flex flex-col items-center justify-center h-24 text-foreground-muted">
             <ImageIcon className="w-6 h-6 mb-2 opacity-40" />
-            <p className="text-sm">Aucun utilisateur trouvé</p>
+            <p className="text-sm">{t("b2b.noUserFound")}</p>
           </div>
         )}
       </div>
@@ -367,6 +367,7 @@ export function B2BCompanyPage() {
 // ── Story 55: Budget & Reports Section ──────────────────────────
 
 function B2BBudgetReportsSection({ clientId, activeClient }: { clientId: string; activeClient: B2BClient }) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
 
   const [monthlyBudget, setMonthlyBudget] = useState<number>(activeClient?.monthly_budget ?? 0);
@@ -422,19 +423,19 @@ function B2BBudgetReportsSection({ clientId, activeClient }: { clientId: string;
       <div className="flex items-center gap-3 mb-2">
         <Wallet className="w-5 h-5" style={{ color: "#9ACC0E" }} />
         <h3 className="text-base font-heading font-bold text-foreground">
-          Budget & Rapports
+          {t("b2b.budgetReports")}
         </h3>
       </div>
 
       {/* Budget section */}
       <div className="space-y-4">
         <h4 className="text-sm font-semibold text-foreground-muted uppercase tracking-wider">
-          Budget
+          {t("b2b.budgetLabel")}
         </h4>
 
         <div className="max-w-sm">
           <label className="text-xs text-foreground-muted mb-1 block">
-            Plafond mensuel (&euro;)
+            {t("b2b.monthlyCeiling")} (&euro;)
           </label>
           <input
             type="number"
@@ -476,7 +477,7 @@ function B2BBudgetReportsSection({ clientId, activeClient }: { clientId: string;
       {/* Monthly report section */}
       <div className="space-y-4">
         <h4 className="text-sm font-semibold text-foreground-muted uppercase tracking-wider">
-          Rapport mensuel
+          {t("b2b.monthlyReport")}
         </h4>
 
         <div className="flex items-center justify-between py-2">
@@ -512,10 +513,10 @@ function B2BBudgetReportsSection({ clientId, activeClient }: { clientId: string;
         Enregistrer
       </button>
       {saveStatus === "success" && (
-        <p className="text-xs text-emerald-400">Param&egrave;tres enregistr&eacute;s avec succ&egrave;s</p>
+        <p className="text-xs text-emerald-400">{t("b2b.settingsSaved")}</p>
       )}
       {saveStatus === "error" && (
-        <p className="text-xs text-red-400">Erreur lors de l'enregistrement</p>
+        <p className="text-xs text-red-400">{t("b2b.settingsSaveError")}</p>
       )}
     </div>
   );
@@ -524,6 +525,7 @@ function B2BBudgetReportsSection({ clientId, activeClient }: { clientId: string;
 // ── Story 81: Password Change Section ──────────────────────────
 
 function B2BPasswordSection() {
+  const { t } = useTranslation();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -545,19 +547,19 @@ function B2BPasswordSection() {
     <div className="bg-surface border border-border rounded-2xl p-6 space-y-4">
       <div className="flex items-center gap-3 mb-2">
         <Lock className="w-5 h-5" style={{ color: "#E74C3C" }} />
-        <h3 className="text-base font-heading font-bold text-foreground">Sécurité</h3>
+        <h3 className="text-base font-heading font-bold text-foreground">{t("b2b.security")}</h3>
       </div>
       <div className="space-y-3 max-w-sm">
         <div>
-          <label className="text-xs text-foreground-muted mb-1 block">Mot de passe actuel</label>
+          <label className="text-xs text-foreground-muted mb-1 block">{t("b2b.currentPassword")}</label>
           <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className={inputClass} />
         </div>
         <div>
-          <label className="text-xs text-foreground-muted mb-1 block">Nouveau mot de passe</label>
+          <label className="text-xs text-foreground-muted mb-1 block">{t("b2b.newPasswordLabel")}</label>
           <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className={inputClass} />
         </div>
         <div>
-          <label className="text-xs text-foreground-muted mb-1 block">Confirmer</label>
+          <label className="text-xs text-foreground-muted mb-1 block">{t("b2b.confirmPasswordLabel")}</label>
           <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className={inputClass} />
         </div>
         <button
@@ -566,9 +568,9 @@ function B2BPasswordSection() {
           className="flex items-center gap-2 px-4 py-2.5 bg-red-500/10 text-red-400 border border-red-500/20 rounded-xl text-sm font-medium hover:bg-red-500/20 transition-colors disabled:opacity-50"
         >
           {status === "loading" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
-          Changer le mot de passe
+          {t("b2b.changePassword")}
         </button>
-        {status === "success" && <p className="text-xs text-emerald-400">Mot de passe modifié avec succès</p>}
+        {status === "success" && <p className="text-xs text-emerald-400">{t("b2b.passwordChanged")}</p>}
         {status === "error" && <p className="text-xs text-red-400">{errorMsg}</p>}
       </div>
     </div>
@@ -578,6 +580,7 @@ function B2BPasswordSection() {
 // ── Story 82: Active Tokens Section ────────────────────────────
 
 function B2BTokensSection({ clientName }: { clientName: string }) {
+  const { t } = useTranslation();
   const { data: tokens, isLoading } = useQuery({
     queryKey: ["b2b-tokens", clientName],
     queryFn: async () => {
@@ -595,7 +598,7 @@ function B2BTokensSection({ clientName }: { clientName: string }) {
     <div className="bg-surface border border-border rounded-2xl p-6 space-y-4">
       <div className="flex items-center gap-3 mb-2">
         <Nfc className="w-5 h-5" style={{ color: "#6366F1" }} />
-        <h3 className="text-base font-heading font-bold text-foreground">Mes tokens</h3>
+        <h3 className="text-base font-heading font-bold text-foreground">{t("b2b.myTokens")}</h3>
         {tokens && <span className="text-xs text-foreground-muted bg-foreground-muted/10 rounded-full px-2.5 py-1">{tokens.length}</span>}
       </div>
       {isLoading ? (
@@ -613,7 +616,7 @@ function B2BTokensSection({ clientName }: { clientName: string }) {
           ))}
         </div>
       ) : (
-        <p className="text-sm text-foreground-muted">Aucun token associé</p>
+        <p className="text-sm text-foreground-muted">{t("b2b.noTokenAssociated")}</p>
       )}
     </div>
   );
@@ -622,6 +625,7 @@ function B2BTokensSection({ clientName }: { clientName: string }) {
 // ── Story 83: Order RFID Token Section ─────────────────────────
 
 function B2BOrderTokenSection({ clientName }: { clientName: string }) {
+  const { t } = useTranslation();
   const [quantity, setQuantity] = useState(1);
   const [address, setAddress] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
@@ -644,15 +648,15 @@ function B2BOrderTokenSection({ clientName }: { clientName: string }) {
     <div className="bg-surface border border-border rounded-2xl p-6 space-y-4">
       <div className="flex items-center gap-3 mb-2">
         <ShoppingCart className="w-5 h-5" style={{ color: "#2ECC71" }} />
-        <h3 className="text-base font-heading font-bold text-foreground">Commander des tokens RFID</h3>
+        <h3 className="text-base font-heading font-bold text-foreground">{t("b2b.orderRfidTokens")}</h3>
       </div>
       <div className="space-y-3 max-w-sm">
         <div>
-          <label className="text-xs text-foreground-muted mb-1 block">Quantité</label>
+          <label className="text-xs text-foreground-muted mb-1 block">{t("b2b.quantity")}</label>
           <input type="number" min={1} max={100} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} className={inputClass} />
         </div>
         <div>
-          <label className="text-xs text-foreground-muted mb-1 block">Adresse de livraison</label>
+          <label className="text-xs text-foreground-muted mb-1 block">{t("b2b.shippingAddress")}</label>
           <textarea value={address} onChange={(e) => setAddress(e.target.value)} rows={3} className={`${inputClass} resize-none`} placeholder="Adresse complète..." />
         </div>
         <button
@@ -663,8 +667,8 @@ function B2BOrderTokenSection({ clientName }: { clientName: string }) {
           {status === "loading" ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShoppingCart className="w-4 h-4" />}
           Commander {quantity} token{quantity > 1 ? "s" : ""}
         </button>
-        {status === "success" && <p className="text-xs text-emerald-400">Commande envoyée avec succès</p>}
-        {status === "error" && <p className="text-xs text-red-400">Erreur lors de la commande</p>}
+        {status === "success" && <p className="text-xs text-emerald-400">{t("b2b.orderSent")}</p>}
+        {status === "error" && <p className="text-xs text-red-400">{t("b2b.orderError")}</p>}
       </div>
     </div>
   );
@@ -673,6 +677,7 @@ function B2BOrderTokenSection({ clientName }: { clientName: string }) {
 // ── Story 84: Notifications Section ────────────────────────────
 
 function B2BNotificationsSection({ clientName }: { clientName: string }) {
+  const { t } = useTranslation();
   const { data: notifications, isLoading } = useQuery({
     queryKey: ["b2b-notifications", clientName],
     queryFn: async () => {
@@ -691,7 +696,7 @@ function B2BNotificationsSection({ clientName }: { clientName: string }) {
     <div className="bg-surface border border-border rounded-2xl p-6 space-y-4">
       <div className="flex items-center gap-3 mb-2">
         <Bell className="w-5 h-5" style={{ color: "#F39C12" }} />
-        <h3 className="text-base font-heading font-bold text-foreground">Notifications</h3>
+        <h3 className="text-base font-heading font-bold text-foreground">{t("b2b.notifications")}</h3>
       </div>
       {isLoading ? (
         <div className="space-y-2">{[1, 2, 3].map((i) => <div key={i} className="h-10 bg-surface-elevated rounded-xl animate-pulse" />)}</div>
@@ -701,7 +706,7 @@ function B2BNotificationsSection({ clientName }: { clientName: string }) {
             <div key={n.id as string} className="flex items-center justify-between px-4 py-2.5 rounded-xl hover:bg-surface-elevated/50 transition-colors">
               <div className="min-w-0 flex-1">
                 <p className="text-sm text-foreground truncate">
-                  Charge terminée - {(n.driver_name as string) ?? "Conducteur"}
+                  {t("b2b.chargeCompleted")} - {(n.driver_name as string) ?? "Conducteur"}
                 </p>
                 <p className="text-xs text-foreground-muted">
                   {(n.location_name as string) ?? "Station"} - {Number(n.total_energy).toFixed(1)} kWh
@@ -714,7 +719,7 @@ function B2BNotificationsSection({ clientName }: { clientName: string }) {
           ))}
         </div>
       ) : (
-        <p className="text-sm text-foreground-muted">Aucune notification récente</p>
+        <p className="text-sm text-foreground-muted">{t("b2b.noRecentNotification")}</p>
       )}
     </div>
   );
@@ -723,6 +728,7 @@ function B2BNotificationsSection({ clientName }: { clientName: string }) {
 // ── Story 85: Reimbursements Section ────────────────────────────
 
 function B2BReimbursementSection({ clientId }: { clientId: string }) {
+  const { t } = useTranslation();
   const { data: runs, isLoading } = useReimbursementRuns(clientId);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [cancelRun, setCancelRun] = useState<{ id: string; status: string } | null>(null);
@@ -746,7 +752,7 @@ function B2BReimbursementSection({ clientId }: { clientId: string }) {
     <div className="bg-surface border border-border rounded-2xl p-6 space-y-4">
       <div className="flex items-center gap-3 mb-2">
         <Euro className="w-5 h-5" style={{ color: "#2ECC71" }} />
-        <h3 className="text-base font-heading font-bold text-foreground">Remboursements employés</h3>
+        <h3 className="text-base font-heading font-bold text-foreground">{t("b2b.employeeReimbursements")}</h3>
         {runs && runs.length > 0 && (
           <span className="text-xs text-foreground-muted bg-foreground-muted/10 rounded-full px-2.5 py-1">
             {runs.length} période{runs.length !== 1 ? "s" : ""}
@@ -809,19 +815,19 @@ function B2BReimbursementSection({ clientId }: { clientId: string }) {
           })}
         </div>
       ) : (
-        <p className="text-sm text-foreground-muted">Aucun remboursement pour cette période</p>
+        <p className="text-sm text-foreground-muted">{t("b2b.noReimbursement")}</p>
       )}
 
       {/* Cancel Confirm Dialog */}
       <ConfirmDialog
         open={!!cancelRun}
-        title="Annuler ce remboursement ?"
+        title={t("b2b.cancelReimbursement")}
         description={cancelRun?.status === "pending"
           ? "Ce remboursement en attente sera supprimé définitivement."
           : "Ce remboursement sera marqué comme annulé."
         }
-        confirmLabel="Annuler le remboursement"
-        loadingLabel="Annulation..."
+        confirmLabel={t("b2b.cancelReimbursementBtn")}
+        loadingLabel={t("b2b.cancelling")}
         variant="danger"
         loading={deleteRunMutation.isPending}
         onConfirm={() => {
@@ -830,7 +836,7 @@ function B2BReimbursementSection({ clientId }: { clientId: string }) {
               { id: cancelRun.id, status: cancelRun.status },
               {
                 onSuccess: () => {
-                  toastSuccess("Remboursement annulé");
+                  toastSuccess(t("b2b.reimbursementCancelled"));
                   setCancelRun(null);
                 },
                 onError: (err: Error) => {
@@ -848,6 +854,7 @@ function B2BReimbursementSection({ clientId }: { clientId: string }) {
 }
 
 function ReimbursementRunDetail({ runId }: { runId: string }) {
+  const { t } = useTranslation();
   const { data: items, isLoading } = useReimbursementLineItems(runId);
 
   if (isLoading) {
@@ -863,7 +870,7 @@ function ReimbursementRunDetail({ runId }: { runId: string }) {
   if (!items || items.length === 0) {
     return (
       <div className="px-4 pb-4">
-        <p className="text-xs text-foreground-muted">Aucun détail disponible</p>
+        <p className="text-xs text-foreground-muted">{t("b2b.noDetailAvailable")}</p>
       </div>
     );
   }
@@ -874,11 +881,11 @@ function ReimbursementRunDetail({ runId }: { runId: string }) {
         <table className="w-full mt-2">
           <thead>
             <tr className="text-left">
-              <th className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground-muted">Conducteur</th>
+              <th className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground-muted">{t("b2b.driverCol")}</th>
               <th className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground-muted text-right">Sessions</th>
               <th className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground-muted text-right">kWh</th>
-              <th className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground-muted text-right">Montant</th>
-              <th className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground-muted">Type</th>
+              <th className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground-muted text-right">{t("b2b.amountCol")}</th>
+              <th className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-foreground-muted">{t("b2b.typeCol")}</th>
             </tr>
           </thead>
           <tbody>

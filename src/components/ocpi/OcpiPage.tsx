@@ -4,6 +4,7 @@
 // ============================================================
 
 import React, { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import {
@@ -19,7 +20,6 @@ import {
   ChevronLeft,
   AlertCircle,
   CreditCard,
-  Filter,
   Calculator,
   AlertTriangle,
   Plus,
@@ -132,6 +132,7 @@ const formatDate = (d: string | null) =>
 // ── Main Component ────────────────────────────────────────────
 
 export function OcpiPage() {
+  const { t } = useTranslation();
   const { selectedCpoId } = useCpo();
   const queryClient = useQueryClient();
   const { success: toastSuccess, error: toastError } = useToast();
@@ -773,7 +774,7 @@ export function OcpiPage() {
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 mx-6 mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2 text-red-700">
             <AlertCircle className="h-5 w-5" />
-            <span>Erreur lors du chargement des données. Veuillez réessayer.</span>
+            <span>{t("common.error")}</span>
           </div>
           <button onClick={() => refetch()} className="text-red-700 hover:text-red-900 font-medium text-sm">
             Réessayer
@@ -845,7 +846,7 @@ export function OcpiPage() {
                   </td>
                   <td className="px-3 py-2">
                     <select value={colFilters.role} onChange={(e) => { setColFilters((f) => ({ ...f, role: e.target.value })); setPage(1); }} className={filterInputClass}>
-                      <option value="">Filtrer...</option>
+                      <option value="">{t("common.filter")}...</option>
                       <option value="CPO">CPO</option>
                       <option value="eMSP">eMSP</option>
                     </select>
@@ -855,14 +856,14 @@ export function OcpiPage() {
                   </td>
                   <td className="px-3 py-2">
                     <select value={colFilters.other_party_role} onChange={(e) => { setColFilters((f) => ({ ...f, other_party_role: e.target.value })); setPage(1); }} className={filterInputClass}>
-                      <option value="">Filtrer...</option>
+                      <option value="">{t("common.filter")}...</option>
                       <option value="CPO">CPO</option>
                       <option value="eMSP">eMSP</option>
                     </select>
                   </td>
                   <td className="px-3 py-2">
                     <select value={colFilters.protocol} onChange={(e) => { setColFilters((f) => ({ ...f, protocol: e.target.value })); setPage(1); }} className={filterInputClass}>
-                      <option value="">Filtrer...</option>
+                      <option value="">{t("common.filter")}...</option>
                       <option value="OCPI 2.1.1">OCPI 2.1.1</option>
                       <option value="OCPI 2.2.1">OCPI 2.2.1</option>
                     </select>

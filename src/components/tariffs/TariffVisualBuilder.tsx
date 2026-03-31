@@ -118,7 +118,7 @@ export function TariffVisualBuilder({
 
   const updateElements = useCallback(
     (newElements: TariffElement[]) => {
-      onChange({ elements: newElements });
+      onChange({ elements: newElements } as any);
     },
     [onChange]
   );

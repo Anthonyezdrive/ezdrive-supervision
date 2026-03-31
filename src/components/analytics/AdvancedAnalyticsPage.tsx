@@ -6,6 +6,7 @@ import { useMonthlyCpoSummary, usePeakUsage, useStationUtilization } from "../..
 import { useCpo } from "../../contexts/CpoContext";
 import { downloadCSV, todayISO } from "@/lib/export";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
 
 type Tab = "revenue" | "peak" | "utilization" | "comparison";
 
@@ -32,6 +33,7 @@ function todayISODate(): string {
 }
 
 export default function AdvancedAnalyticsPage() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>("revenue");
   const { selectedCpo } = useCpo();
   const cpoId = selectedCpo?.id ?? undefined;
@@ -58,10 +60,10 @@ export default function AdvancedAnalyticsPage() {
   }
 
   const tabs: Array<{ id: Tab; label: string; icon: typeof BarChart3 }> = [
-    { id: "revenue", label: "Revenus", icon: TrendingUp },
-    { id: "peak", label: "Peak / Off-Peak", icon: Sun },
-    { id: "utilization", label: "Utilisation", icon: Activity },
-    { id: "comparison", label: "Comparaison CPO", icon: Building2 },
+    { id: "revenue", label: t("analytics.revenue"), icon: TrendingUp },
+    { id: "peak", label: t("analytics.peakOffPeak", "Peak / Off-Peak"), icon: Sun },
+    { id: "utilization", label: t("analytics.utilization"), icon: Activity },
+    { id: "comparison", label: t("analytics.cpoComparison", "Comparaison CPO"), icon: Building2 },
   ];
 
   return (
@@ -69,15 +71,15 @@ export default function AdvancedAnalyticsPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <BarChart3 className="w-7 h-7 text-emerald-600" />
-          Analytics avancés
+          {t("analytics.advanced")}
         </h1>
-        <p className="text-sm text-gray-500 mt-1">Analyse détaillée des performances du réseau de charge</p>
+        <p className="text-sm text-gray-500 mt-1">{t("analytics.advancedDescription", "Analyse détaillée des performances du réseau de charge")}</p>
       </div>
 
       {/* Date range selector (shared across all tabs) */}
       <div className="flex flex-wrap items-center gap-3 bg-white border border-gray-200 rounded-xl px-4 py-3 mb-6 shadow-sm">
         <CalendarDays className="w-4 h-4 text-gray-400 shrink-0" />
-        <span className="text-xs text-gray-500 font-medium">Période :</span>
+        <span className="text-xs text-gray-500 font-medium">{t("dashboard.filterPeriod")} :</span>
         <div className="flex gap-1">
           {ADV_DATE_PRESETS.map((p) => (
             <button
@@ -96,14 +98,14 @@ export default function AdvancedAnalyticsPage() {
         </div>
         <div className="h-5 w-px bg-gray-200 mx-1" />
         <div className="flex items-center gap-2 text-xs">
-          <label className="text-gray-500">Du</label>
+          <label className="text-gray-500">{t("b2b.from", "Du")}</label>
           <input
             type="date"
             value={dateRange.from}
             onChange={(e) => handleCustomFrom(e.target.value)}
             className="bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-xs text-gray-900"
           />
-          <label className="text-gray-500">au</label>
+          <label className="text-gray-500">{t("b2b.to", "au")}</label>
           <input
             type="date"
             value={dateRange.to}
@@ -136,6 +138,7 @@ export default function AdvancedAnalyticsPage() {
 }
 
 function RevenueTab({ cpoId }: { cpoId?: string; dateRange?: DateRange }) {
+  const { t } = useTranslation();
   const { data: monthly = [], isLoading } = useMonthlyCpoSummary(cpoId);
 
   if (isLoading) return <Loader2 className="w-8 h-8 text-emerald-500 animate-spin mx-auto mt-12" />;
@@ -168,10 +171,10 @@ function RevenueTab({ cpoId }: { cpoId?: string; dateRange?: DateRange }) {
       </div>
       <div className="grid grid-cols-4 gap-4">
         {[
-          { label: "Revenu total", value: `${totalRevenue.toFixed(0)}€`, icon: TrendingUp, color: "text-emerald-600" },
-          { label: "Sessions", value: totalSessions.toLocaleString(), icon: Zap, color: "text-blue-600" },
-          { label: "Énergie", value: `${(totalEnergy / 1000).toFixed(1)} MWh`, icon: Activity, color: "text-purple-600" },
-          { label: "Mois analysés", value: monthly.length, icon: Clock, color: "text-amber-600" },
+          { label: t("dashboard.totalRevenue"), value: `${totalRevenue.toFixed(0)}€`, icon: TrendingUp, color: "text-emerald-600" },
+          { label: t("analytics.sessions"), value: totalSessions.toLocaleString(), icon: Zap, color: "text-blue-600" },
+          { label: t("analytics.energy"), value: `${(totalEnergy / 1000).toFixed(1)} MWh`, icon: Activity, color: "text-purple-600" },
+          { label: t("analytics.monthsAnalyzed", "Mois analysés"), value: monthly.length, icon: Clock, color: "text-amber-600" },
         ].map(k => (
           <div key={k.label} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-1"><k.icon className="w-4 h-4" />{k.label}</div>
@@ -181,10 +184,10 @@ function RevenueTab({ cpoId }: { cpoId?: string; dateRange?: DateRange }) {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="px-5 py-4 border-b"><h3 className="font-semibold text-gray-900">Revenus mensuels</h3></div>
+        <div className="px-5 py-4 border-b"><h3 className="font-semibold text-gray-900">{t("analytics.monthlyRevenue", "Revenus mensuels")}</h3></div>
         <table className="w-full text-sm">
           <thead className="bg-gray-50"><tr>
-            {["Mois", "Sessions", "Énergie (kWh)", "Revenu (€)", "Durée moy.", "Bornes actives", "Conducteurs"].map(h => (
+            {[t("b2b.month", "Mois"), t("analytics.sessions"), t("analytics.energyKwh", "Énergie (kWh)"), t("analytics.revenueEur", "Revenu (€)"), t("analytics.avgDuration", "Durée moy."), t("analytics.activeStations", "Bornes actives"), t("analytics.drivers", "Conducteurs")].map(h => (
               <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{h}</th>
             ))}
           </tr></thead>
@@ -220,6 +223,7 @@ function RevenueTab({ cpoId }: { cpoId?: string; dateRange?: DateRange }) {
 }
 
 function PeakTab({ cpoId }: { cpoId?: string; dateRange?: DateRange }) {
+  const { t } = useTranslation();
   const { data: peakData = [], isLoading } = usePeakUsage(cpoId, 90);
 
   const summary = useMemo(() => {
@@ -259,9 +263,9 @@ function PeakTab({ cpoId }: { cpoId?: string; dateRange?: DateRange }) {
       </div>
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: "Heures pleines", data: summary.peak, icon: Sun, color: "amber", pct: total ? (summary.peak.sessions / total * 100) : 0 },
-          { label: "Heures normales", data: summary.normal, icon: Clock, color: "blue", pct: total ? (summary.normal.sessions / total * 100) : 0 },
-          { label: "Heures creuses", data: summary.off_peak, icon: Moon, color: "indigo", pct: total ? (summary.off_peak.sessions / total * 100) : 0 },
+          { label: t("analytics.peakHours", "Heures pleines"), data: summary.peak, icon: Sun, color: "amber", pct: total ? (summary.peak.sessions / total * 100) : 0 },
+          { label: t("analytics.normalHours", "Heures normales"), data: summary.normal, icon: Clock, color: "blue", pct: total ? (summary.normal.sessions / total * 100) : 0 },
+          { label: t("analytics.offPeakHours", "Heures creuses"), data: summary.off_peak, icon: Moon, color: "indigo", pct: total ? (summary.off_peak.sessions / total * 100) : 0 },
         ].map(p => (
           <div key={p.label} className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
             <div className="flex items-center gap-2 mb-3">
@@ -270,9 +274,9 @@ function PeakTab({ cpoId }: { cpoId?: string; dateRange?: DateRange }) {
               <span className={`ml-auto text-sm font-bold text-${p.color}-600`}>{p.pct.toFixed(1)}%</span>
             </div>
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between"><span className="text-gray-500">Sessions</span><span className="font-medium">{p.data.sessions.toLocaleString()}</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Énergie</span><span className="font-medium">{p.data.energy.toFixed(0)} kWh</span></div>
-              <div className="flex justify-between"><span className="text-gray-500">Revenu</span><span className="font-medium">{p.data.revenue.toFixed(2)}€</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">{t("analytics.sessions")}</span><span className="font-medium">{p.data.sessions.toLocaleString()}</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">{t("analytics.energy")}</span><span className="font-medium">{p.data.energy.toFixed(0)} kWh</span></div>
+              <div className="flex justify-between"><span className="text-gray-500">{t("analytics.revenue")}</span><span className="font-medium">{p.data.revenue.toFixed(2)}€</span></div>
             </div>
             <div className="mt-3 w-full bg-gray-100 rounded-full h-2">
               <div className={`bg-${p.color}-500 h-2 rounded-full`} style={{ width: `${p.pct}%` }} />
@@ -281,11 +285,11 @@ function PeakTab({ cpoId }: { cpoId?: string; dateRange?: DateRange }) {
         ))}
       </div>
       <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-        <h3 className="font-semibold text-gray-900 mb-2">Analyse (90 derniers jours)</h3>
+        <h3 className="font-semibold text-gray-900 mb-2">{t("analytics.analysis90days", "Analyse (90 derniers jours)")}</h3>
         <p className="text-sm text-gray-500">
           {summary.off_peak.sessions > summary.peak.sessions
-            ? "La majorité des sessions ont lieu en heures creuses -- bon pour l'optimisation réseau."
-            : "Les sessions sont concentrées en heures pleines -- considérez des tarifs incitatifs off-peak."}
+            ? t("analytics.offPeakMajority", "La majorité des sessions ont lieu en heures creuses -- bon pour l'optimisation réseau.")
+            : t("analytics.peakMajority", "Les sessions sont concentrées en heures pleines -- considérez des tarifs incitatifs off-peak.")}
         </p>
       </div>
     </div>
@@ -293,6 +297,7 @@ function PeakTab({ cpoId }: { cpoId?: string; dateRange?: DateRange }) {
 }
 
 function UtilizationTab({ cpoId }: { cpoId?: string; dateRange?: DateRange }) {
+  const { t } = useTranslation();
   const currentMonth = new Date().toISOString().slice(0, 7) + "-01";
   const { data: utilization = [], isLoading } = useStationUtilization(cpoId, currentMonth);
 
@@ -322,24 +327,24 @@ function UtilizationTab({ cpoId }: { cpoId?: string; dateRange?: DateRange }) {
       </div>
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-          <div className="text-sm text-gray-500">Taux d'utilisation moyen</div>
+          <div className="text-sm text-gray-500">{t("analytics.avgUtilizationRate", "Taux d'utilisation moyen")}</div>
           <div className="text-3xl font-bold text-emerald-600">{avgUtil.toFixed(1)}%</div>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-          <div className="text-sm text-gray-500">Bornes analysées</div>
+          <div className="text-sm text-gray-500">{t("analytics.stationsAnalyzed", "Bornes analysées")}</div>
           <div className="text-3xl font-bold text-blue-600">{utilization.length}</div>
         </div>
         <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
-          <div className="text-sm text-gray-500">Bornes sous-utilisées (&lt;10%)</div>
+          <div className="text-sm text-gray-500">{t("analytics.underutilizedStations", "Bornes sous-utilisées (<10%)")}</div>
           <div className="text-3xl font-bold text-amber-600">{utilization.filter(u => u.utilization_pct < 10).length}</div>
         </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="px-5 py-4 border-b"><h3 className="font-semibold text-gray-900">Classement par utilisation</h3></div>
+        <div className="px-5 py-4 border-b"><h3 className="font-semibold text-gray-900">{t("analytics.utilizationRanking", "Classement par utilisation")}</h3></div>
         <table className="w-full text-sm">
           <thead className="bg-gray-50"><tr>
-            {["#", "Borne", "Heures de charge", "Jours actifs", "Utilisation"].map(h => (
+            {["#", t("analytics.station", "Borne"), t("analytics.chargingHours", "Heures de charge"), t("analytics.activeDays", "Jours actifs"), t("analytics.utilization")].map(h => (
               <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{h}</th>
             ))}
           </tr></thead>
@@ -368,6 +373,7 @@ function UtilizationTab({ cpoId }: { cpoId?: string; dateRange?: DateRange }) {
 }
 
 function ComparisonTab(_props: { dateRange?: DateRange }) {
+  const { t } = useTranslation();
   const { data: monthly = [], isLoading } = useMonthlyCpoSummary();
 
   const cpoGroups = useMemo(() => {
@@ -413,10 +419,10 @@ function ComparisonTab(_props: { dateRange?: DateRange }) {
         </button>
       </div>
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="px-5 py-4 border-b"><h3 className="font-semibold text-gray-900">Comparaison par CPO (cumul)</h3></div>
+        <div className="px-5 py-4 border-b"><h3 className="font-semibold text-gray-900">{t("analytics.cpoComparisonCumul", "Comparaison par CPO (cumul)")}</h3></div>
         <table className="w-full text-sm">
           <thead className="bg-gray-50"><tr>
-            {["CPO", "Sessions", "Énergie (MWh)", "Revenu (€)", "Durée moy.", "Bornes actives"].map(h => (
+            {["CPO", t("analytics.sessions"), t("analytics.energyMwh", "Énergie (MWh)"), t("analytics.revenueEur", "Revenu (€)"), t("analytics.avgDuration", "Durée moy."), t("analytics.activeStations", "Bornes actives")].map(h => (
               <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">{h}</th>
             ))}
           </tr></thead>

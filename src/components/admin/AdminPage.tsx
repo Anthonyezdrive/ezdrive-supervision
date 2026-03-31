@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Tag, Search, CheckCircle, Loader2, ChevronDown } from "lucide-react";
 import { PageHelp } from "@/components/ui/PageHelp";
 import { useStations } from "@/hooks/useStations";
@@ -11,6 +12,7 @@ import type { Station } from "@/types/station";
 type SaveState = "idle" | "saving" | "saved" | "error";
 
 export function AdminPage() {
+  const { t } = useTranslation();
   const { selectedCpoId } = useCpo();
   const { data: stations = [], isLoading } = useStations(selectedCpoId);
   const { data: cpos = [] } = useCPOs();
@@ -30,7 +32,7 @@ export function AdminPage() {
         const q = search.toLowerCase();
         return (
           s.name.toLowerCase().includes(q) ||
-          s.gfx_id.toLowerCase().includes(q) ||
+          s.gfx_id?.toLowerCase().includes(q) ||
           (s.city?.toLowerCase().includes(q) ?? false)
         );
       }
@@ -55,7 +57,7 @@ export function AdminPage() {
     try {
       await updateCPO.mutateAsync({
         station_id: station.id,
-        gfx_id: station.gfx_id,
+        gfx_id: station.gfx_id ?? "",
         cpo_id: newCpoId === "" ? null : newCpoId,
       });
       setSaveStates((prev) => ({ ...prev, [station.id]: "saved" }));
@@ -72,15 +74,15 @@ export function AdminPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-heading text-xl font-bold">Gestion CPO</h1>
+          <h1 className="font-heading text-xl font-bold">{t("cpo.title")}</h1>
           <p className="text-sm text-foreground-muted">
-            Assignez manuellement les bornes aux opérateurs CPO
+            {t("admin.assignStationsToCpo", "Assignez manuellement les bornes aux opérateurs CPO")}
           </p>
         </div>
         {unassignedCount > 0 && (
           <span className="inline-flex items-center gap-1.5 bg-yellow-500/10 text-yellow-400 border border-yellow-500/30 rounded-lg px-3 py-1.5 text-xs font-semibold">
             <Tag className="w-3.5 h-3.5" />
-            {unassignedCount} non assignée{unassignedCount > 1 ? "s" : ""}
+            {unassignedCount} {t("admin.unassigned", "non assignée(s)")}
           </span>
         )}
       </div>
@@ -115,7 +117,7 @@ export function AdminPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
           <input
             type="text"
-            placeholder="Rechercher une borne..."
+            placeholder={t("admin.searchStation", "Rechercher une borne...")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-9 pr-4 py-2 text-sm bg-surface border border-border rounded-xl focus:outline-none focus:border-primary/50 placeholder:text-foreground-muted"
@@ -128,7 +130,7 @@ export function AdminPage() {
             onChange={(e) => setFilterTerritory(e.target.value)}
             className="appearance-none bg-surface border border-border rounded-xl px-4 py-2 pr-8 text-sm focus:outline-none focus:border-primary/50"
           >
-            <option value="">Tous les territoires</option>
+            <option value="">{t("dashboard.allTerritories")}</option>
             {territories.map((t) => (
               <option key={t.code} value={t.code}>
                 {t.name}
@@ -146,18 +148,18 @@ export function AdminPage() {
               : "text-foreground-muted border-border hover:border-foreground-muted"
           }`}
         >
-          Non assignées seulement
+          {t("admin.unassignedOnly", "Non assignées seulement")}
         </button>
 
         <span className="text-sm text-foreground-muted ml-auto">
-          {filtered.length} / {stations.length} bornes
+          {filtered.length} / {stations.length} {t("nav.stations", "bornes")}
         </span>
       </div>
 
       {/* Table */}
       {isLoading ? (
         <div className="flex items-center justify-center h-48 text-foreground-muted">
-          Chargement...
+          {t("common.loading")}
         </div>
       ) : (
         <div className="bg-surface border border-border rounded-2xl overflow-hidden">
@@ -165,7 +167,7 @@ export function AdminPage() {
             <table className="w-full">
               <thead className="border-b border-border">
                 <tr>
-                  {["Borne", "Ville", "Territoire", "Puissance", "CPO"].map(
+                  {[t("admin.station", "Borne"), t("admin.city", "Ville"), t("admin.territory", "Territoire"), t("admin.power", "Puissance"), "CPO"].map(
                     (h) => (
                       <th
                         key={h}
@@ -217,7 +219,7 @@ export function AdminPage() {
 
             {filtered.length === 0 && (
               <div className="flex items-center justify-center h-32 text-foreground-muted text-sm">
-                Aucune borne ne correspond aux filtres
+                {t("admin.noStationsMatch", "Aucune borne ne correspond aux filtres")}
               </div>
             )}
           </div>
@@ -238,11 +240,12 @@ function CPOSelector({
   state: SaveState;
   onChange: (cpoId: string) => void;
 }) {
+  const { t } = useTranslation();
   if (state === "saving") {
     return (
       <div className="flex items-center gap-2 text-sm text-foreground-muted">
         <Loader2 className="w-3.5 h-3.5 animate-spin" />
-        Sauvegarde...
+        {t("admin.saving", "Sauvegarde...")}
       </div>
     );
   }
@@ -251,14 +254,14 @@ function CPOSelector({
     return (
       <div className="flex items-center gap-2 text-sm text-status-available">
         <CheckCircle className="w-3.5 h-3.5" />
-        Sauvegardé
+        {t("admin.saved", "Sauvegardé")}
       </div>
     );
   }
 
   if (state === "error") {
     return (
-      <span className="text-sm text-status-faulted">Erreur — réessayer</span>
+      <span className="text-sm text-status-faulted">{t("admin.errorRetry", "Erreur — réessayer")}</span>
     );
   }
 
@@ -273,7 +276,7 @@ function CPOSelector({
             : "bg-yellow-500/10 border-yellow-500/30 text-yellow-400"
         }`}
       >
-        <option value="">— Non assigné</option>
+        <option value="">{t("admin.notAssigned", "— Non assigné")}</option>
         {cpos.map((c) => (
           <option key={c.id} value={c.id}>
             {c.name}

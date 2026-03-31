@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { useToast } from "@/contexts/ToastContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useTranslation } from "react-i18next";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -64,18 +65,19 @@ const EMPTY_TICKET_FORM = {
 // ── Status badge ─────────────────────────────────────────────
 
 function TicketStatusBadge({ status }: { status: MaintenanceTicket["status"] }) {
-  const config: Record<string, { bg: string; text: string; border: string; dot: string; label: string }> = {
-    open:         { bg: "bg-red-500/10",     text: "text-red-400",     border: "border-red-500/25",     dot: "#F87171", label: "Ouvert" },
-    acknowledged: { bg: "bg-amber-500/10",   text: "text-amber-400",   border: "border-amber-500/25",   dot: "#FBBF24", label: "Acquitté" },
-    in_progress:  { bg: "bg-blue-500/10",    text: "text-blue-400",    border: "border-blue-500/25",    dot: "#60A5FA", label: "En cours" },
-    resolved:     { bg: "bg-emerald-500/10", text: "text-emerald-400", border: "border-emerald-500/25", dot: "#34D399", label: "Résolu" },
-    closed:       { bg: "bg-foreground-muted/10", text: "text-foreground-muted", border: "border-border", dot: "#6B7280", label: "Fermé" },
+  const { t } = useTranslation();
+  const config: Record<string, { bg: string; text: string; border: string; dot: string; labelKey: string }> = {
+    open:         { bg: "bg-red-500/10",     text: "text-red-400",     border: "border-red-500/25",     dot: "#F87171", labelKey: "maintenance.statusOpen" },
+    acknowledged: { bg: "bg-amber-500/10",   text: "text-amber-400",   border: "border-amber-500/25",   dot: "#FBBF24", labelKey: "maintenance.statusAcknowledged" },
+    in_progress:  { bg: "bg-blue-500/10",    text: "text-blue-400",    border: "border-blue-500/25",    dot: "#60A5FA", labelKey: "maintenance.statusInProgress" },
+    resolved:     { bg: "bg-emerald-500/10", text: "text-emerald-400", border: "border-emerald-500/25", dot: "#34D399", labelKey: "maintenance.statusResolved" },
+    closed:       { bg: "bg-foreground-muted/10", text: "text-foreground-muted", border: "border-border", dot: "#6B7280", labelKey: "maintenance.statusClosed" },
   };
   const c = config[status] ?? config.open;
   return (
     <span className={cn("inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold", c.bg, c.text, c.border)}>
       <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: c.dot }} />
-      {c.label}
+      {t(c.labelKey)}
     </span>
   );
 }
@@ -83,16 +85,17 @@ function TicketStatusBadge({ status }: { status: MaintenanceTicket["status"] }) 
 // ── Priority badge ────────────────────────────────────────────
 
 function PriorityBadge({ priority }: { priority: MaintenanceTicket["priority"] }) {
-  const config: Record<string, { color: string; label: string }> = {
-    low:      { color: "#34D399", label: "Basse" },
-    medium:   { color: "#FBBF24", label: "Moyenne" },
-    high:     { color: "#F97316", label: "Haute" },
-    critical: { color: "#EF4444", label: "Critique" },
+  const { t } = useTranslation();
+  const config: Record<string, { color: string; labelKey: string }> = {
+    low:      { color: "#34D399", labelKey: "support.low" },
+    medium:   { color: "#FBBF24", labelKey: "support.medium" },
+    high:     { color: "#F97316", labelKey: "support.high" },
+    critical: { color: "#EF4444", labelKey: "support.criticalPriority" },
   };
   const c = config[priority] ?? config.medium;
   return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold" style={{ backgroundColor: `${c.color}15`, color: c.color }}>
-      {c.label}
+      {t(c.labelKey)}
     </span>
   );
 }
@@ -100,6 +103,7 @@ function PriorityBadge({ priority }: { priority: MaintenanceTicket["priority"] }
 // ── Main Page ─────────────────────────────────────────────────
 
 export function MaintenancePage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { success: toastSuccess, error: toastError } = useToast();
   const { selectedCpoId } = useCpo();
@@ -192,9 +196,9 @@ export function MaintenancePage() {
       queryClient.invalidateQueries({ queryKey: ["maintenance-tickets"] });
       setShowCreateModal(false);
       setTicketForm(EMPTY_TICKET_FORM);
-      toastSuccess("Ticket créé", "Le ticket de maintenance a été ouvert");
+      toastSuccess(t("maintenance.ticketCreated", "Ticket créé"), t("maintenance.ticketCreatedDesc", "Le ticket de maintenance a été ouvert"));
     },
-    onError: (err: Error) => toastError("Erreur", err.message),
+    onError: (err: Error) => toastError(t("common.error", "Erreur"), err.message),
   });
 
   const updateStatusMutation = useMutation({
@@ -210,9 +214,9 @@ export function MaintenancePage() {
       setResolveTarget(null);
       setResolveNote("");
       setConfirmClose(null);
-      toastSuccess("Ticket mis à jour");
+      toastSuccess(t("maintenance.ticketUpdated", "Ticket mis à jour"));
     },
-    onError: (err: Error) => toastError("Erreur", err.message),
+    onError: (err: Error) => toastError(t("common.error", "Erreur"), err.message),
   });
 
   const updateAssignMutation = useMutation({
@@ -225,9 +229,9 @@ export function MaintenancePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["maintenance-tickets"] });
       setEditingTicket(null);
-      toastSuccess("Ticket assigné", "Le ticket est maintenant en cours");
+      toastSuccess(t("maintenance.ticketAssigned", "Ticket assigné"), t("maintenance.ticketAssignedDesc", "Le ticket est maintenant en cours"));
     },
-    onError: (err: Error) => toastError("Erreur", err.message),
+    onError: (err: Error) => toastError(t("common.error", "Erreur"), err.message),
   });
 
   // ── Scheduled maintenance query ──
@@ -285,9 +289,9 @@ export function MaintenancePage() {
       queryClient.invalidateQueries({ queryKey: ["scheduled-maintenance"] });
       setShowScheduleModal(false);
       setScheduleForm({ station_name: "", title: "", description: "", scheduled_date: "", technician: "", recurrence: "none" });
-      toastSuccess("Maintenance planifiee", "La tache de maintenance a ete ajoutee au planning");
+      toastSuccess(t("maintenance.scheduledCreated", "Maintenance planifiée"), t("maintenance.scheduledCreatedDesc", "La tâche de maintenance a été ajoutée au planning"));
     },
-    onError: (err: Error) => toastError("Erreur", err.message),
+    onError: (err: Error) => toastError(t("common.error", "Erreur"), err.message),
   });
 
   // ── Quick create from station ──
@@ -303,12 +307,12 @@ export function MaintenancePage() {
   }
 
   const TICKET_FILTER_TABS = [
-    { key: "all" as const,         label: "Tous" },
-    { key: "open" as const,        label: "Ouverts" },
-    { key: "acknowledged" as const, label: "Acquittés" },
-    { key: "in_progress" as const, label: "En cours" },
-    { key: "resolved" as const,    label: "Résolus" },
-    { key: "closed" as const,      label: "Fermés" },
+    { key: "all" as const,         label: t("common.all") },
+    { key: "open" as const,        label: t("maintenance.statusOpen", "Ouverts") },
+    { key: "acknowledged" as const, label: t("maintenance.statusAcknowledged", "Acquittés") },
+    { key: "in_progress" as const, labelKey: "maintenance.statusInProgress" },
+    { key: "resolved" as const,    label: t("maintenance.statusResolved", "Résolus") },
+    { key: "closed" as const,      label: t("maintenance.statusClosed", "Fermés") },
   ];
 
   return (
@@ -316,18 +320,18 @@ export function MaintenancePage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h1 className="font-heading text-xl font-bold">Maintenance</h1>
+          <h1 className="font-heading text-xl font-bold">{t("status.maintenance")}</h1>
           {criticalCount > 0 && (
             <span className="inline-flex items-center gap-1 bg-status-faulted/15 text-status-faulted border border-status-faulted/30 rounded-lg px-2.5 py-1 text-xs font-semibold">
               <AlertTriangle className="w-3.5 h-3.5" />
-              {criticalCount} critique{criticalCount > 1 ? "s" : ""}
+              {criticalCount} {t("maintenance.critical", "critique")}{criticalCount > 1 ? "s" : ""}
             </span>
           )}
         </div>
         <div className="flex items-center gap-2">
           {!isLoading && !isError && activeTab === "faults" && (
             <span className="text-sm text-foreground-muted">
-              {filtered.length} borne{filtered.length > 1 ? "s" : ""} en défaut
+              {filtered.length} {t("maintenance.stationsInFault", "borne(s) en défaut")}
             </span>
           )}
           <button
@@ -338,7 +342,7 @@ export function MaintenancePage() {
             className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
           >
             <Plus className="w-4 h-4" />
-            Nouveau ticket
+            {t("support.newTicket")}
           </button>
         </div>
       </div>
@@ -364,7 +368,7 @@ export function MaintenancePage() {
           )}
         >
           <AlertTriangle className="w-3.5 h-3.5" />
-          Bornes en défaut ({filtered.length})
+          {t("maintenance.faultsTab", "Bornes en défaut")} ({filtered.length})
         </button>
         <button
           onClick={() => setActiveTab("tickets")}
@@ -374,7 +378,7 @@ export function MaintenancePage() {
           )}
         >
           <Wrench className="w-3.5 h-3.5" />
-          Tickets ({tickets?.length ?? 0})
+          {t("maintenance.ticketsTab", "Tickets")} ({tickets?.length ?? 0})
           {ticketStats.open > 0 && (
             <span className="ml-1 w-4 h-4 rounded-full bg-red-500 text-white text-[9px] flex items-center justify-center font-bold">
               {ticketStats.open > 9 ? "9+" : ticketStats.open}
@@ -389,7 +393,7 @@ export function MaintenancePage() {
           )}
         >
           <Calendar className="w-3.5 h-3.5" />
-          Planning ({scheduledTasks?.length ?? 0})
+          {t("maintenance.scheduledTab", "Planning")} ({scheduledTasks?.length ?? 0})
         </button>
       </div>
 
@@ -416,9 +420,9 @@ export function MaintenancePage() {
               <div className="w-12 h-12 rounded-xl bg-status-available/15 flex items-center justify-center mb-3">
                 <AlertTriangle className="w-6 h-6 text-status-available" />
               </div>
-              <p className="text-foreground font-medium">Aucune borne en défaut</p>
+              <p className="text-foreground font-medium">{t("maintenance.noFaultedStation", "Aucune borne en défaut")}</p>
               <p className="text-sm text-foreground-muted mt-1">
-                Toutes les bornes fonctionnent normalement.
+                {t("maintenance.allStationsOk", "Toutes les bornes fonctionnent normalement.")}
               </p>
             </div>
           ) : (
@@ -432,10 +436,10 @@ export function MaintenancePage() {
         <>
           {/* KPIs */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <KPICard label="Total tickets" value={ticketStats.total} icon={Wrench} color="#8892B0" />
-            <KPICard label="Ouverts" value={ticketStats.open} icon={AlertTriangle} color="#EF4444" />
-            <KPICard label="En cours" value={ticketStats.inProgress} icon={Clock} color="#FBBF24" />
-            <KPICard label="Résolus" value={ticketStats.resolved} icon={CheckCircle2} color="#34D399" />
+            <KPICard label={t("maintenance.totalTickets", "Total tickets")} value={ticketStats.total} icon={Wrench} color="#8892B0" />
+            <KPICard label={t("maintenance.statusOpen", "Ouverts")} value={ticketStats.open} icon={AlertTriangle} color="#EF4444" />
+            <KPICard label={t("maintenance.statusInProgress", "En cours")} value={ticketStats.inProgress} icon={Clock} color="#FBBF24" />
+            <KPICard label={t("maintenance.statusResolved", "Résolus")} value={ticketStats.resolved} icon={CheckCircle2} color="#34D399" />
           </div>
 
           {/* Filter tabs */}
@@ -467,9 +471,9 @@ export function MaintenancePage() {
               <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-3">
                 <Wrench className="w-6 h-6 text-primary" />
               </div>
-              <p className="text-foreground font-medium">Aucun ticket</p>
+              <p className="text-foreground font-medium">{t("maintenance.noTicket", "Aucun ticket")}</p>
               <p className="text-sm text-foreground-muted mt-1">
-                Créez un ticket pour suivre une intervention.
+                {t("maintenance.createTicketForIntervention", "Créez un ticket pour suivre une intervention.")}
               </p>
               <button
                 onClick={() => { setTicketForm(EMPTY_TICKET_FORM); setShowCreateModal(true); }}
@@ -501,14 +505,14 @@ export function MaintenancePage() {
         <>
           <div className="flex items-center justify-between">
             <p className="text-sm text-foreground-muted">
-              {scheduledTasks?.length ?? 0} maintenance(s) planifiee(s)
+              {scheduledTasks?.length ?? 0} {t("maintenance.scheduledCount", "maintenance(s) planifiée(s)")}
             </p>
             <button
               onClick={() => setShowScheduleModal(true)}
               className="flex items-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors"
             >
               <CalendarPlus className="w-4 h-4" />
-              Planifier maintenance
+              {t("maintenance.scheduleMaintenance", "Planifier maintenance")}
             </button>
           </div>
 
@@ -519,9 +523,9 @@ export function MaintenancePage() {
               <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center mb-3">
                 <Calendar className="w-6 h-6 text-primary" />
               </div>
-              <p className="text-foreground font-medium">Aucune maintenance planifiee</p>
+              <p className="text-foreground font-medium">{t("maintenance.noScheduled", "Aucune maintenance planifiée")}</p>
               <p className="text-sm text-foreground-muted mt-1">
-                Planifiez vos maintenances preventives pour anticiper les pannes.
+                {t("maintenance.schedulePreventive", "Planifiez vos maintenances préventives pour anticiper les pannes.")}
               </p>
               <button
                 onClick={() => setShowScheduleModal(true)}
@@ -536,11 +540,11 @@ export function MaintenancePage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-xs text-foreground-muted border-b border-border bg-surface-elevated">
-                      <th className="text-left font-medium px-4 py-3">Titre</th>
-                      <th className="text-left font-medium px-4 py-3">Borne</th>
-                      <th className="text-left font-medium px-4 py-3">Technicien</th>
-                      <th className="text-left font-medium px-4 py-3">Date planifiee</th>
-                      <th className="text-left font-medium px-4 py-3">Recurrence</th>
+                      <th className="text-left font-medium px-4 py-3">{t("maintenance.ticketTitleLabel", "Titre")}</th>
+                      <th className="text-left font-medium px-4 py-3">{t("nav.stations")}</th>
+                      <th className="text-left font-medium px-4 py-3">{t("maintenance.technicianLabel", "Technicien")}</th>
+                      <th className="text-left font-medium px-4 py-3">{t("maintenance.scheduledDate", "Date planifiée")}</th>
+                      <th className="text-left font-medium px-4 py-3">{t("maintenance.recurrence", "Récurrence")}</th>
                       <th className="text-left font-medium px-4 py-3">Statut</th>
                     </tr>
                   </thead>
@@ -570,7 +574,7 @@ export function MaintenancePage() {
                             task.status === "completed" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/25" :
                             "bg-foreground-muted/10 text-foreground-muted border-border"
                           )}>
-                            {task.status === "planned" ? "Planifie" : task.status === "completed" ? "Termine" : task.status}
+                            {task.status === "planned" ? t("maintenance.planned", "Planifié") : task.status === "completed" ? t("status.completed") : task.status}
                           </span>
                         </td>
                       </tr>
@@ -588,7 +592,7 @@ export function MaintenancePage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-surface border border-border rounded-2xl w-full max-w-lg shadow-2xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-              <h2 className="font-semibold text-foreground">Planifier une maintenance</h2>
+              <h2 className="font-semibold text-foreground">{t("maintenance.scheduleMaintenance", "Planifier une maintenance")}</h2>
               <button onClick={() => setShowScheduleModal(false)} className="text-foreground-muted hover:text-foreground transition-colors">
                 <X className="w-5 h-5" />
               </button>
@@ -658,11 +662,11 @@ export function MaintenancePage() {
                     onChange={(e) => setScheduleForm((f) => ({ ...f, recurrence: e.target.value }))}
                     className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-xl text-sm text-foreground focus:outline-none focus:border-primary/50 transition-colors"
                   >
-                    <option value="none">Ponctuel</option>
-                    <option value="weekly">Hebdomadaire</option>
-                    <option value="monthly">Mensuel</option>
-                    <option value="quarterly">Trimestriel</option>
-                    <option value="yearly">Annuel</option>
+                    <option value="none">{t("maintenance.oneTime", "Ponctuel")}</option>
+                    <option value="weekly">{t("maintenance.weekly", "Hebdomadaire")}</option>
+                    <option value="monthly">{t("maintenance.monthly", "Mensuel")}</option>
+                    <option value="quarterly">{t("maintenance.quarterly", "Trimestriel")}</option>
+                    <option value="yearly">{t("maintenance.yearly", "Annuel")}</option>
                   </select>
                 </div>
               </div>
@@ -673,7 +677,7 @@ export function MaintenancePage() {
               )}
               <div className="flex gap-3 pt-2">
                 <button type="button" onClick={() => setShowScheduleModal(false)} className="flex-1 py-2.5 border border-border rounded-xl text-sm text-foreground-muted hover:text-foreground transition-colors">
-                  Annuler
+                  {t("common.cancel")}
                 </button>
                 <button
                   type="submit"
@@ -681,7 +685,7 @@ export function MaintenancePage() {
                   className="flex-1 py-2.5 bg-primary text-white rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
                 >
                   {scheduleMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Planifier
+                  {t("maintenance.schedule", "Planifier")}
                 </button>
               </div>
             </form>
@@ -694,7 +698,7 @@ export function MaintenancePage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-surface border border-border rounded-2xl w-full max-w-lg shadow-2xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-              <h2 className="font-semibold text-foreground">Nouveau ticket de maintenance</h2>
+              <h2 className="font-semibold text-foreground">{t("maintenance.newTicket", "Nouveau ticket de maintenance")}</h2>
               <button onClick={() => setShowCreateModal(false)} className="text-foreground-muted hover:text-foreground transition-colors">
                 <X className="w-5 h-5" />
               </button>
@@ -756,10 +760,10 @@ export function MaintenancePage() {
                     onChange={(e) => setTicketForm((f) => ({ ...f, priority: e.target.value as MaintenanceTicket["priority"] }))}
                     className="w-full px-3 py-2 bg-surface-elevated border border-border rounded-lg text-sm text-foreground focus:outline-none focus:border-primary/50"
                   >
-                    <option value="low">Basse</option>
-                    <option value="medium">Moyenne</option>
-                    <option value="high">Haute</option>
-                    <option value="critical">Critique</option>
+                    <option value="low">{t("support.low")}</option>
+                    <option value="medium">{t("support.medium")}</option>
+                    <option value="high">{t("support.high")}</option>
+                    <option value="critical">{t("support.criticalPriority", "Critique")}</option>
                   </select>
                 </div>
                 <div>
@@ -789,7 +793,7 @@ export function MaintenancePage() {
               )}
               <div className="flex justify-end gap-3 pt-2">
                 <button type="button" onClick={() => setShowCreateModal(false)} className="px-4 py-2 text-sm text-foreground-muted hover:text-foreground border border-border rounded-xl transition-colors">
-                  Annuler
+                  {t("common.cancel")}
                 </button>
                 <button
                   type="submit"
@@ -797,7 +801,7 @@ export function MaintenancePage() {
                   className="flex items-center gap-2 px-5 py-2 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 disabled:opacity-50 transition-colors"
                 >
                   {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Créer le ticket
+                  {t("support.createTicket", "Créer le ticket")}
                 </button>
               </div>
             </form>
@@ -810,7 +814,7 @@ export function MaintenancePage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-surface border border-border rounded-2xl w-full max-w-md shadow-2xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-              <h2 className="font-semibold text-foreground">Assigner le ticket</h2>
+              <h2 className="font-semibold text-foreground">{t("maintenance.assignTicket", "Assigner le ticket")}</h2>
               <button onClick={() => setEditingTicket(null)} className="text-foreground-muted hover:text-foreground transition-colors">
                 <X className="w-5 h-5" />
               </button>
@@ -829,7 +833,7 @@ export function MaintenancePage() {
               </div>
               <div className="flex justify-end gap-3 pt-2">
                 <button onClick={() => setEditingTicket(null)} className="px-4 py-2 text-sm text-foreground-muted hover:text-foreground border border-border rounded-xl transition-colors">
-                  Annuler
+                  {t("common.cancel")}
                 </button>
                 <button
                   onClick={() => {
@@ -840,7 +844,7 @@ export function MaintenancePage() {
                   className="flex items-center gap-2 px-5 py-2 bg-primary text-white text-sm font-semibold rounded-xl hover:bg-primary/90 disabled:opacity-50 transition-colors"
                 >
                   {updateAssignMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Assigner
+                  {t("maintenance.assign", "Assigner")}
                 </button>
               </div>
             </div>
@@ -853,7 +857,7 @@ export function MaintenancePage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-surface border border-border rounded-2xl w-full max-w-md shadow-2xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
-              <h2 className="font-semibold text-foreground">Résoudre le ticket</h2>
+              <h2 className="font-semibold text-foreground">{t("maintenance.resolveTicket", "Résoudre le ticket")}</h2>
               <button onClick={() => setResolveTarget(null)} className="text-foreground-muted hover:text-foreground transition-colors">
                 <X className="w-5 h-5" />
               </button>
@@ -872,7 +876,7 @@ export function MaintenancePage() {
               </div>
               <div className="flex justify-end gap-3 pt-2">
                 <button onClick={() => setResolveTarget(null)} className="px-4 py-2 text-sm text-foreground-muted hover:text-foreground border border-border rounded-xl transition-colors">
-                  Annuler
+                  {t("common.cancel")}
                 </button>
                 <button
                   onClick={() => updateStatusMutation.mutate({ id: resolveTarget.id, status: "resolved", resolution_note: resolveNote })}
@@ -880,7 +884,7 @@ export function MaintenancePage() {
                   className="flex items-center gap-2 px-5 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-xl hover:bg-emerald-500 disabled:opacity-50 transition-colors"
                 >
                   {updateStatusMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                  Marquer résolu
+                  {t("maintenance.markResolved", "Marquer résolu")}
                 </button>
               </div>
             </div>
@@ -893,9 +897,9 @@ export function MaintenancePage() {
         open={!!confirmClose}
         onCancel={() => setConfirmClose(null)}
         onConfirm={() => confirmClose && updateStatusMutation.mutate({ id: confirmClose.id, status: "closed" })}
-        title="Fermer ce ticket ?"
+        title={t("maintenance.closeTicketTitle", "Fermer ce ticket ?")}
         description="Le ticket sera marqué comme fermé. Cette action peut être annulée en le réouvrant."
-        confirmLabel="Fermer le ticket"
+        confirmLabel={t("maintenance.closeTicketBtn", "Fermer le ticket")}
         variant="danger"
         loading={updateStatusMutation.isPending}
       />
@@ -930,7 +934,7 @@ function StationIdSelector({
       {open && (
         <div className="absolute z-30 top-full mt-1 w-full bg-surface-elevated border border-border rounded-xl shadow-xl max-h-48 overflow-y-auto">
           {faultedStations.length === 0 ? (
-            <div className="px-3 py-4 text-xs text-foreground-muted text-center">Aucune borne en défaut détectée</div>
+            <div className="px-3 py-4 text-xs text-foreground-muted text-center">{t("maintenance.noFaultedStationDetected", "Aucune borne en défaut détectée")}</div>
           ) : (
             faultedStations.map((s) => (
               <button

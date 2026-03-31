@@ -8,6 +8,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
 import {
   Wrench,
   Plus,
@@ -19,7 +20,6 @@ import {
   CheckCircle2,
   AlertCircle,
   ChevronRight,
-  Camera,
   Navigation,
 } from "lucide-react";
 
@@ -43,28 +43,53 @@ interface Intervention {
   stations: { name: string; city: string | null; ocpp_identity: string | null; latitude: number | null; longitude: number | null } | null;
 }
 
-const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; icon: typeof Clock }> = {
-  assigned: { label: "Assignée", color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20", icon: AlertCircle },
-  in_progress: { label: "En cours", color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/20", icon: Clock },
-  completed: { label: "Terminée", color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20", icon: CheckCircle2 },
-  cancelled: { label: "Annulée", color: "text-foreground-muted", bg: "bg-foreground-muted/10 border-foreground-muted/20", icon: X },
+const STATUS_ICONS: Record<string, typeof Clock> = {
+  assigned: AlertCircle,
+  in_progress: Clock,
+  completed: CheckCircle2,
+  cancelled: X,
 };
 
-const CATEGORIES = [
-  { value: "maintenance", label: "Maintenance" },
-  { value: "repair", label: "Réparation" },
-  { value: "installation", label: "Installation" },
-  { value: "inspection", label: "Inspection" },
-  { value: "firmware", label: "Firmware" },
-];
+const STATUS_COLORS: Record<string, { color: string; bg: string }> = {
+  assigned: { color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20" },
+  in_progress: { color: "text-amber-400", bg: "bg-amber-500/10 border-amber-500/20" },
+  completed: { color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20" },
+  cancelled: { color: "text-foreground-muted", bg: "bg-foreground-muted/10 border-foreground-muted/20" },
+};
+
+const CATEGORY_VALUES = ["maintenance", "repair", "installation", "inspection", "firmware"];
+
+function useStatusConfig() {
+  const { t } = useTranslation();
+  return {
+    assigned: { label: t("interventions.statusAssigned", "Assignée"), ...STATUS_COLORS.assigned, icon: STATUS_ICONS.assigned },
+    in_progress: { label: t("interventions.statusInProgress", "En cours"), ...STATUS_COLORS.in_progress, icon: STATUS_ICONS.in_progress },
+    completed: { label: t("interventions.statusCompleted", "Terminée"), ...STATUS_COLORS.completed, icon: STATUS_ICONS.completed },
+    cancelled: { label: t("interventions.statusCancelled", "Annulée"), ...STATUS_COLORS.cancelled, icon: STATUS_ICONS.cancelled },
+  } as Record<string, { label: string; color: string; bg: string; icon: typeof Clock }>;
+}
+
+function useCategories() {
+  const { t } = useTranslation();
+  return [
+    { value: "maintenance", label: t("interventions.catMaintenance", "Maintenance") },
+    { value: "repair", label: t("interventions.catRepair", "Réparation") },
+    { value: "installation", label: t("interventions.catInstallation", "Installation") },
+    { value: "inspection", label: t("interventions.catInspection", "Inspection") },
+    { value: "firmware", label: t("interventions.catFirmware", "Firmware") },
+  ];
+}
 
 export function InterventionsPage() {
+  const { t } = useTranslation();
+  const STATUS_CONFIG = useStatusConfig();
+  const CATEGORIES = useCategories();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [showCreate, setShowCreate] = useState(false);
-  const [detail, setDetail] = useState<Intervention | null>(null);
+  const [_detail, setDetail] = useState<Intervention | null>(null);
 
   const { data: interventions, isLoading } = useQuery<Intervention[]>({
     queryKey: ["interventions-list"],
@@ -131,22 +156,22 @@ export function InterventionsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="font-heading text-xl font-bold text-foreground">Interventions Technicien</h1>
-          <p className="text-sm text-foreground-muted mt-1">Gestion des interventions sur les bornes de recharge</p>
+          <h1 className="font-heading text-xl font-bold text-foreground">{t("technician.title", "Interventions")}</h1>
+          <p className="text-sm text-foreground-muted mt-1">{t("technician.description", "Gestion des interventions sur les bornes de recharge")}</p>
         </div>
         <button onClick={() => setShowCreate(true)} className="flex items-center gap-1.5 px-4 py-2 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors">
           <Plus className="w-4 h-4" />
-          Nouvelle intervention
+          {t("interventions.newIntervention", "Nouvelle intervention")}
         </button>
       </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label: "Total", value: kpis.total, color: "#8892B0" },
-          { label: "Assignées", value: kpis.assigned, color: "#3B82F6" },
-          { label: "En cours", value: kpis.inProgress, color: "#F59E0B" },
-          { label: "Terminées", value: kpis.completed, color: "#10B981" },
+          { label: t("common.total", "Total"), value: kpis.total, color: "#8892B0" },
+          { label: t("interventions.statusAssigned", "Assignées"), value: kpis.assigned, color: "#3B82F6" },
+          { label: t("interventions.statusInProgress", "En cours"), value: kpis.inProgress, color: "#F59E0B" },
+          { label: t("interventions.statusCompleted", "Terminées"), value: kpis.completed, color: "#10B981" },
         ].map((k) => (
           <div key={k.label} className="bg-surface border border-border rounded-xl p-4 text-center">
             <p className="text-2xl font-bold" style={{ color: k.color }}>{k.value}</p>
@@ -159,13 +184,13 @@ export function InterventionsPage() {
       <div className="flex gap-3">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
-          <input type="text" placeholder="Rechercher..." value={search} onChange={(e) => setSearch(e.target.value)} className={cn(inputClass, "pl-9")} />
+          <input type="text" placeholder={t("common.search", "Rechercher...")} value={search} onChange={(e) => setSearch(e.target.value)} className={cn(inputClass, "pl-9")} />
         </div>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-3 py-2 bg-surface border border-border rounded-xl text-sm">
-          <option value="all">Tous</option>
-          <option value="assigned">Assignées</option>
-          <option value="in_progress">En cours</option>
-          <option value="completed">Terminées</option>
+          <option value="all">{t("common.all", "Tous")}</option>
+          <option value="assigned">{t("interventions.statusAssigned", "Assignées")}</option>
+          <option value="in_progress">{t("interventions.statusInProgress", "En cours")}</option>
+          <option value="completed">{t("interventions.statusCompleted", "Terminées")}</option>
         </select>
       </div>
 
@@ -175,8 +200,8 @@ export function InterventionsPage() {
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-48 bg-surface border border-border rounded-2xl">
           <Wrench className="w-8 h-8 text-foreground-muted/40 mb-2" />
-          <p className="text-foreground-muted">Aucune intervention</p>
-          <button onClick={() => setShowCreate(true)} className="mt-2 text-xs text-primary hover:underline">+ Créer une intervention</button>
+          <p className="text-foreground-muted">{t("interventions.noIntervention", "Aucune intervention")}</p>
+          <button onClick={() => setShowCreate(true)} className="mt-2 text-xs text-primary hover:underline">+ {t("interventions.createIntervention", "Créer une intervention")}</button>
         </div>
       ) : (
         <div className="space-y-2">
@@ -214,12 +239,12 @@ export function InterventionsPage() {
                     )}
                     {intervention.status === "assigned" && (
                       <button onClick={(e) => { e.stopPropagation(); updateStatusMutation.mutate({ id: intervention.id, status: "in_progress" }); }} className="px-2 py-1 text-[10px] font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg hover:bg-amber-500/20 transition-colors whitespace-nowrap">
-                        Démarrer
+                        {t("interventions.start", "Démarrer")}
                       </button>
                     )}
                     {intervention.status === "in_progress" && (
-                      <button onClick={(e) => { e.stopPropagation(); updateStatusMutation.mutate({ id: intervention.id, status: "completed", notes: "Intervention terminée" }); }} className="px-2 py-1 text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-colors whitespace-nowrap">
-                        Terminer
+                      <button onClick={(e) => { e.stopPropagation(); updateStatusMutation.mutate({ id: intervention.id, status: "completed", notes: t("interventions.interventionCompleted", "Intervention terminée") }); }} className="px-2 py-1 text-[10px] font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/20 transition-colors whitespace-nowrap">
+                        {t("interventions.finish", "Terminer")}
                       </button>
                     )}
                     <ChevronRight className="w-4 h-4 text-foreground-muted" />
@@ -240,6 +265,8 @@ export function InterventionsPage() {
 // ── Create Modal ───────────────────────────────────────────
 
 function CreateInterventionModal({ onClose, onSubmit, isLoading }: { onClose: () => void; onSubmit: (d: any) => void; isLoading: boolean }) {
+  const { t } = useTranslation();
+  const CATEGORIES = useCategories();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [stationId, setStationId] = useState("");
@@ -262,49 +289,49 @@ function CreateInterventionModal({ onClose, onSubmit, isLoading }: { onClose: ()
       <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
         <div className="bg-surface border border-border rounded-2xl w-full max-w-lg shadow-2xl">
           <div className="flex items-center justify-between p-5 border-b border-border">
-            <h2 className="font-heading font-bold text-lg">Nouvelle intervention</h2>
+            <h2 className="font-heading font-bold text-lg">{t("interventions.newIntervention", "Nouvelle intervention")}</h2>
             <button onClick={onClose} className="p-1.5 hover:bg-surface-elevated rounded-lg transition-colors">
               <X className="w-5 h-5 text-foreground-muted" />
             </button>
           </div>
           <form onSubmit={(e) => { e.preventDefault(); if (title.trim()) onSubmit({ title, description, station_id: stationId, category, priority }); }} className="p-5 space-y-4">
             <div>
-              <label className="block text-xs text-foreground-muted mb-1.5">Titre *</label>
-              <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Borne en panne — connecteur HS" className={inputClass} />
+              <label className="block text-xs text-foreground-muted mb-1.5">{t("interventions.titleLabel", "Titre")} *</label>
+              <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("interventions.titlePlaceholder", "Borne en panne — connecteur HS")} className={inputClass} />
             </div>
             <div>
-              <label className="block text-xs text-foreground-muted mb-1.5">Description</label>
-              <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Détails de l'intervention..." rows={3} className={cn(inputClass, "resize-none")} />
+              <label className="block text-xs text-foreground-muted mb-1.5">{t("common.description", "Description")}</label>
+              <textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t("interventions.descPlaceholder", "Détails de l'intervention...")} rows={3} className={cn(inputClass, "resize-none")} />
             </div>
             <div>
-              <label className="block text-xs text-foreground-muted mb-1.5">Station</label>
+              <label className="block text-xs text-foreground-muted mb-1.5">{t("interventions.station", "Station")}</label>
               <select value={stationId} onChange={(e) => setStationId(e.target.value)} className={inputClass}>
-                <option value="">— Sélectionner —</option>
+                <option value="">{t("interventions.selectStation", "— Sélectionner —")}</option>
                 {(stations ?? []).map((s) => <option key={s.id} value={s.id}>{s.name} — {s.city}</option>)}
               </select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-foreground-muted mb-1.5">Catégorie</label>
+                <label className="block text-xs text-foreground-muted mb-1.5">{t("interventions.category", "Catégorie")}</label>
                 <select value={category} onChange={(e) => setCategory(e.target.value)} className={inputClass}>
                   {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-foreground-muted mb-1.5">Priorité</label>
+                <label className="block text-xs text-foreground-muted mb-1.5">{t("interventions.priority", "Priorité")}</label>
                 <select value={priority} onChange={(e) => setPriority(e.target.value)} className={inputClass}>
-                  <option value="low">Basse</option>
-                  <option value="medium">Moyenne</option>
-                  <option value="high">Haute</option>
-                  <option value="critical">Critique</option>
+                  <option value="low">{t("support.low", "Basse")}</option>
+                  <option value="medium">{t("support.medium", "Moyenne")}</option>
+                  <option value="high">{t("support.high", "Haute")}</option>
+                  <option value="critical">{t("interventions.critical", "Critique")}</option>
                 </select>
               </div>
             </div>
             <div className="flex gap-3 pt-2">
-              <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-xl text-sm text-foreground-muted hover:text-foreground transition-colors">Annuler</button>
+              <button type="button" onClick={onClose} className="flex-1 py-2.5 border border-border rounded-xl text-sm text-foreground-muted hover:text-foreground transition-colors">{t("common.cancel", "Annuler")}</button>
               <button type="submit" disabled={isLoading || !title.trim()} className="flex-1 py-2.5 bg-primary text-background rounded-xl text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
                 {isLoading && <Loader2 className="w-4 h-4 animate-spin" />}
-                Créer
+                {t("common.create", "Créer")}
               </button>
             </div>
           </form>

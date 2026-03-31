@@ -38,6 +38,7 @@ import { KPISkeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { PageHelp } from "@/components/ui/PageHelp";
 import { useCpo, type CpoOperator } from "@/contexts/CpoContext";
+import { useTranslation } from "react-i18next";
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -1365,6 +1366,7 @@ function ManageUserModal({
 // ── Page component ─────────────────────────────────────────
 
 export function UsersPage() {
+  const { t } = useTranslation();
   const { data: users, isLoading, isError, refetch } = useEzdriveUsers();
   const { cpos } = useCpo();
   const queryClient = useQueryClient();
@@ -2109,7 +2111,7 @@ function TwoFactorSection() {
 
 // ── Story 107: View user active sessions ──────────────────
 
-function ActiveSessionsSection({ users }: { users: EzdriveUser[] }) {
+function ActiveSessionsSection({ users: _users }: { users: EzdriveUser[] }) {
   const { data: sessions, isLoading } = useQuery({
     queryKey: ["user-active-sessions"],
     queryFn: async () => {

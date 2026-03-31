@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from "react";
+import { useState, useMemo, lazy, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
@@ -32,10 +32,8 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
-import { useNavigate } from "react-router-dom";
 import type { LatLngBoundsExpression } from "leaflet";
 import { supabase } from "@/lib/supabase";
-import { ExportButton } from "@/components/shared/ExportButton";
 
 // ── Lazy-loaded map (avoids ~200KB Leaflet on initial load) ──
 const DashboardMap = lazy(() => import("./DashboardMap"));
@@ -48,8 +46,7 @@ import { KPISkeleton, Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { cn } from "@/lib/utils";
 import { PageHelp } from "@/components/ui/PageHelp";
-import { RefreshIndicator } from "@/components/shared/RefreshIndicator";
-import type { Station } from "@/types/station";
+import { useTranslation } from "react-i18next";
 
 // ============================================================
 // Business Overview Dashboard — Enhanced CPO Overview
@@ -93,7 +90,7 @@ function getTimeRangeForFilter(filter: TimeFilter, customFrom?: string, customTo
 // ============================================================
 
 export function DashboardPage() {
-  const navigate = useNavigate();
+  const { t, i18n } = useTranslation();
   const { selectedCpoId, selectedCpo } = useCpo();
   const { data: kpis, isLoading, isError, refetch } = useStationKPIs(selectedCpoId);
   const { data: stations } = useStations(selectedCpoId);
@@ -194,13 +191,13 @@ export function DashboardPage() {
       const emptyResult = { count: 0, data: null, error: null };
 
       const txAllQuery = withCpoFilter(
-        supabase.from("ocpp_transactions").select("*", { count: "exact", head: true })
+        supabase.from("ocpp_transactions").select("*", { count: "exact", head: true }) as any
       );
       const txActiveQuery = withCpoFilter(
-        supabase.from("ocpp_transactions").select("*", { count: "exact", head: true }).eq("status", "Active")
+        supabase.from("ocpp_transactions").select("*", { count: "exact", head: true }).eq("status", "Active") as any
       );
       const txEnergyQuery = withCpoFilter(
-        supabase.from("ocpp_transactions").select("energy_kwh").not("energy_kwh", "is", null)
+        supabase.from("ocpp_transactions").select("energy_kwh").not("energy_kwh", "is", null) as any
       );
 
       // CDR queries with time range filter
@@ -235,21 +232,21 @@ export function DashboardPage() {
         safe(() => {
           let q = supabase.from("all_consumers").select("*", { count: "exact", head: true });
           if (selectedCpoId) q = q.eq("cpo_id", selectedCpoId);
-          return q;
+          return q as any;
         }, emptyResult),
         safe(() => {
           let q = supabase.from("invoices").select("total_cents").eq("status", "paid");
           if (selectedCpoId) q = q.eq("cpo_id", selectedCpoId);
-          return q;
+          return q as any;
         }, emptyResult),
         safe(() => txEnergyQuery ? txEnergyQuery : Promise.resolve(emptyResult), emptyResult),
         safe(() => {
           let q = supabase.from("user_subscriptions").select("*", { count: "exact", head: true }).eq("status", "ACTIVE");
           if (selectedCpoId) q = q.eq("cpo_id", selectedCpoId);
-          return q;
+          return q as any;
         }, emptyResult),
-        safe(() => cdrQuery, emptyResult),
-        safe(() => cdrEnergyQuery.limit(50000), emptyResult),
+        safe(() => cdrQuery as any, emptyResult),
+        safe(() => (cdrEnergyQuery as any).limit(50000), emptyResult),
       ]);
 
       const totalRevenue = (invoicesRes.data as { total_cents?: number }[] | null)?.reduce(
@@ -636,36 +633,6 @@ export function DashboardPage() {
     [mappableStations]
   );
 
-  // ── Export CSV data builder ─────────────────────────────
-  const exportData = useMemo(() => {
-    const rows: Record<string, unknown>[] = [];
-    if (kpis) {
-      rows.push({ type: "KPI", label: "Total Bornes", value: kpis.total_stations });
-      rows.push({ type: "KPI", label: "Disponibles", value: kpis.available });
-      rows.push({ type: "KPI", label: "En charge", value: kpis.charging });
-      rows.push({ type: "KPI", label: "En panne", value: kpis.faulted });
-      rows.push({ type: "KPI", label: "Hors ligne", value: kpis.offline });
-    }
-    if (businessMetrics) {
-      rows.push({ type: "Business", label: "Sessions totales", value: businessMetrics.totalSessions });
-      rows.push({ type: "Business", label: "Sessions actives", value: businessMetrics.activeSessions });
-      rows.push({ type: "Business", label: "Clients inscrits", value: businessMetrics.totalCustomers });
-      rows.push({ type: "Business", label: "Energie totale (kWh)", value: businessMetrics.totalEnergy });
-      rows.push({ type: "Business", label: "Revenu total (cents)", value: businessMetrics.totalRevenue });
-      rows.push({ type: "Business", label: "Abonnements actifs", value: businessMetrics.activeSubscriptions });
-    }
-    for (const s of topFlopData?.top5 ?? []) {
-      rows.push({ type: "Top 5", label: s.name, value: `${s.sessions} sessions / ${Math.round(s.totalKwh)} kWh` });
-    }
-    return rows;
-  }, [kpis, businessMetrics, topFlopData]);
-
-  const exportColumns = [
-    { key: "type", label: "Type" },
-    { key: "label", label: "Indicateur" },
-    { key: "value", label: "Valeur" },
-  ];
-
   // ── Territory kWh chart colors ────────────────────────
   const TERRITORY_COLORS: Record<string, string> = {
     Guadeloupe: "#00D4AA",
@@ -704,7 +671,7 @@ export function DashboardPage() {
       <div className="space-y-6">
         <h1 className="font-heading text-xl font-bold">Vue d'ensemble</h1>
         <ErrorState
-          message="Impossible de charger les données du dashboard"
+          message={t("common.error")}
           onRetry={() => refetch()}
         />
       </div>
@@ -724,12 +691,12 @@ export function DashboardPage() {
             Vue d'ensemble
           </h1>
           <p className="text-sm text-foreground-muted mt-0.5">
-            Tableau de bord EZDrive — Supervision réseau
+            {t("nav.dashboard")} EZDrive — Supervision
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs text-foreground-muted bg-surface border border-border rounded-lg px-3 py-2">
           <Clock className="w-3.5 h-3.5" />
-          <span>Mise à jour en temps réel</span>
+          <span>{t("monitoring.title")}</span>
           <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse-dot" />
         </div>
       </div>
@@ -750,7 +717,7 @@ export function DashboardPage() {
       <div className="bg-surface border border-border rounded-xl p-4">
         <div className="flex items-center gap-3 flex-wrap">
           <Calendar className="w-4 h-4 text-foreground-muted shrink-0" />
-          <span className="text-xs font-medium text-foreground-muted shrink-0">Période :</span>
+          <span className="text-xs font-medium text-foreground-muted shrink-0">{t("dashboard.filterPeriod")} :</span>
 
           <button
             onClick={() => handleFilterChange("last_month")}
@@ -761,7 +728,7 @@ export function DashboardPage() {
                 : "text-foreground-muted border-border hover:border-foreground-muted"
             )}
           >
-            Mois dernier
+            {t("dashboard.period30d")}
           </button>
           <button
             onClick={() => handleFilterChange("current_year")}
@@ -772,7 +739,7 @@ export function DashboardPage() {
                 : "text-foreground-muted border-border hover:border-foreground-muted"
             )}
           >
-            Année en cours
+            {t("dashboard.period1y")}
           </button>
           <button
             onClick={() => handleFilterChange("custom")}
@@ -783,7 +750,7 @@ export function DashboardPage() {
                 : "text-foreground-muted border-border hover:border-foreground-muted"
             )}
           >
-            Personnalisé
+            {t("common.filter")}
           </button>
 
           {timeRange.filter === "custom" && (
@@ -794,7 +761,7 @@ export function DashboardPage() {
                 onChange={(e) => setCustomFrom(e.target.value)}
                 className="bg-surface-elevated border border-border rounded-lg px-2 py-1 text-xs text-foreground"
               />
-              <span className="text-xs text-foreground-muted">au</span>
+              <span className="text-xs text-foreground-muted">→</span>
               <input
                 type="date"
                 value={customTo}
@@ -805,7 +772,7 @@ export function DashboardPage() {
                 onClick={handleCustomApply}
                 className="px-3 py-1 rounded-lg text-xs font-medium bg-primary text-white hover:bg-primary/90 transition-all"
               >
-                Appliquer
+                {t("common.apply")}
               </button>
             </div>
           )}
@@ -867,23 +834,23 @@ export function DashboardPage() {
 
       {/* ── Station Status KPIs ─────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        <StatusKPI label="Total Bornes" value={kpis.total_stations} icon={Activity} color="#8892B0" />
-        <StatusKPI label="Disponibles" value={kpis.available} icon={CheckCircle} color="#00D4AA" trend={`${availRate}%`} trendUp />
-        <StatusKPI label="En charge" value={kpis.charging} icon={BatteryCharging} color="#4ECDC4" />
-        <StatusKPI label="En panne" value={kpis.faulted} icon={AlertTriangle} color="#FF6B6B" highlight={kpis.faulted > 0} />
-        <StatusKPI label="Hors ligne" value={kpis.offline} icon={WifiOff} color="#95A5A6" />
+        <StatusKPI label={t("dashboard.activeStations")} value={kpis.total_stations} icon={Activity} color="#8892B0" />
+        <StatusKPI label={t("status.available")} value={kpis.available} icon={CheckCircle} color="#00D4AA" trend={`${availRate}%`} trendUp />
+        <StatusKPI label={t("status.charging")} value={kpis.charging} icon={BatteryCharging} color="#4ECDC4" />
+        <StatusKPI label={t("status.faulted")} value={kpis.faulted} icon={AlertTriangle} color="#FF6B6B" highlight={kpis.faulted > 0} />
+        <StatusKPI label={t("status.offline")} value={kpis.offline} icon={WifiOff} color="#95A5A6" />
       </div>
 
       {/* ── Business Metrics ────────────────────────────── */}
       <div className={`grid grid-cols-2 ${isRoadCpo ? "lg:grid-cols-4" : "lg:grid-cols-2"} gap-3`}>
         {isRoadCpo && (
-          <MetricCard icon={Users} label="Clients inscrits" value={businessMetrics?.totalCustomers ?? 0} color="#9B59B6" />
+          <MetricCard icon={Users} label={t("nav.customers")} value={businessMetrics?.totalCustomers ?? 0} color="#9B59B6" />
         )}
         {isRoadCpo && (
-          <MetricCard icon={CreditCard} label="Abonnements actifs" value={businessMetrics?.activeSubscriptions ?? 0} color="#3498DB" />
+          <MetricCard icon={CreditCard} label={t("b2b.activeDrivers")} value={businessMetrics?.activeSubscriptions ?? 0} color="#3498DB" />
         )}
-        <MetricCard icon={Zap} label="Énergie totale" value={`${((businessMetrics?.totalEnergy ?? 0) / 1000).toFixed(1)} MWh`} color="#F39C12" compareValue={compareMode && compareMetrics ? compareMetrics.totalEnergy / 1000 : undefined} />
-        <MetricCard icon={TrendingUp} label="Revenu total" value={`${((businessMetrics?.totalRevenue ?? 0) / 100).toLocaleString("fr-FR")} €`} color="#00D4AA" compareValue={compareMode && compareMetrics ? compareMetrics.totalRevenue / 100 : undefined} />
+        <MetricCard icon={Zap} label={t("dashboard.totalEnergy")} value={`${((businessMetrics?.totalEnergy ?? 0) / 1000).toFixed(1)} MWh`} color="#F39C12" compareValue={compareMode && compareMetrics ? compareMetrics.totalEnergy / 1000 : undefined} />
+        <MetricCard icon={TrendingUp} label={t("dashboard.totalRevenue")} value={`${((businessMetrics?.totalRevenue ?? 0) / 100).toLocaleString(i18n.language === "fr" ? "fr-FR" : "en-US")} €`} color="#00D4AA" compareValue={compareMode && compareMetrics ? compareMetrics.totalRevenue / 100 : undefined} />
       </div>
 
       {/* ── Road Connectivity + Activity KPIs (Road CPOs only) ── */}
@@ -986,7 +953,7 @@ export function DashboardPage() {
                 <YAxis tick={{ fill: "#8892B0", fontSize: 9 }} axisLine={false} tickLine={false} allowDecimals={false} />
                 <RechartsTooltip
                   contentStyle={{ backgroundColor: "#111638", border: "1px solid #2A2F5A", borderRadius: "8px", color: "#F7F9FC", fontSize: "11px" }}
-                  formatter={(value: number) => [`${value.toLocaleString("fr-FR")} kWh`, "Volume"]}
+                  formatter={(value: number) => [`${value.toLocaleString(i18n.language === "fr" ? "fr-FR" : "en-US")} kWh`, t("dashboard.totalEnergy")]}
                 />
                 <Bar dataKey="kwh" radius={[4, 4, 0, 0]} maxBarSize={30}>
                   {cdrMetrics.kwhByTerritoryArray.map((entry) => (
@@ -1016,11 +983,11 @@ export function DashboardPage() {
         {/* Legend */}
         <div className="flex items-center gap-4 mb-3 flex-wrap">
           {[
-            { label: "Disponible", color: "#00D4AA" },
-            { label: "En charge", color: "#3498DB" },
-            { label: "Suspendu", color: "#E67E22" },
-            { label: "En panne", color: "#FF6B6B" },
-            { label: "Hors ligne", color: "#95A5A6" },
+            { label: t("status.available"), color: "#00D4AA" },
+            { label: t("status.charging"), color: "#3498DB" },
+            { label: t("status.unavailable"), color: "#E67E22" },
+            { label: t("status.faulted"), color: "#FF6B6B" },
+            { label: t("status.offline"), color: "#95A5A6" },
           ].map((item) => (
             <div key={item.label} className="flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
@@ -1119,7 +1086,7 @@ export function DashboardPage() {
                       const st = session.stations;
                       if (Array.isArray(st) && st[0]) return st[0].name;
                       if (st && typeof st === "object" && "name" in (st as object)) return (st as { name: string }).name;
-                      return "Borne inconnue";
+                      return t("cpo.assets.stationNotFound");
                     })()}
                   </p>
                   <p className="text-[10px] text-foreground-muted">

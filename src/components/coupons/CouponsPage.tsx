@@ -31,6 +31,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { KPICard } from "@/components/ui/KPICard";
+import { useTranslation } from "react-i18next";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -168,6 +169,7 @@ function CouponsTableSkeleton({ rows = 8 }: { rows?: number }) {
 // ── Main Page ─────────────────────────────────────────────────
 
 export function CouponsPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { success: toastSuccess, error: toastError } = useToast();
   const [modalOpen, setModalOpen] = useState(false);

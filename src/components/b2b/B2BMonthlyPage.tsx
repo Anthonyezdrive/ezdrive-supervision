@@ -1,6 +1,6 @@
 import { useOutletContext } from "react-router-dom";
 import { useState, useMemo } from "react";
-import { Download, FileText, Eye, ChevronDown, ChevronUp } from "lucide-react";
+import { FileText, Eye, ChevronDown, ChevronUp } from "lucide-react";
 import { useB2BCdrs } from "@/hooks/useB2BCdrs";
 import { useB2BFilters } from "@/contexts/B2BFilterContext";
 import { groupByMonth, formatDuration, formatNumber, formatEUR } from "@/lib/b2b-formulas";
@@ -11,6 +11,7 @@ import { ExportButtons } from "./ExportButtons";
 import { PageHelp } from "@/components/ui/PageHelp";
 import { SlideOver } from "@/components/ui/SlideOver";
 import type { B2BClient, B2BCdr } from "@/types/b2b";
+import { useTranslation } from "react-i18next";
 
 const thClass =
   "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-foreground-muted";
@@ -22,6 +23,7 @@ const MONTH_NAMES = [
 ];
 
 export function B2BMonthlyPage() {
+  const { t } = useTranslation();
   const { activeClient, customerExternalIds } =
     useOutletContext<{ activeClient: B2BClient | null; customerExternalIds: string[] }>();
   const { year } = useB2BFilters();
@@ -76,7 +78,7 @@ export function B2BMonthlyPage() {
       redevanceRate: rate,
       lines: [
         {
-          description: `Redevance charge - ${monthLabel}`,
+          description: `Chiffre d'Affaires charge - ${monthLabel}`,
           quantity: monthRow.volumeAvecTarif,
           unitLabel: "kWh",
           unitPrice: totalRetail > 0 ? (redevanceHT / monthRow.volumeAvecTarif) : 0,
@@ -117,7 +119,7 @@ export function B2BMonthlyPage() {
       Durée_totale: formatDuration(r.duration),
       "Volume avec tarif": formatNumber(r.volumeAvecTarif),
       "Volume tarif gratuit": formatNumber(r.volumeGratuit),
-      "Redevance (€)": formatNumber(r.redevance),
+      "Chiffre d'Affaires (€)": formatNumber(r.redevance),
     }));
     exportRows.push({
       Mois: "Total",
@@ -125,7 +127,7 @@ export function B2BMonthlyPage() {
       Durée_totale: formatDuration(totals.duration),
       "Volume avec tarif": formatNumber(totals.volumeAvecTarif),
       "Volume tarif gratuit": formatNumber(totals.volumeGratuit),
-      "Redevance (€)": formatNumber(totals.redevance),
+      "Chiffre d'Affaires (€)": formatNumber(totals.redevance),
     });
     downloadCSV(exportRows, `b2b-rapport-mensuel-${activeClient?.slug ?? "client"}-${year}-${todayISO()}.csv`);
   }
@@ -149,7 +151,7 @@ export function B2BMonthlyPage() {
         { key: "duree", label: "Duree", align: "right", width: 1.5 },
         { key: "volAvecTarif", label: "Vol. avec tarif", align: "right", width: 1.5 },
         { key: "volGratuit", label: "Vol. gratuit", align: "right", width: 1.5 },
-        { key: "redevance", label: "Redevance (EUR)", align: "right", width: 1.5 },
+        { key: "redevance", label: "Chiffre d'Affaires (EUR)", align: "right", width: 1.5 },
       ],
       pdfRows,
       `rapport-mensuel-${activeClient?.slug ?? "client"}-${year}.pdf`,
@@ -169,19 +171,19 @@ export function B2BMonthlyPage() {
   return (
     <div className="space-y-4">
       <PageHelp
-        summary="Détail mois par mois de votre consommation avec répartition et export"
+        summary={t("b2b.monthlyHelpSummary", "Détail mois par mois de votre consommation avec répartition et export")}
         items={[
-          { label: "Vue mensuelle", description: "Sélectionnez un mois pour voir le détail de chaque session de charge." },
-          { label: "CDR", description: "Charge Detail Record — relevé détaillé d'une session : énergie, durée, coût, borne utilisée." },
-          { label: "Export CSV", description: "Téléchargez les données du mois sélectionné au format CSV pour votre comptabilité." },
-          { label: "Redevance mensuelle", description: "Montant dû pour le mois sélectionné, basé sur le taux contractuel." },
+          { label: t("b2b.monthlyView", "Vue mensuelle"), description: t("b2b.monthlyViewDesc", "Sélectionnez un mois pour voir le détail de chaque session de charge.") },
+          { label: t("b2b.cdrLabel", "CDR"), description: t("b2b.cdrDesc", "Charge Detail Record — relevé détaillé d'une session : énergie, durée, coût, borne utilisée.") },
+          { label: t("b2b.exportCsv", "Export CSV"), description: t("b2b.exportCsvDesc", "Téléchargez les données du mois sélectionné au format CSV pour votre comptabilité.") },
+          { label: t("b2b.revenueEur", "Chiffre d'Affaires mensuel"), description: t("b2b.monthlyRevenueDesc", "Chiffre d'affaires généré pour le mois sélectionné.") },
         ]}
       />
 
       {/* Header */}
       <div className="flex items-center justify-between">
         <h3 className="text-xl font-heading font-bold text-foreground">
-          Rapport mensuel — {year}
+          {t("b2b.monthlyReport", "Rapport mensuel")} — {year}
         </h3>
         <ExportButtons onCSV={handleExport} onPDF={handleExportPDF} disabled={rows.length === 0} />
       </div>
@@ -192,20 +194,20 @@ export function B2BMonthlyPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
-                <th className={thClass}>Mois</th>
-                <th className={`${thClass} text-right`}>Volume (kWh)</th>
-                <th className={`${thClass} text-right`}>Durée totale</th>
-                <th className={`${thClass} text-right`}>Volume avec tarif</th>
-                <th className={`${thClass} text-right`}>Volume tarif gratuit</th>
-                <th className={`${thClass} text-right`}>Redevance (€)</th>
-                <th className={`${thClass} text-center`}>Facture</th>
+                <th className={thClass}>{t("b2b.month", "Mois")}</th>
+                <th className={`${thClass} text-right`}>{t("b2b.volumeKwh", "Volume (kWh)")}</th>
+                <th className={`${thClass} text-right`}>{t("b2b.totalDuration", "Durée totale")}</th>
+                <th className={`${thClass} text-right`}>{t("b2b.volumeWithTariff", "Volume avec tarif")}</th>
+                <th className={`${thClass} text-right`}>{t("b2b.volumeFreeTariff", "Volume tarif gratuit")}</th>
+                <th className={`${thClass} text-right`}>{t("b2b.revenueEur", "Chiffre d'Affaires (€)")}</th>
+                <th className={`${thClass} text-center`}>{t("b2b.invoice", "Facture")}</th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-4 py-12 text-center text-foreground-muted text-sm">
-                    Aucune donnée pour {year}
+                    {t("b2b.noDataForYear", "Aucune donnée pour {{year}}", { year })}
                   </td>
                 </tr>
               ) : (
@@ -243,7 +245,7 @@ export function B2BMonthlyPage() {
                                 title="Télécharger la facture"
                               >
                                 <FileText className="w-3 h-3" />
-                                Facture
+                                {t("b2b.invoice", "Facture")}
                               </button>
                             )}
                           </td>
@@ -256,11 +258,11 @@ export function B2BMonthlyPage() {
                                 <table className="w-full">
                                   <thead>
                                     <tr className="text-[10px] text-foreground-muted uppercase tracking-wider">
-                                      <th className="px-4 py-2 text-left">Date</th>
-                                      <th className="px-4 py-2 text-left">Lieu</th>
-                                      <th className="px-4 py-2 text-left">Conducteur</th>
-                                      <th className="px-4 py-2 text-right">Énergie</th>
-                                      <th className="px-4 py-2 text-right">Coût</th>
+                                      <th className="px-4 py-2 text-left">{t("common.date", "Date")}</th>
+                                      <th className="px-4 py-2 text-left">{t("b2b.location", "Lieu")}</th>
+                                      <th className="px-4 py-2 text-left">{t("b2b.driver", "Conducteur")}</th>
+                                      <th className="px-4 py-2 text-right">{t("b2b.energy", "Énergie")}</th>
+                                      <th className="px-4 py-2 text-right">{t("b2b.cost", "Coût")}</th>
                                       <th className="px-4 py-2 text-right"></th>
                                     </tr>
                                   </thead>
@@ -288,7 +290,7 @@ export function B2BMonthlyPage() {
                                             ? formatEUR(cdr.total_retail_cost_incl_vat)
                                             : cdr.total_retail_cost != null
                                             ? formatEUR(cdr.total_retail_cost)
-                                            : "Gratuit"}
+                                            : t("b2b.free", "Gratuite")}
                                         </td>
                                         <td className="px-4 py-2 text-right">
                                           <Eye className="w-3 h-3 text-foreground-muted" />
@@ -298,7 +300,7 @@ export function B2BMonthlyPage() {
                                     {monthCdrs.length > 50 && (
                                       <tr>
                                         <td colSpan={6} className="px-4 py-2 text-xs text-foreground-muted text-center">
-                                          +{monthCdrs.length - 50} autres sessions
+                                          {t("b2b.otherSessions", "+{{count}} autres sessions", { count: monthCdrs.length - 50 })}
                                         </td>
                                       </tr>
                                     )}
@@ -313,7 +315,7 @@ export function B2BMonthlyPage() {
                   })}
                   {/* Total row */}
                   <tr className="bg-surface-elevated/30 font-bold border-t-2" style={{ borderTopColor: "#9ACC0E40" }}>
-                    <td className={tdClass}>Total</td>
+                    <td className={tdClass}>{t("common.total", "Total")}</td>
                     <td className={`${tdClass} text-right`}>{formatNumber(totals.volume)}</td>
                     <td className={`${tdClass} text-right`}>{formatDuration(totals.duration)}</td>
                     <td className={`${tdClass} text-right`}>{formatNumber(totals.volumeAvecTarif)}</td>
@@ -332,7 +334,7 @@ export function B2BMonthlyPage() {
       <SlideOver
         open={selectedCdr !== null}
         onClose={() => setSelectedCdr(null)}
-        title="Détail de la session"
+        title={t("b2b.sessionDetail", "Détail de la session")}
       >
         {selectedCdr && (
           <div className="space-y-5 p-1">
@@ -343,13 +345,13 @@ export function B2BMonthlyPage() {
                   ? "bg-blue-500/10 text-blue-400 border-blue-500/25"
                   : "bg-emerald-500/10 text-emerald-400 border-emerald-500/25"
               }`}>
-                {(selectedCdr.total_retail_cost ?? 0) > 0 ? "Session payante" : "Session gratuite"}
+                {(selectedCdr.total_retail_cost ?? 0) > 0 ? t("b2b.paidSession", "Session payante") : t("b2b.freeSession", "Session gratuite")}
               </span>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-xs text-foreground-muted mb-0.5">Lieu</p>
+                <p className="text-xs text-foreground-muted mb-0.5">{t("b2b.location", "Lieu")}</p>
                 <p className="text-sm font-medium text-foreground">{selectedCdr.cdr_location?.name ?? "—"}</p>
                 {selectedCdr.cdr_location?.address && (
                   <p className="text-xs text-foreground-muted">{selectedCdr.cdr_location.address}</p>
@@ -359,41 +361,41 @@ export function B2BMonthlyPage() {
                 )}
               </div>
               <div>
-                <p className="text-xs text-foreground-muted mb-0.5">Conducteur</p>
+                <p className="text-xs text-foreground-muted mb-0.5">{t("b2b.driver", "Conducteur")}</p>
                 <p className="text-sm font-medium text-foreground">{selectedCdr.driver_external_id ?? "—"}</p>
               </div>
               <div>
-                <p className="text-xs text-foreground-muted mb-0.5">Début</p>
+                <p className="text-xs text-foreground-muted mb-0.5">{t("b2b.startDate", "Début")}</p>
                 <p className="text-sm text-foreground">
                   {new Date(selectedCdr.start_date_time).toLocaleString("fr-FR", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-foreground-muted mb-0.5">Fin</p>
+                <p className="text-xs text-foreground-muted mb-0.5">{t("b2b.endDate", "Fin")}</p>
                 <p className="text-sm text-foreground">
                   {new Date(selectedCdr.end_date_time).toLocaleString("fr-FR", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" })}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-foreground-muted mb-0.5">Énergie</p>
+                <p className="text-xs text-foreground-muted mb-0.5">{t("b2b.energy", "Énergie")}</p>
                 <p className="text-sm font-semibold text-foreground">{formatNumber(selectedCdr.total_energy)} kWh</p>
               </div>
               <div>
-                <p className="text-xs text-foreground-muted mb-0.5">Durée</p>
+                <p className="text-xs text-foreground-muted mb-0.5">{t("b2b.duration", "Durée")}</p>
                 <p className="text-sm text-foreground">{formatDuration(selectedCdr.total_time / 3600)}</p>
               </div>
               {selectedCdr.total_parking_time != null && (
                 <div>
-                  <p className="text-xs text-foreground-muted mb-0.5">Temps de stationnement</p>
+                  <p className="text-xs text-foreground-muted mb-0.5">{t("b2b.parkingTime", "Temps de stationnement")}</p>
                   <p className="text-sm text-foreground">{formatDuration(selectedCdr.total_parking_time / 3600)}</p>
                 </div>
               )}
               <div>
-                <p className="text-xs text-foreground-muted mb-0.5">Coût HT</p>
+                <p className="text-xs text-foreground-muted mb-0.5">{t("b2b.costHT", "Coût HT")}</p>
                 <p className="text-sm text-foreground">{selectedCdr.total_retail_cost != null ? formatEUR(selectedCdr.total_retail_cost) : "—"}</p>
               </div>
               <div>
-                <p className="text-xs text-foreground-muted mb-0.5">Coût TTC</p>
+                <p className="text-xs text-foreground-muted mb-0.5">{t("b2b.costTTC", "Coût TTC")}</p>
                 <p className="text-sm font-semibold text-foreground">{selectedCdr.total_retail_cost_incl_vat != null ? formatEUR(selectedCdr.total_retail_cost_incl_vat) : "—"}</p>
               </div>
             </div>
@@ -401,18 +403,18 @@ export function B2BMonthlyPage() {
             {/* Token info */}
             {selectedCdr.cdr_token && (
               <div className="bg-surface-elevated border border-border rounded-xl p-4 space-y-2">
-                <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider">Token RFID</p>
+                <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider">{t("b2b.tokenRFID", "Token RFID")}</p>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <p className="text-xs text-foreground-muted">UID</p>
+                    <p className="text-xs text-foreground-muted">{t("b2b.tokenUID", "UID")}</p>
                     <p className="text-sm font-mono text-foreground">{selectedCdr.cdr_token.uid}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-foreground-muted">Type</p>
+                    <p className="text-xs text-foreground-muted">{t("b2b.tokenType", "Type")}</p>
                     <p className="text-sm text-foreground">{selectedCdr.cdr_token.type}</p>
                   </div>
                   <div className="col-span-2">
-                    <p className="text-xs text-foreground-muted">Contract ID</p>
+                    <p className="text-xs text-foreground-muted">{t("b2b.contractId", "Contract ID")}</p>
                     <p className="text-sm font-mono text-foreground">{selectedCdr.cdr_token.contract_id}</p>
                   </div>
                 </div>
@@ -423,11 +425,11 @@ export function B2BMonthlyPage() {
             {selectedCdr.cdr_location?.evses?.[0] && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <p className="text-xs text-foreground-muted mb-0.5">EVSE ID</p>
+                  <p className="text-xs text-foreground-muted mb-0.5">{t("b2b.evseId", "EVSE ID")}</p>
                   <p className="text-xs font-mono text-foreground">{selectedCdr.cdr_location.evses[0].evse_id}</p>
                 </div>
                 <div>
-                  <p className="text-xs text-foreground-muted mb-0.5">Type de chargeur</p>
+                  <p className="text-xs text-foreground-muted mb-0.5">{t("b2b.chargerType", "Type de chargeur")}</p>
                   <p className="text-sm text-foreground">{selectedCdr.charger_type ?? "—"}</p>
                 </div>
               </div>

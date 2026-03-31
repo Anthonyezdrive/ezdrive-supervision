@@ -35,6 +35,7 @@ import { cn } from "@/lib/utils";
 import { Skeleton, TableSkeleton } from "@/components/ui/Skeleton";
 import { apiDownload, apiPost } from "@/lib/api";
 import { todayISO } from "@/lib/export";
+import { useTranslation } from "react-i18next";
 // Error state handled inline with isError + refetch
 
 // Lazy-loaded Sprint 3 billing components
@@ -282,6 +283,7 @@ function InvoiceKPISkeleton() {
 // ---------------------------------------------------------------------------
 
 export function InvoicesPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [mainView, setMainView] = useState<MainView>("invoices");
   const [activeTab, setActiveTab] = useState<StatusFilter>("all");
@@ -444,14 +446,6 @@ export function InvoicesPage() {
       console.error("[Invoice] send error:", err);
       alert("Erreur lors de l'envoi.");
     }
-  }, [queryClient]);
-
-  const handleCreditNote = useCallback(async (invoiceId: string) => {
-    try {
-      await supabase.from("invoices").update({ status: "cancelled" }).eq("id", invoiceId);
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
-      alert("Avoir cree (facture annulee).");
-    } catch (err) { console.error("[Invoice] credit note error:", err); }
   }, [queryClient]);
 
   const handleExportPennylane = useCallback(() => {

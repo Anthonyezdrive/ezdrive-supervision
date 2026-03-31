@@ -5,6 +5,14 @@ import { useCpo } from "@/contexts/CpoContext";
 import { useToast } from "@/contexts/ToastContext";
 import { PageHelp } from "@/components/ui/PageHelp";
 import {
+  useTariffSchedules,
+  useIdleFeeConfigs,
+  useCreateTariffSchedule,
+  useDeleteTariffSchedule,
+  useUpsertIdleFeeConfig,
+} from "@/hooks/useTariffSchedules";
+import type { TariffSchedule, IdleFeeConfig } from "@/hooks/useTariffSchedules";
+import {
   Wallet,
   Zap,
   DollarSign,
@@ -18,12 +26,15 @@ import {
   Link2,
   Copy,
   Calculator,
-  History,
   Layers,
   Pencil,
+  Clock,
+  Timer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SyncButton } from "@/components/shared/SyncButton";
 import { TariffVisualBuilder } from "./TariffVisualBuilder";
+import { useTranslation } from "react-i18next";
 
 // ============================================================
 // Tariffs Management Page — Real DB schema
@@ -86,6 +97,7 @@ interface AssignFormData {
 }
 
 export function TariffsPage() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { selectedCpoId } = useCpo();
   const { success: toastSuccess, error: toastError } = useToast();
@@ -358,6 +370,7 @@ export function TariffsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <SyncButton functionName="road-tariff-sync" label="Sync tarifs Road.io" invalidateKeys={["tariffs"]} variant="small" formatSuccess={(d) => `${d.total_created ?? 0} créés · ${d.total_updated ?? 0} mis à jour`} />
           <button
             onClick={() => setShowSimulateModal(true)}
             className="flex items-center gap-1.5 px-3 py-2 bg-surface border border-border rounded-xl text-sm text-foreground-muted hover:text-foreground hover:border-foreground-muted transition-colors"
@@ -490,6 +503,9 @@ export function TariffsPage() {
           onDelete={(t) => setDeleteOcpiTarget(t)}
         />
       )}
+
+      {/* Idle Fee Configuration */}
+      <IdleFeeSection cpoId={selectedCpoId ?? undefined} />
 
       {/* Assign Modal */}
       {showAssignModal && (
@@ -662,7 +678,7 @@ function StationTariffsTable({
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
-                      {components.map((c, i) => (
+                      {components.map((c, _i) => (
                         <span
                           key={`${c.type}-${c.price}`}
                           className={cn(
@@ -828,7 +844,7 @@ function OcpiTariffsTable({
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
-                      {components.map((c, i) => (
+                      {components.map((c, _i) => (
                         <span
                           key={`${c.type}-${c.price}`}
                           className={cn(
@@ -1229,7 +1245,7 @@ function CreateOcpiTariffModal({ onClose, onCreated }: { onClose: () => void; on
           {/* Visual Tariff Builder */}
           <TariffVisualBuilder
             value={tariffValue}
-            onChange={setTariffValue}
+            onChange={setTariffValue as any}
             showJsonToggle={true}
           />
 
@@ -1483,9 +1499,12 @@ function EditOcpiTariffModal({
 
           <TariffVisualBuilder
             value={tariffValue}
-            onChange={setTariffValue}
+            onChange={setTariffValue as any}
             showJsonToggle={true}
           />
+
+          {/* Planification horaire */}
+          <TariffScheduleSection tariffId={tariff.id} />
 
           {error && (
             <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl">
@@ -1510,6 +1529,420 @@ function EditOcpiTariffModal({
         </div>
       </div>
     </>
+  );
+}
+
+// ── Tariff Schedule Section (inside Edit Modal) ────────────
+
+const DAY_LABELS = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"] as const;
+
+const PEAK_BADGE: Record<string, { label: string; color: string }> = {
+  peak: { label: "Peak", color: "bg-red-500/10 text-red-400" },
+  off_peak: { label: "Off-peak", color: "bg-green-500/10 text-green-400" },
+  super_off_peak: { label: "Super off-peak", color: "bg-blue-500/10 text-blue-400" },
+  normal: { label: "Normal", color: "bg-foreground-muted/10 text-foreground-muted" },
+};
+
+function TariffScheduleSection({ tariffId }: { tariffId: string }) {
+  const { data: schedules, isLoading } = useTariffSchedules(tariffId);
+  const createMutation = useCreateTariffSchedule();
+  const deleteMutation = useDeleteTariffSchedule();
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({
+    days: [0, 1, 2, 3, 4] as number[],
+    start_time: "08:00",
+    end_time: "20:00",
+    peak_type: "peak" as TariffSchedule["peak_type"],
+    price_multiplier: 1.0,
+    label: "",
+  });
+
+  function toggleDay(d: number) {
+    setForm((f) => ({
+      ...f,
+      days: f.days.includes(d) ? f.days.filter((x) => x !== d) : [...f.days, d].sort(),
+    }));
+  }
+
+  function handleCreate() {
+    createMutation.mutate(
+      {
+        tariff_id: tariffId,
+        day_of_week: form.days,
+        start_time: form.start_time,
+        end_time: form.end_time,
+        peak_type: form.peak_type,
+        price_multiplier: form.price_multiplier,
+        label: form.label || null,
+        is_active: true,
+      },
+      { onSuccess: () => setShowAdd(false) }
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-xs font-semibold text-foreground-muted uppercase tracking-wider flex items-center gap-1.5">
+          <Clock className="w-3.5 h-3.5" />
+          Planification horaire
+        </p>
+        <button
+          type="button"
+          onClick={() => setShowAdd(!showAdd)}
+          className="flex items-center gap-1 px-2 py-1 text-xs text-primary hover:bg-primary/10 rounded-lg transition-colors"
+        >
+          <Plus className="w-3 h-3" />
+          Ajouter
+        </button>
+      </div>
+
+      {isLoading && <div className="h-8 animate-shimmer rounded" />}
+
+      {!isLoading && (!schedules || schedules.length === 0) && !showAdd && (
+        <p className="text-xs text-foreground-muted/60 italic">Aucune planification configuree</p>
+      )}
+
+      {schedules && schedules.length > 0 && (
+        <div className="border border-border rounded-xl overflow-hidden mb-3">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border bg-surface-elevated/50">
+                <th className="text-left px-3 py-2 font-medium text-foreground-muted">Jours</th>
+                <th className="text-left px-3 py-2 font-medium text-foreground-muted">Horaires</th>
+                <th className="text-left px-3 py-2 font-medium text-foreground-muted">Type</th>
+                <th className="text-left px-3 py-2 font-medium text-foreground-muted">Mult.</th>
+                <th className="text-left px-3 py-2 font-medium text-foreground-muted">Label</th>
+                <th className="w-8" />
+              </tr>
+            </thead>
+            <tbody>
+              {schedules.map((s) => {
+                const badge = PEAK_BADGE[s.peak_type] ?? PEAK_BADGE.normal;
+                return (
+                  <tr key={s.id} className="border-b border-border/50 hover:bg-surface-elevated/30">
+                    <td className="px-3 py-2">
+                      <div className="flex gap-0.5">
+                        {[0, 1, 2, 3, 4, 5, 6].map((d) => (
+                          <span
+                            key={d}
+                            className={cn(
+                              "w-5 h-5 flex items-center justify-center rounded text-[9px] font-medium",
+                              s.day_of_week.includes(d)
+                                ? "bg-primary/20 text-primary"
+                                : "bg-surface-elevated text-foreground-muted/30"
+                            )}
+                          >
+                            {DAY_LABELS[d][0]}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 font-mono text-foreground-muted">
+                      {s.start_time?.slice(0, 5)} - {s.end_time?.slice(0, 5)}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className={cn("px-1.5 py-0.5 rounded text-[10px] font-medium", badge.color)}>
+                        {badge.label}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 font-mono text-foreground-muted">
+                      x{s.price_multiplier}
+                    </td>
+                    <td className="px-3 py-2 text-foreground-muted truncate max-w-[100px]">
+                      {s.label ?? "—"}
+                    </td>
+                    <td className="px-2 py-2">
+                      <button
+                        type="button"
+                        onClick={() => deleteMutation.mutate(s.id)}
+                        disabled={deleteMutation.isPending}
+                        className="p-1 text-foreground-muted hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showAdd && (
+        <div className="border border-primary/20 bg-primary/5 rounded-xl p-3 space-y-3">
+          <div className="flex items-center gap-1">
+            <span className="text-xs font-medium text-foreground-muted mr-2">Jours :</span>
+            {DAY_LABELS.map((label, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => toggleDay(i)}
+                className={cn(
+                  "w-7 h-7 flex items-center justify-center rounded text-[10px] font-medium transition-colors",
+                  form.days.includes(i)
+                    ? "bg-primary/20 text-primary border border-primary/30"
+                    : "bg-surface-elevated text-foreground-muted border border-border hover:border-foreground-muted"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            <div>
+              <label className="block text-[10px] text-foreground-muted mb-1">Debut</label>
+              <input
+                type="time"
+                value={form.start_time}
+                onChange={(e) => setForm((f) => ({ ...f, start_time: e.target.value }))}
+                className="w-full px-2 py-1.5 bg-surface-elevated border border-border rounded-lg text-xs text-foreground focus:outline-none focus:border-primary/50"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-foreground-muted mb-1">Fin</label>
+              <input
+                type="time"
+                value={form.end_time}
+                onChange={(e) => setForm((f) => ({ ...f, end_time: e.target.value }))}
+                className="w-full px-2 py-1.5 bg-surface-elevated border border-border rounded-lg text-xs text-foreground focus:outline-none focus:border-primary/50"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-foreground-muted mb-1">Type</label>
+              <select
+                value={form.peak_type}
+                onChange={(e) => setForm((f) => ({ ...f, peak_type: e.target.value as TariffSchedule["peak_type"] }))}
+                className="w-full px-2 py-1.5 bg-surface-elevated border border-border rounded-lg text-xs text-foreground focus:outline-none focus:border-primary/50"
+              >
+                <option value="peak">Peak</option>
+                <option value="off_peak">Off-peak</option>
+                <option value="super_off_peak">Super off-peak</option>
+                <option value="normal">Normal</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] text-foreground-muted mb-1">Multiplicateur</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.price_multiplier}
+                onChange={(e) => setForm((f) => ({ ...f, price_multiplier: parseFloat(e.target.value) || 1 }))}
+                className="w-full px-2 py-1.5 bg-surface-elevated border border-border rounded-lg text-xs text-foreground focus:outline-none focus:border-primary/50"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-[10px] text-foreground-muted mb-1">Label (optionnel)</label>
+            <input
+              type="text"
+              value={form.label}
+              onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
+              placeholder="Ex: Heures creuses"
+              className="w-full px-2 py-1.5 bg-surface-elevated border border-border rounded-lg text-xs text-foreground placeholder:text-foreground-muted/40 focus:outline-none focus:border-primary/50"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setShowAdd(false)}
+              className="px-3 py-1.5 text-xs text-foreground-muted hover:text-foreground transition-colors"
+            >
+              Annuler
+            </button>
+            <button
+              type="button"
+              onClick={handleCreate}
+              disabled={createMutation.isPending || form.days.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-background rounded-lg text-xs font-semibold hover:bg-primary/90 disabled:opacity-40 transition-colors"
+            >
+              {createMutation.isPending && <Loader2 className="w-3 h-3 animate-spin" />}
+              Ajouter
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Idle Fee Section (CPO-level) ───────────────────────────
+
+function IdleFeeSection({ cpoId }: { cpoId?: string }) {
+  const { data: configs, isLoading } = useIdleFeeConfigs(cpoId);
+  const upsertMutation = useUpsertIdleFeeConfig();
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({
+    enabled: true,
+    fee_per_minute: 0.1,
+    grace_period_minutes: 15,
+    max_fee: 10,
+    applies_after: "charge_complete" as IdleFeeConfig["applies_after"],
+    notification_at_minutes: 5,
+  });
+
+  function handleUpsert() {
+    upsertMutation.mutate(
+      {
+        cpo_id: cpoId ?? null,
+        station_id: null,
+        ...form,
+      },
+      { onSuccess: () => setShowAdd(false) }
+    );
+  }
+
+  if (!configs?.length && !showAdd && !isLoading) return null;
+
+  return (
+    <div className="bg-surface border border-border rounded-xl p-4">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+          <Timer className="w-4 h-4 text-foreground-muted" />
+          Frais de stationnement (Idle Fee)
+        </h3>
+        <button
+          onClick={() => setShowAdd(!showAdd)}
+          className="flex items-center gap-1 px-2 py-1 text-xs text-primary hover:bg-primary/10 rounded-lg transition-colors"
+        >
+          <Plus className="w-3 h-3" />
+          Configurer
+        </button>
+      </div>
+
+      {isLoading && <div className="h-8 animate-shimmer rounded" />}
+
+      {configs && configs.length > 0 && (
+        <div className="border border-border rounded-lg overflow-hidden">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border bg-surface-elevated/50">
+                <th className="text-left px-3 py-2 font-medium text-foreground-muted">Actif</th>
+                <th className="text-left px-3 py-2 font-medium text-foreground-muted">Fee/min</th>
+                <th className="text-left px-3 py-2 font-medium text-foreground-muted">Grace (min)</th>
+                <th className="text-left px-3 py-2 font-medium text-foreground-muted">Max fee</th>
+                <th className="text-left px-3 py-2 font-medium text-foreground-muted">Declenchement</th>
+                <th className="text-left px-3 py-2 font-medium text-foreground-muted">Notif. a</th>
+              </tr>
+            </thead>
+            <tbody>
+              {configs.map((c) => (
+                <tr key={c.id} className="border-b border-border/50">
+                  <td className="px-3 py-2">
+                    <span className={cn(
+                      "px-1.5 py-0.5 rounded text-[10px] font-medium",
+                      c.enabled ? "bg-green-500/10 text-green-400" : "bg-red-500/10 text-red-400"
+                    )}>
+                      {c.enabled ? "Oui" : "Non"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 font-mono">{c.fee_per_minute} EUR</td>
+                  <td className="px-3 py-2">{c.grace_period_minutes} min</td>
+                  <td className="px-3 py-2 font-mono">{c.max_fee != null ? `${c.max_fee} EUR` : "—"}</td>
+                  <td className="px-3 py-2">
+                    <span className="px-1.5 py-0.5 bg-surface-elevated rounded text-[10px]">
+                      {c.applies_after === "charge_complete" ? "Fin de charge" : "Fin de session"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2">{c.notification_at_minutes != null ? `${c.notification_at_minutes} min` : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showAdd && (
+        <div className="border border-primary/20 bg-primary/5 rounded-xl p-3 space-y-3 mt-3">
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className="block text-[10px] text-foreground-muted mb-1">Fee/minute (EUR)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.fee_per_minute}
+                onChange={(e) => setForm((f) => ({ ...f, fee_per_minute: parseFloat(e.target.value) || 0 }))}
+                className="w-full px-2 py-1.5 bg-surface-elevated border border-border rounded-lg text-xs text-foreground focus:outline-none focus:border-primary/50"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-foreground-muted mb-1">Grace (minutes)</label>
+              <input
+                type="number"
+                min="0"
+                value={form.grace_period_minutes}
+                onChange={(e) => setForm((f) => ({ ...f, grace_period_minutes: parseInt(e.target.value) || 0 }))}
+                className="w-full px-2 py-1.5 bg-surface-elevated border border-border rounded-lg text-xs text-foreground focus:outline-none focus:border-primary/50"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] text-foreground-muted mb-1">Max fee (EUR)</label>
+              <input
+                type="number"
+                step="0.5"
+                min="0"
+                value={form.max_fee}
+                onChange={(e) => setForm((f) => ({ ...f, max_fee: parseFloat(e.target.value) || 0 }))}
+                className="w-full px-2 py-1.5 bg-surface-elevated border border-border rounded-lg text-xs text-foreground focus:outline-none focus:border-primary/50"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className="block text-[10px] text-foreground-muted mb-1">Declenchement</label>
+              <select
+                value={form.applies_after}
+                onChange={(e) => setForm((f) => ({ ...f, applies_after: e.target.value as IdleFeeConfig["applies_after"] }))}
+                className="w-full px-2 py-1.5 bg-surface-elevated border border-border rounded-lg text-xs text-foreground focus:outline-none focus:border-primary/50"
+              >
+                <option value="charge_complete">Fin de charge</option>
+                <option value="session_end">Fin de session</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-[10px] text-foreground-muted mb-1">Notif. a (min)</label>
+              <input
+                type="number"
+                min="0"
+                value={form.notification_at_minutes}
+                onChange={(e) => setForm((f) => ({ ...f, notification_at_minutes: parseInt(e.target.value) || 0 }))}
+                className="w-full px-2 py-1.5 bg-surface-elevated border border-border rounded-lg text-xs text-foreground focus:outline-none focus:border-primary/50"
+              />
+            </div>
+            <div className="flex items-end">
+              <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.enabled}
+                  onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
+                  className="rounded border-border"
+                />
+                Actif
+              </label>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setShowAdd(false)}
+              className="px-3 py-1.5 text-xs text-foreground-muted hover:text-foreground transition-colors"
+            >
+              Annuler
+            </button>
+            <button
+              onClick={handleUpsert}
+              disabled={upsertMutation.isPending}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-background rounded-lg text-xs font-semibold hover:bg-primary/90 disabled:opacity-40 transition-colors"
+            >
+              {upsertMutation.isPending && <Loader2 className="w-3 h-3 animate-spin" />}
+              Enregistrer
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

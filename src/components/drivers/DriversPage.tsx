@@ -40,6 +40,8 @@ import { SlideOver } from "@/components/ui/SlideOver";
 import { downloadCSV, todayISO } from "@/lib/export";
 import { DriverTokenLink } from "@/components/drivers/DriverTokenLink";
 import { useDriverSessions, useSoftDeleteDriver } from "@/hooks/useDriverTokens";
+import { SyncButton } from "@/components/shared/SyncButton";
+import { useTranslation } from "react-i18next";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -148,6 +150,7 @@ function nameToHue(name: string | null): number {
 // ── Main Page ─────────────────────────────────────────────────
 
 export function DriversPage() {
+  const { t } = useTranslation();
   const { selectedCpoId } = useCpo();
   const [sourceFilter, setSourceFilter] = useState("");
 
@@ -328,6 +331,8 @@ export function DriversPage() {
               {drivers.length.toLocaleString("fr-FR")} conducteur{drivers.length !== 1 ? "s" : ""}
             </span>
           )}
+          <SyncButton functionName="gfx-driver-sync" label="Sync GreenFlux" invalidateKeys={["drivers", "consumers"]} variant="small" formatSuccess={(d) => `GFX: ${d.total_inserted ?? 0} nouveaux, ${d.total_updated ?? 0} mis à jour`} />
+          <SyncButton functionName="road-driver-sync" label="Sync Road.io" invalidateKeys={["drivers", "consumers"]} variant="small" formatSuccess={(d) => `Road: ${d.total_inserted ?? 0} nouveaux, ${d.total_updated ?? 0} mis à jour`} />
           {/* Story 71: Export CSV */}
           <button
             onClick={() => {
@@ -597,7 +602,6 @@ function DriverDetailDrawer({ driver, onClose, onRefresh }: { driver: Driver; on
     ? Date.now() - new Date(driver.last_session_at).getTime() < 90 * 24 * 60 * 60 * 1000
     : false;
 
-  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<DetailTab>("informations");
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({
@@ -614,7 +618,7 @@ function DriverDetailDrawer({ driver, onClose, onRefresh }: { driver: Driver; on
     cost_center: driver.cost_center ?? "",
   });
   const [showB2BAssign, setShowB2BAssign] = useState(false);
-  const [b2bSearch, setB2bSearch] = useState("");
+  const [_b2bSearch, _setB2bSearch] = useState("");
   const [showMerge, setShowMerge] = useState(false);
   const [mergeSearch, setMergeSearch] = useState("");
   const [mergeTarget, setMergeTarget] = useState<Driver | null>(null);

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   Tag,
@@ -21,7 +21,6 @@ import {
   ExternalLink,
   AlertTriangle,
   Link as LinkIcon,
-  Bell,
   FileText,
   Search,
   Radio,
@@ -35,8 +34,6 @@ import {
   ToggleRight,
   Phone,
   AtSign,
-  ChevronDown,
-  RefreshCw,
   Key,
   ClipboardList,
   Copy,
@@ -46,6 +43,7 @@ import {
   Eye,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SyncButton } from "@/components/shared/SyncButton";
 import { AdminPage } from "@/components/admin/AdminPage";
 import { SettingsPage } from "@/components/settings/SettingsPage";
 import { supabase } from "@/lib/supabase";
@@ -53,6 +51,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
+import { useTranslation } from "react-i18next";
 
 // ── Tab definitions (extended with new stories 91-96) ────────
 
@@ -74,6 +73,7 @@ const TABS = [
 type TabKey = (typeof TABS)[number]["key"];
 
 export function AdminConfigPage() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<TabKey>("admin");
   return (
     <div className="space-y-4">
@@ -81,6 +81,16 @@ export function AdminConfigPage() {
         <h1 className="font-heading text-xl font-bold text-foreground">Administration</h1>
         <p className="text-sm text-foreground-muted mt-0.5">Gestion CPO et configuration</p>
       </div>
+
+      {/* Synchronisations externes */}
+      <div className="flex flex-wrap items-center gap-2 p-3 bg-surface border border-border rounded-xl">
+        <span className="text-xs font-semibold text-foreground-muted uppercase tracking-wider mr-2">Synchronisations externes</span>
+        <SyncButton functionName="road-sync" label="Sync Road.io Stations" invalidateKeys={["stations"]} variant="small" formatSuccess={(d) => `${d.total_synced ?? 0} bornes sync · ${d.new_stations ?? 0} nouvelles`} />
+        <SyncButton functionName="road-cdr-fix-links" label="Fix CDR Links" invalidateKeys={["billing", "cdrs"]} variant="small" confirmMessage="Relancer le fix des liens CDR Road.io ?" formatSuccess={(d) => `${d.total_cdrs_updated ?? 0} CDR liés`} />
+        <SyncButton functionName="health-check" label="Health Check" variant="small" formatSuccess={() => `Système OK`} />
+        <SyncButton functionName="maps-feed" label="Test Maps Feed" variant="small" />
+      </div>
+
       <div className="flex gap-1 border-b border-border overflow-x-auto">
         {TABS.map((t) => (
           <button
@@ -1641,7 +1651,7 @@ function EmailTemplatesSection() {
 }
 
 function EmailTemplateEditor({
-  templateKey,
+  templateKey: _templateKey,
   label,
   icon: Icon,
   initialSubject,

@@ -32,6 +32,7 @@ import { useCpo } from "@/contexts/CpoContext";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/contexts/ToastContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useTranslation } from "react-i18next";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -168,6 +169,7 @@ function EnergyDonut({
 // ══════════════════════════════════════════════════════════════
 
 export function EnergyMixPage() {
+  const { t } = useTranslation();
   const [selectedProfile, setSelectedProfile] = useState<EnergyMixProfile | null>(null);
   const [editingProfile, setEditingProfile] = useState<EnergyMixProfile | null>(null);
   const [isCreating, setIsCreating] = useState(false);

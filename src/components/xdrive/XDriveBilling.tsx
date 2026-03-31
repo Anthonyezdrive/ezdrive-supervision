@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { useOutletContext } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { SyncButton } from "@/components/shared/SyncButton";
 import {
   FileCheck,
   Calculator,
@@ -12,7 +13,6 @@ import {
   Zap,
   Euro,
   Clock,
-  Save,
   Send,
   Banknote,
   AlertTriangle,
@@ -20,7 +20,6 @@ import {
   FileDown,
   CreditCard,
   Wifi,
-  Scale,
   BarChart2,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -186,7 +185,7 @@ const PAYMENT_COLORS: Record<string, string> = {
 // ── Main component ─────────────────────────────────────────
 
 export function XDriveBilling() {
-  const { partner, isEZDriveAdmin, theme, isReadOnly } =
+  const { partner, isEZDriveAdmin, theme, isReadOnly: _isReadOnly } =
     useOutletContext<XDriveOutletContext>();
   const { profile } = useAuth();
   const queryClient = useQueryClient();
@@ -304,7 +303,7 @@ export function XDriveBilling() {
         solde_net: soldeNet,
         notes: invoiceNotes.trim() || null,
         status: "generee" as const,
-        generated_by: (profile as Record<string, unknown>)?.id as string ?? null,
+        generated_by: (profile as unknown as Record<string, unknown>)?.id as string ?? null,
         generated_at: new Date().toISOString(),
       };
 
@@ -382,9 +381,12 @@ export function XDriveBilling() {
         >
           <ChevronLeft className="w-4 h-4 text-foreground-muted" />
         </button>
-        <h2 className="text-lg font-heading font-bold text-foreground">
-          {fmtMonthLabel(selectedMonth)}
-        </h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-heading font-bold text-foreground">
+            {fmtMonthLabel(selectedMonth)}
+          </h2>
+          <SyncButton functionName="xdrive-stripe-reconciliation" label="Réconciliation Stripe" invalidateKeys={["xdrive-billing"]} variant="small" confirmMessage="Lancer la réconciliation Stripe ?" />
+        </div>
         <button
           onClick={() => setSelectedMonth((m) => monthOffset(m, 1))}
           className="p-2 rounded-xl border border-border hover:bg-surface-elevated transition-colors"
@@ -820,7 +822,7 @@ function FacturationTab({
   onGenerate,
   isGenerating,
   generateError,
-  canGenerate,
+  canGenerate: _canGenerate,
   isEZDriveAdmin,
   partnerName,
   selectedMonth,

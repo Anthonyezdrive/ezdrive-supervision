@@ -11,6 +11,7 @@ import { ExportButtons } from "./ExportButtons";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { PageHelp } from "@/components/ui/PageHelp";
 import type { B2BClient, B2BCdr } from "@/types/b2b";
+import { useTranslation } from "react-i18next";
 
 const thClass =
   "px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-foreground-muted";
@@ -43,6 +44,7 @@ function tokenShort(uid: string | undefined | null): string {
 }
 
 export function B2BSessionsPage() {
+  const { t } = useTranslation();
   const { activeClient, customerExternalIds } =
     useOutletContext<{ activeClient: B2BClient | null; customerExternalIds: string[] }>();
   const { year } = useB2BFilters();
@@ -155,12 +157,12 @@ export function B2BSessionsPage() {
   return (
     <div className="space-y-4">
       <PageHelp
-        summary="Détail de chaque session de charge (CDR) avec filtres et export"
+        summary={t("b2b.sessionsHelpSummary", "Détail de chaque session de charge (CDR) avec filtres et export")}
         items={[
-          { label: "CDR", description: "Charge Detail Record — relevé détaillé d'une session : énergie, durée, coût, borne utilisée." },
-          { label: "Filtres", description: "Recherchez par lieu, conducteur ou token. Filtrez par date ou type de session." },
-          { label: "Détail", description: "Cliquez sur une ligne pour afficher tous les détails de la session." },
-          { label: "Export", description: "Téléchargez les sessions filtrées au format CSV ou PDF." },
+          { label: t("b2b.cdrLabel", "CDR"), description: t("b2b.cdrDesc", "Charge Detail Record — relevé détaillé d'une session : énergie, durée, coût, borne utilisée.") },
+          { label: t("b2b.filtersLabel", "Filtres"), description: t("b2b.filtersDesc", "Recherchez par lieu, conducteur ou token. Filtrez par date ou type de session.") },
+          { label: t("b2b.detailLabel", "Détail"), description: t("b2b.detailDesc", "Cliquez sur une ligne pour afficher tous les détails de la session.") },
+          { label: t("b2b.exportLabel", "Export"), description: t("b2b.exportDesc", "Téléchargez les sessions filtrées au format CSV ou PDF.") },
         ]}
       />
 
@@ -172,7 +174,7 @@ export function B2BSessionsPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-foreground-muted" />
             <input
               type="text"
-              placeholder="Rechercher lieu, conducteur, token…"
+              placeholder={t("b2b.searchPlaceholder", "Rechercher lieu, conducteur, token…")}
               value={search}
               onChange={(e) => { setSearch(e.target.value); setVisibleCount(PAGE_SIZE); }}
               className="w-full pl-9 pr-3 py-2 text-sm bg-background border border-border rounded-lg text-foreground placeholder:text-foreground-muted focus:outline-none focus:ring-2 focus:ring-primary/40"
@@ -181,7 +183,7 @@ export function B2BSessionsPage() {
 
           {/* Date from */}
           <div className="flex items-center gap-1.5">
-            <label className="text-xs text-foreground-muted">Du</label>
+            <label className="text-xs text-foreground-muted">{t("b2b.from", "Du")}</label>
             <input
               type="date"
               value={dateFrom}
@@ -192,7 +194,7 @@ export function B2BSessionsPage() {
 
           {/* Date to */}
           <div className="flex items-center gap-1.5">
-            <label className="text-xs text-foreground-muted">Au</label>
+            <label className="text-xs text-foreground-muted">{t("b2b.to", "Au")}</label>
             <input
               type="date"
               value={dateTo}
@@ -207,9 +209,9 @@ export function B2BSessionsPage() {
             onChange={(e) => { setSessionType(e.target.value as SessionTypeFilter); setVisibleCount(PAGE_SIZE); }}
             className="px-3 py-2 text-sm bg-background border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
           >
-            <option value="all">Toutes</option>
-            <option value="paid">Payantes</option>
-            <option value="free">Gratuites</option>
+            <option value="all">{t("b2b.allTypes", "Toutes")}</option>
+            <option value="paid">{t("b2b.paidType", "Payantes")}</option>
+            <option value="free">{t("b2b.freeType", "Gratuites")}</option>
           </select>
 
           {/* Export */}
@@ -224,7 +226,7 @@ export function B2BSessionsPage() {
             <Hash className="w-4.5 h-4.5" style={{ color: "#9ACC0E" }} />
           </div>
           <div>
-            <p className="text-xs text-foreground-muted">Sessions</p>
+            <p className="text-xs text-foreground-muted">{t("b2b.sessionsCount", "Sessions")}</p>
             <p className="text-lg font-bold text-foreground tabular-nums">{stats.count.toLocaleString("fr-FR")}</p>
           </div>
         </div>
@@ -233,7 +235,7 @@ export function B2BSessionsPage() {
             <Zap className="w-4.5 h-4.5" style={{ color: "#9ACC0E" }} />
           </div>
           <div>
-            <p className="text-xs text-foreground-muted">Énergie totale</p>
+            <p className="text-xs text-foreground-muted">{t("b2b.totalEnergy", "Énergie totale")}</p>
             <p className="text-lg font-bold text-foreground tabular-nums">{formatNumber(stats.energy)} kWh</p>
           </div>
         </div>
@@ -242,7 +244,7 @@ export function B2BSessionsPage() {
             <Euro className="w-4.5 h-4.5" style={{ color: "#9ACC0E" }} />
           </div>
           <div>
-            <p className="text-xs text-foreground-muted">Coût total</p>
+            <p className="text-xs text-foreground-muted">{t("b2b.totalCost", "Coût total")}</p>
             <p className="text-lg font-bold text-foreground tabular-nums">{formatEUR(stats.cost)}</p>
           </div>
         </div>
@@ -251,7 +253,7 @@ export function B2BSessionsPage() {
             <Clock className="w-4.5 h-4.5" style={{ color: "#9ACC0E" }} />
           </div>
           <div>
-            <p className="text-xs text-foreground-muted">Durée totale</p>
+            <p className="text-xs text-foreground-muted">{t("b2b.totalDurationLabel", "Durée totale")}</p>
             <p className="text-lg font-bold text-foreground tabular-nums">{formatDuration(stats.duration)}</p>
           </div>
         </div>
@@ -263,13 +265,13 @@ export function B2BSessionsPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
-                <th className={thClass}>Date</th>
-                <th className={thClass}>Lieu</th>
-                <th className={thClass}>Conducteur</th>
-                <th className={thClass}>Token</th>
-                <th className={`${thClass} text-right`}>Énergie</th>
-                <th className={`${thClass} text-right`}>Durée</th>
-                <th className={`${thClass} text-right`}>Coût TTC</th>
+                <th className={thClass}>{t("common.date", "Date")}</th>
+                <th className={thClass}>{t("b2b.location", "Lieu")}</th>
+                <th className={thClass}>{t("b2b.driver", "Conducteur")}</th>
+                <th className={thClass}>{t("b2b.token", "Token")}</th>
+                <th className={`${thClass} text-right`}>{t("b2b.energy", "Énergie")}</th>
+                <th className={`${thClass} text-right`}>{t("b2b.duration", "Durée")}</th>
+                <th className={`${thClass} text-right`}>{t("b2b.costTTC", "Coût TTC")}</th>
               </tr>
             </thead>
             <tbody>
@@ -278,9 +280,9 @@ export function B2BSessionsPage() {
                   <td colSpan={7} className="px-4 py-16 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <FileText className="w-10 h-10 text-foreground-muted/40" />
-                      <p className="text-foreground-muted text-sm">Aucune session trouvée</p>
+                      <p className="text-foreground-muted text-sm">{t("b2b.noSessionFound", "Aucune session trouvée")}</p>
                       <p className="text-foreground-muted/60 text-xs">
-                        Modifiez vos filtres ou sélectionnez une autre période.
+                        {t("b2b.changeFilters", "Modifiez vos filtres ou sélectionnez une autre période.")}
                       </p>
                     </div>
                   </td>
@@ -312,14 +314,14 @@ export function B2BSessionsPage() {
         {sorted.length > 0 && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-border">
             <p className="text-xs text-foreground-muted">
-              {visibleRows.length} sur {sorted.length.toLocaleString("fr-FR")} sessions
+              {t("b2b.showingOf", "{{shown}} sur {{total}} sessions", { shown: visibleRows.length, total: sorted.length.toLocaleString("fr-FR") })}
             </p>
             {hasMore && (
               <button
                 onClick={() => setVisibleCount((prev) => prev + PAGE_SIZE)}
                 className="px-4 py-1.5 text-xs font-medium rounded-lg border border-border text-foreground-muted hover:text-foreground hover:bg-surface-elevated transition-colors"
               >
-                Afficher plus
+                {t("b2b.showMore", "Afficher plus")}
               </button>
             )}
           </div>
@@ -330,7 +332,7 @@ export function B2BSessionsPage() {
       <SlideOver
         open={selectedCdr !== null}
         onClose={() => setSelectedCdr(null)}
-        title="Détail de la session"
+        title={t("b2b.sessionDetail", "Détail de la session")}
         subtitle={selectedCdr ? `ID: ${selectedCdr.id}` : undefined}
         maxWidth="max-w-xl"
       >
@@ -351,6 +353,7 @@ function CdrDetail({
   driverMap?: Map<string, string> | null;
   stationLookup?: { byGfxId: Map<string, any>; byName: Map<string, any> } | null;
 }) {
+  const { t } = useTranslation();
   const costTTC = cdr.total_retail_cost_incl_vat ?? 0;
   const isFree = costTTC === 0;
 
@@ -372,35 +375,35 @@ function CdrDetail({
             color: isFree ? "#9ACC0E" : "#3B82F6",
           }}
         >
-          {isFree ? "Gratuite" : "Payante"}
+          {isFree ? t("b2b.free", "Gratuite") : t("b2b.paid", "Payante")}
         </span>
         <span className="text-xl font-bold text-foreground tabular-nums">{formatEUR(costTTC)}</span>
       </div>
 
       {/* Detail grid */}
       <div className="grid grid-cols-1 gap-4">
-        <DetailRow label="Lieu" value={locationParts.join(", ") || "—"} />
-        <DetailRow label="Début" value={cdr.start_date_time ? formatDateLongFR(cdr.start_date_time) : "—"} />
-        <DetailRow label="Fin" value={cdr.end_date_time ? formatDateLongFR(cdr.end_date_time) : "—"} />
+        <DetailRow label={t("b2b.location", "Lieu")} value={locationParts.join(", ") || "—"} />
+        <DetailRow label={t("b2b.startDate", "Début")} value={cdr.start_date_time ? formatDateLongFR(cdr.start_date_time) : "—"} />
+        <DetailRow label={t("b2b.endDate", "Fin")} value={cdr.end_date_time ? formatDateLongFR(cdr.end_date_time) : "—"} />
 
         <div className="border-t border-border/50 pt-4 grid grid-cols-2 gap-4">
-          <DetailRow label="Énergie" value={`${formatNumber(cdr.total_energy ?? 0)} kWh`} />
-          <DetailRow label="Durée totale" value={formatDuration((cdr.total_time ?? 0) / 3600)} />
+          <DetailRow label={t("b2b.energy", "Énergie")} value={`${formatNumber(cdr.total_energy ?? 0)} kWh`} />
+          <DetailRow label={t("b2b.totalTime", "Durée totale")} value={formatDuration((cdr.total_time ?? 0) / 3600)} />
           <DetailRow
-            label="Temps de stationnement"
+            label={t("b2b.parkingTime", "Temps de stationnement")}
             value={cdr.total_parking_time != null ? formatDuration(cdr.total_parking_time / 3600) : "—"}
           />
-          <DetailRow label="Type de chargeur" value={cdr.charger_type ?? "—"} />
+          <DetailRow label={t("b2b.chargerType", "Type de chargeur")} value={cdr.charger_type ?? "—"} />
         </div>
 
         <div className="border-t border-border/50 pt-4 grid grid-cols-2 gap-4">
-          <DetailRow label="Coût HT" value={formatEUR(cdr.total_retail_cost ?? 0)} />
-          <DetailRow label="Coût TTC" value={formatEUR(costTTC)} />
+          <DetailRow label={t("b2b.costHT", "Coût HT")} value={formatEUR(cdr.total_retail_cost ?? 0)} />
+          <DetailRow label={t("b2b.costTTC", "Coût TTC")} value={formatEUR(costTTC)} />
         </div>
 
         <div className="border-t border-border/50 pt-4 grid grid-cols-1 gap-4">
           <DetailRow
-            label="Token"
+            label={t("b2b.token", "Token")}
             value={
               cdr.cdr_token
                 ? `${cdr.cdr_token.uid}${cdr.cdr_token.type ? ` (${cdr.cdr_token.type})` : ""}`
@@ -409,21 +412,21 @@ function CdrDetail({
             mono
           />
           {cdr.cdr_token?.contract_id && (
-            <DetailRow label="Contract ID" value={cdr.cdr_token.contract_id} mono />
+            <DetailRow label={t("b2b.contractId", "Contract ID")} value={cdr.cdr_token.contract_id} mono />
           )}
-          <DetailRow label="Conducteur" value={driverName ? `${driverName} (${cdr.driver_external_id})` : cdr.driver_external_id ?? "—"} />
-          <DetailRow label="EVSE ID" value={evseId} mono />
+          <DetailRow label={t("b2b.driver", "Conducteur")} value={driverName ? `${driverName} (${cdr.driver_external_id})` : cdr.driver_external_id ?? "—"} />
+          <DetailRow label={t("b2b.evseId", "EVSE ID")} value={evseId} mono />
           {station && (
             <>
               {station.charge_point_vendor && (
-                <DetailRow label="Borne" value={`${station.charge_point_vendor}${station.charge_point_model ? ` ${station.charge_point_model}` : ""}`} />
+                <DetailRow label={t("b2b.stationLabel", "Borne")} value={`${station.charge_point_vendor}${station.charge_point_model ? ` ${station.charge_point_model}` : ""}`} />
               )}
               {station.max_power_kw != null && (
-                <DetailRow label="Puissance max" value={`${station.max_power_kw} kW`} />
+                <DetailRow label={t("b2b.maxPower", "Puissance max")} value={`${station.max_power_kw} kW`} />
               )}
             </>
           )}
-          <DetailRow label="Source (GFX CDR)" value={cdr.gfx_cdr_id ?? "—"} mono />
+          <DetailRow label={t("b2b.sourceGfx", "Source (GFX CDR)")} value={cdr.gfx_cdr_id ?? "—"} mono />
         </div>
       </div>
     </div>

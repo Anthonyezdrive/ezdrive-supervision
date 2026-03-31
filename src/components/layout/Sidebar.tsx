@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePermissions } from "@/hooks/usePermissions";
 import { CpoSelector } from "./CpoSelector";
+import { useTranslation } from "react-i18next";
 
 // ── Section + Item types ──────────────────────────────────
 
@@ -62,86 +63,86 @@ interface NavSection {
 const NAV_SECTIONS: NavSection[] = [
   {
     id: "home",
-    label: "Home",
+    label: "nav.home",
     items: [
-      { to: "/dashboard", label: "Business Overview", icon: LayoutDashboard, requiredPermissions: ["stations.view", "billing.view"] },
-      { to: "/map", label: "Carte", icon: Map, requiredPermissions: ["stations.view"] },
-      { to: "/analytics", label: "Analytics SLA", icon: BarChart2, requiredPermissions: ["stations.view"] },
-      { to: "/advanced-analytics", label: "Analytics avancés", icon: PieChart, requiredPermissions: ["stations.view", "billing.view"] },
+      { to: "/dashboard", label: "nav.dashboard", icon: LayoutDashboard, requiredPermissions: ["stations.view", "billing.view"] },
+      { to: "/map", label: "nav.map", icon: Map, requiredPermissions: ["stations.view"] },
+      { to: "/analytics", label: "nav.analytics", icon: BarChart2, requiredPermissions: ["stations.view"] },
+      { to: "/advanced-analytics", label: "analytics.advanced", icon: PieChart, requiredPermissions: ["stations.view", "billing.view"] },
     ],
   },
   {
     id: "cpo",
-    label: "CPO",
+    label: "nav.cpo",
     requiredPermissions: ["stations.view"],
     subsections: [
       {
-        label: "Overview",
+        label: "b2b.overview",
         items: [
-          { to: "/cpo-overview", label: "Vue d'ensemble CPO", icon: PieChart, requiredPermissions: ["stations.view"] },
+          { to: "/cpo-overview", label: "nav.cpoOverview", icon: PieChart, requiredPermissions: ["stations.view"] },
         ],
       },
       {
-        label: "Network",
+        label: "nav.cpoNetworks",
         items: [
-          { to: "/cpo-networks", label: "Réseaux CPO", icon: Network, requiredPermissions: ["stations.view"] },
+          { to: "/cpo-networks", label: "nav.cpoNetworks", icon: Network, requiredPermissions: ["stations.view"] },
         ],
       },
       {
-        label: "Assets",
+        label: "nav.assets",
         items: [
-          { to: "/stations", label: "Bornes", icon: Radio, requiredPermissions: ["stations.view"] },
-          { to: "/locations", label: "Localisations", icon: MapPin, requiredPermissions: ["stations.view"] },
-          { to: "/monitoring", label: "Monitoring", icon: MonitorCheck, requiredPermissions: ["stations.view"] },
-          { to: "/smart-charging", label: "Smart Charging", icon: BatteryCharging, requiredPermissions: ["stations.edit"] },
-          { to: "/energy-mix", label: "Energy Mix", icon: Leaf, requiredPermissions: ["stations.view"] },
+          { to: "/stations", label: "nav.stations", icon: Radio, requiredPermissions: ["stations.view"] },
+          { to: "/locations", label: "nav.locations", icon: MapPin, requiredPermissions: ["stations.view"] },
+          { to: "/monitoring", label: "nav.monitoring", icon: MonitorCheck, requiredPermissions: ["stations.view"] },
+          { to: "/smart-charging", label: "nav.smartCharging", icon: BatteryCharging, requiredPermissions: ["stations.edit"] },
+          { to: "/energy-mix", label: "nav.energyMix", icon: Leaf, requiredPermissions: ["stations.view"] },
         ],
       },
       {
-        label: "Billing",
+        label: "nav.billing",
         items: [
-          { to: "/billing", label: "CDRs & Factures", icon: FileText, requiredPermissions: ["billing.view"] },
-          { to: "/billing-profiles", label: "Profils de facturation", icon: Building2, requiredPermissions: ["billing.view"] },
-          { to: "/tariffs", label: "Tarifs", icon: Wallet, requiredPermissions: ["billing.tariffs"] },
-          { to: "/roaming-contracts", label: "Accords & Remboursement", icon: Handshake, requiredPermissions: ["ocpi.view"] },
+          { to: "/billing", label: "billing.invoices", icon: FileText, requiredPermissions: ["billing.view"] },
+          { to: "/billing-profiles", label: "nav.billingProfiles", icon: Building2, requiredPermissions: ["billing.view"] },
+          { to: "/tariffs", label: "nav.tariffs", icon: Wallet, requiredPermissions: ["billing.tariffs"] },
+          { to: "/roaming-contracts", label: "nav.roamingContracts", icon: Handshake, requiredPermissions: ["ocpi.view"] },
         ],
       },
       {
-        label: "Roaming",
+        label: "roaming.title",
         items: [
-          { to: "/ocpi", label: "OCPI Gireve", icon: Globe, requiredPermissions: ["ocpi.view"] },
+          { to: "/ocpi", label: "ocpi.title", icon: Globe, requiredPermissions: ["ocpi.view"] },
         ],
       },
     ],
   },
   {
     id: "emsp",
-    label: "eMSP",
+    label: "nav.emsp",
     requiredPermissions: ["customers.view"],
     subsections: [
       {
-        label: "Network",
+        label: "nav.emspNetworks",
         items: [
-          { to: "/emsp-networks", label: "EMSP Network", icon: Network, requiredPermissions: ["customers.view"] },
+          { to: "/emsp-networks", label: "nav.emspNetworks", icon: Network, requiredPermissions: ["customers.view"] },
         ],
       },
       {
-        label: "Customers",
+        label: "nav.customers",
         items: [
-          { to: "/customers", label: "Clients", icon: Users, requiredPermissions: ["customers.view"] },
-          { to: "/drivers", label: "Conducteurs", icon: UserCheck, requiredPermissions: ["customers.view"] },
+          { to: "/customers", label: "nav.clients", icon: Users, requiredPermissions: ["customers.view"] },
+          { to: "/drivers", label: "nav.drivers", icon: UserCheck, requiredPermissions: ["customers.view"] },
         ],
       },
       {
-        label: "Moyens de paiement",
+        label: "nav.paymentMethods",
         items: [
-          { to: "/payment-methods", label: "Tokens & Abonnements", icon: CreditCard, requiredPermissions: ["customers.view"] },
+          { to: "/payment-methods", label: "nav.paymentMethods", icon: CreditCard, requiredPermissions: ["customers.view"] },
         ],
       },
       {
-        label: "Accès",
+        label: "nav.accessGroups",
         items: [
-          { to: "/access-groups", label: "Groupes d'accès", icon: Shield, requiredPermissions: ["customers.view"] },
+          { to: "/access-groups", label: "nav.accessGroups", icon: Shield, requiredPermissions: ["customers.view"] },
         ],
       },
     ],
@@ -151,52 +152,56 @@ const NAV_SECTIONS: NavSection[] = [
     label: "Automation",
     requiredPermissions: ["stations.maintenance", "admin.logs"],
     items: [
-      { to: "/exceptions", label: "Exceptions", icon: ShieldAlert, requiredPermissions: ["stations.maintenance"] },
+      { to: "/exceptions", label: "nav.exceptions", icon: ShieldAlert, requiredPermissions: ["stations.maintenance"] },
     ],
   },
   {
     id: "admin",
-    label: "Admin",
+    label: "nav.admin",
     requiredPermissions: ["admin.users", "admin.roles", "admin.settings"],
     items: [
-      { to: "/users", label: "Utilisateurs", icon: Users, requiredPermissions: ["admin.users"] },
-      { to: "/roles", label: "Rôles & Permissions", icon: Shield, requiredPermissions: ["admin.roles"] },
-      { to: "/admin-config", label: "Configuration", icon: Settings, requiredPermissions: ["admin.settings"] },
-      { to: "/admin/b2b", label: "Gestion B2B", icon: Handshake, requiredPermissions: ["admin.users"] },
+      { to: "/users", label: "nav.users", icon: Users, requiredPermissions: ["admin.users"] },
+      { to: "/roles", label: "nav.rolesPermissions", icon: Shield, requiredPermissions: ["admin.roles"] },
+      { to: "/admin-config", label: "nav.adminConfig", icon: Settings, requiredPermissions: ["admin.settings"] },
+      { to: "/admin/b2b", label: "nav.b2b", icon: Handshake, requiredPermissions: ["admin.users"] },
     ],
   },
   {
     id: "configuration",
-    label: "Configuration",
+    label: "admin.config.title",
     requiredPermissions: ["stations.commands"],
     items: [
-      { to: "/validate-token", label: "Valider Token", icon: ScanLine, requiredPermissions: ["stations.commands"] },
-      { to: "/support", label: "Support & Ressources", icon: LifeBuoy, requiredPermissions: ["stations.view"] },
-      { to: "/interventions", label: "Interventions", icon: Wrench, requiredPermissions: ["stations.edit"] },
+      { to: "/validate-token", label: "nav.validateToken", icon: ScanLine, requiredPermissions: ["stations.commands"] },
+      { to: "/support", label: "nav.support", icon: LifeBuoy, requiredPermissions: ["stations.view"] },
+      { to: "/interventions", label: "nav.interventions", icon: Wrench, requiredPermissions: ["stations.edit"] },
     ],
   },
   {
     id: "b2b-portal",
-    label: "Portail B2B",
+    label: "nav.b2b",
     items: [
-      { to: "/b2b/overview", label: "Vue d'ensemble", icon: LayoutDashboard },
-      { to: "/b2b/monthly", label: "Rapport mensuel", icon: FileText },
-      { to: "/b2b/chargepoints", label: "Par borne", icon: Radio },
-      { to: "/b2b/drivers", label: "Par conducteur", icon: UserCheck },
-      { to: "/b2b/company", label: "Mon Entreprise", icon: Building2 },
+      { to: "/b2b/overview", label: "nav.b2bOverview", icon: LayoutDashboard },
+      { to: "/b2b/monthly", label: "nav.b2bMonthly", icon: FileText },
+      { to: "/b2b/sessions", label: "nav.b2bSessions", icon: CreditCard },
+      { to: "/b2b/chargepoints", label: "nav.b2bChargepoints", icon: Radio },
+      { to: "/b2b/drivers", label: "nav.b2bDrivers", icon: UserCheck },
+      { to: "/b2b/fleet", label: "nav.b2bFleet", icon: Users },
+      { to: "/b2b/analytics", label: "nav.b2bAnalytics", icon: BarChart2 },
+      { to: "/b2b/company", label: "b2b.company", icon: Building2 },
     ],
   },
   {
     id: "xdrive-portal",
-    label: "X-DRIVE",
+    label: "nav.xdrive",
     requiredPermissions: ["admin.users", "admin.settings"],
     items: [
-      { to: "/xdrive/dashboard", label: "Dashboard", icon: LayoutDashboard, requiredPermissions: ["admin.users", "admin.settings"] },
-      { to: "/xdrive/cdrs", label: "CDR détaillés", icon: FileText, requiredPermissions: ["admin.users", "admin.settings"] },
-      { to: "/xdrive/breakdown", label: "Ventilation", icon: PieChart, requiredPermissions: ["admin.users", "admin.settings"] },
-      { to: "/xdrive/reconciliation", label: "Rapprochement", icon: Handshake, requiredPermissions: ["admin.users", "admin.settings"] },
-      { to: "/xdrive/billing", label: "Facturation", icon: Building2, requiredPermissions: ["admin.users", "admin.settings"] },
-      { to: "/xdrive/exports", label: "Exports", icon: FileText, requiredPermissions: ["admin.users", "admin.settings"] },
+      { to: "/xdrive/dashboard", label: "nav.xdriveDashboard", icon: LayoutDashboard, requiredPermissions: ["admin.users", "admin.settings"] },
+      { to: "/xdrive/cdrs", label: "nav.xdriveCdrs", icon: FileText, requiredPermissions: ["admin.users", "admin.settings"] },
+      { to: "/xdrive/breakdown", label: "nav.xdriveBreakdown", icon: PieChart, requiredPermissions: ["admin.users", "admin.settings"] },
+      { to: "/xdrive/reconciliation", label: "nav.xdriveReconciliation", icon: Handshake, requiredPermissions: ["admin.users", "admin.settings"] },
+      { to: "/xdrive/bpu", label: "nav.xdriveBpu", icon: Wallet, requiredPermissions: ["admin.users", "admin.settings"] },
+      { to: "/xdrive/billing", label: "nav.xdriveBilling", icon: Building2, requiredPermissions: ["admin.users", "admin.settings"] },
+      { to: "/xdrive/exports", label: "nav.xdriveExports", icon: FileText, requiredPermissions: ["admin.users", "admin.settings"] },
     ],
   },
 ];
@@ -223,6 +228,7 @@ interface SidebarProps {
 export function Sidebar({ isOpen = false, onClose, collapsed = false, onToggleCollapse }: SidebarProps) {
   const { profile } = useAuth();
   const { hasAnyPermission, isB2B } = usePermissions();
+  const { t } = useTranslation();
 
   // Permission-based filtering helper
   function filterItemsByPermission(items: NavItem[]): NavItem[] {
@@ -298,12 +304,13 @@ export function Sidebar({ isOpen = false, onClose, collapsed = false, onToggleCo
   // ── Render a single NavItem ─────────────────────────────
 
   function renderNavItem(item: NavItem, indented: boolean = false) {
+    const label = t(item.label, item.label);
     return (
       <NavLink
         key={item.to}
         to={item.to}
         onClick={() => onClose?.()}
-        title={collapsed ? item.label : undefined}
+        title={collapsed ? label : undefined}
         className={({ isActive }) =>
           cn(
             "flex items-center rounded-lg font-medium transition-all",
@@ -317,7 +324,7 @@ export function Sidebar({ isOpen = false, onClose, collapsed = false, onToggleCo
         }
       >
         <item.icon className="w-4 h-4 shrink-0" />
-        {!collapsed && <span className="truncate">{item.label}</span>}
+        {!collapsed && <span className="truncate">{label}</span>}
       </NavLink>
     );
   }
@@ -367,7 +374,7 @@ export function Sidebar({ isOpen = false, onClose, collapsed = false, onToggleCo
                       isOpen ? "rotate-0" : "-rotate-90"
                     )}
                   />
-                  <span>{sub.label}</span>
+                  <span>{t(sub.label, sub.label)}</span>
                 </button>
 
                 {/* Subsection items */}
@@ -428,7 +435,7 @@ export function Sidebar({ isOpen = false, onClose, collapsed = false, onToggleCo
         <button
           onClick={onClose}
           className="md:hidden p-1.5 text-foreground-muted hover:text-foreground transition-colors rounded-lg hover:bg-surface-elevated"
-          aria-label="Fermer"
+          aria-label={t("common.close")}
         >
           <X className="w-4 h-4" />
         </button>
@@ -453,7 +460,7 @@ export function Sidebar({ isOpen = false, onClose, collapsed = false, onToggleCo
                 onClick={() => toggleSection(section.id)}
                 className="w-full flex items-center justify-between px-4 py-2 text-[10px] font-semibold uppercase tracking-wider text-foreground-muted/70 hover:text-foreground-muted transition-colors"
               >
-                <span>{section.label}</span>
+                <span>{t(section.label, section.label)}</span>
                 <ChevronDown
                   className={cn(
                     "w-3 h-3 transition-transform duration-200",
@@ -486,14 +493,14 @@ export function Sidebar({ isOpen = false, onClose, collapsed = false, onToggleCo
             "flex items-center gap-2 w-full rounded-lg py-2 text-xs font-medium text-foreground-muted hover:text-foreground hover:bg-surface-elevated transition-colors",
             collapsed ? "justify-center px-2" : "px-3"
           )}
-          title={collapsed ? "Déplier le menu" : "Réduire le menu"}
+          title={collapsed ? t("common.details") : t("common.close")}
         >
           {collapsed ? (
             <ChevronRight className="w-4 h-4" />
           ) : (
             <>
               <ChevronLeft className="w-4 h-4 shrink-0" />
-              <span>Réduire</span>
+              <span>{t("common.close")}</span>
             </>
           )}
         </button>

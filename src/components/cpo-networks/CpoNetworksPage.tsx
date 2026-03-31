@@ -33,6 +33,7 @@ import { useCpo } from "@/contexts/CpoContext";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { SlideOver } from "@/components/ui/SlideOver";
 import { PageHelp } from "@/components/ui/PageHelp";
+import { useTranslation } from "react-i18next";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -193,6 +194,7 @@ function TableSkeleton({ rows = 5, cols = 6 }: { rows?: number; cols?: number })
 // ── Main Page (3-level navigation) ────────────────────────────
 
 export function CpoNetworksPage() {
+  const { t } = useTranslation();
   const [selectedNetwork, setSelectedNetwork] = useState<CpoNetwork | null>(null);
   const [selectedContract, setSelectedContract] = useState<CpoContract | null>(null);
 

@@ -22,9 +22,12 @@ import {
 import { cn } from "@/lib/utils";
 import { SessionsPage } from "@/components/sessions/SessionsPage";
 import { InvoicesPage } from "@/components/invoices/InvoicesPage";
+import { useSettlements, useSettlementDetail } from "@/hooks/useSettlements";
+import { SyncButton } from "@/components/shared/SyncButton";
 import { supabase } from "@/lib/supabase";
 import { apiPost } from "@/lib/api";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { useTranslation } from "react-i18next";
 
 const TABS = [
   { key: "sessions", label: "Sessions CDR", icon: Activity },
@@ -34,11 +37,13 @@ const TABS = [
   { key: "disputes", label: "Litiges", icon: AlertTriangle },
   { key: "methods", label: "Methodes de paiement", icon: Wallet },
   { key: "transfers", label: "Virements", icon: ArrowRightLeft },
+  { key: "settlements", label: "Settlements", icon: CalendarDays },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
 
 export function BillingPage() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<TabKey>("sessions");
   return (
     <div className="space-y-4">
@@ -46,6 +51,15 @@ export function BillingPage() {
         <h1 className="font-heading text-xl font-bold text-foreground">CDRs & Factures</h1>
         <p className="text-sm text-foreground-muted mt-0.5">Sessions de charge et facturation</p>
       </div>
+      {/* Sync toolbar */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs font-medium text-foreground-muted whitespace-nowrap">Synchronisations :</span>
+        <SyncButton functionName="gfx-cdr-sync" label="Sync CDR GreenFlux" invalidateKeys={["billing", "sessions", "cdrs"]} variant="small" formatSuccess={(d) => `GFX: ${d.total_ingested ?? 0} CDR importés`} />
+        <SyncButton functionName="gfx-cdr-bulk-import" label="Import CDR GFX (bulk)" invalidateKeys={["billing", "sessions", "cdrs"]} variant="small" confirmMessage="Importer tous les CDR GreenFlux ? Cette opération peut prendre du temps." formatSuccess={(d) => `GFX bulk: ${d.total_upserted ?? 0} CDR importés`} />
+        <SyncButton functionName="road-cdr-sync" label="Sync CDR Road.io" invalidateKeys={["billing", "sessions", "cdrs"]} variant="small" formatSuccess={(d) => `Road: ${d.total_ingested ?? 0} CDR importés`} />
+        <SyncButton functionName="settlement-engine" label="Settlement mensuel" invalidateKeys={["billing", "invoices"]} variant="small" confirmMessage="Lancer le settlement mensuel ? Cela va générer les factures." />
+      </div>
+
       <div className="flex gap-1 border-b border-border overflow-x-auto">
         {TABS.map((t) => (
           <button
@@ -69,6 +83,7 @@ export function BillingPage() {
       {tab === "disputes" && <StripeDisputesSection />}
       {tab === "methods" && <PaymentMethodsConfigSection />}
       {tab === "transfers" && <TransfersSection />}
+      {tab === "settlements" && <SettlementsSection />}
     </div>
   );
 }
@@ -671,23 +686,18 @@ function RevenueByPeriodSection() {
       for (const cdr of cdrs) {
         const d = new Date(cdr.start_date_time);
         let key: string;
-        let label: string;
 
         if (granularity === "day") {
           key = d.toISOString().slice(0, 10);
-          label = d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
         } else if (granularity === "week") {
           // ISO week
           const jan1 = new Date(d.getFullYear(), 0, 1);
           const weekNum = Math.ceil(((d.getTime() - jan1.getTime()) / 86400000 + jan1.getDay() + 1) / 7);
           key = `${d.getFullYear()}-W${String(weekNum).padStart(2, "0")}`;
-          label = `S${weekNum}`;
         } else if (granularity === "month") {
           key = d.toISOString().slice(0, 7);
-          label = d.toLocaleDateString("fr-FR", { month: "long" });
         } else {
           key = String(d.getFullYear());
-          label = String(d.getFullYear());
         }
 
         const g = groups.get(key) ?? { sessions: 0, energy: 0, ht: 0, ttc: 0, vat: 0 };
@@ -970,6 +980,168 @@ function TransfersSection() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// Settlements Section
+// ══════════════════════════════════════════════════════════════
+
+const SETTLEMENT_STATUS_CONFIG: Record<string, { label: string; bg: string; text: string }> = {
+  completed: { label: "Terminé", bg: "bg-green-500/10", text: "text-green-400" },
+  processing: { label: "En cours", bg: "bg-blue-500/10", text: "text-blue-400" },
+  failed: { label: "Échoué", bg: "bg-red-500/10", text: "text-red-400" },
+  pending: { label: "En attente", bg: "bg-amber-500/10", text: "text-amber-400" },
+  cancelled: { label: "Annulé", bg: "bg-gray-500/10", text: "text-gray-400" },
+};
+
+function SettlementsSection() {
+  const { data: settlements, isLoading, error } = useSettlements();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { data: lineItems, isLoading: detailLoading } = useSettlementDetail(selectedId);
+
+  const fmtAmount = (cents: number) => (cents / 100).toFixed(2) + " \u20AC";
+  const fmtEnergy = (kwh: number) => kwh.toFixed(1) + " kWh";
+  const fmtDate = (d: string | null) =>
+    d ? new Date(d).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
+  const fmtPeriod = (start: string, end: string) =>
+    `${new Date(start).toLocaleDateString("fr-FR", { month: "short", year: "numeric" })} — ${new Date(end).toLocaleDateString("fr-FR", { month: "short", year: "numeric" })}`;
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        {[...Array(5)].map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full rounded-xl" />
+        ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-6 text-center">
+        <AlertTriangle className="w-8 h-8 text-red-400 mx-auto mb-2" />
+        <p className="text-sm text-red-300">Erreur lors du chargement des settlements</p>
+        <p className="text-xs text-foreground-muted mt-1">{(error as Error).message}</p>
+      </div>
+    );
+  }
+
+  if (!settlements || settlements.length === 0) {
+    return (
+      <div className="bg-surface border border-border rounded-2xl p-12 text-center">
+        <CalendarDays className="w-10 h-10 text-foreground-muted mx-auto mb-3" />
+        <p className="text-sm text-foreground-muted">Aucun settlement trouvé</p>
+        <p className="text-xs text-foreground-muted mt-1">Les settlements apparaîtront ici après exécution du moteur de settlement.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="border-b border-border">
+                <th className="px-4 py-3 text-xs font-semibold text-foreground-muted uppercase tracking-wider">Période</th>
+                <th className="px-4 py-3 text-xs font-semibold text-foreground-muted uppercase tracking-wider">Statut</th>
+                <th className="px-4 py-3 text-xs font-semibold text-foreground-muted uppercase tracking-wider text-right">Sessions</th>
+                <th className="px-4 py-3 text-xs font-semibold text-foreground-muted uppercase tracking-wider text-right">Énergie (kWh)</th>
+                <th className="px-4 py-3 text-xs font-semibold text-foreground-muted uppercase tracking-wider text-right">Montant HT</th>
+                <th className="px-4 py-3 text-xs font-semibold text-foreground-muted uppercase tracking-wider text-right">TVA</th>
+                <th className="px-4 py-3 text-xs font-semibold text-foreground-muted uppercase tracking-wider text-right">Commission</th>
+                <th className="px-4 py-3 text-xs font-semibold text-foreground-muted uppercase tracking-wider text-right">Net à verser</th>
+                <th className="px-4 py-3 text-xs font-semibold text-foreground-muted uppercase tracking-wider">Date traitement</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {settlements.map((s) => {
+                const cfg = SETTLEMENT_STATUS_CONFIG[s.status] ?? SETTLEMENT_STATUS_CONFIG.pending;
+                const isSelected = selectedId === s.id;
+                return (
+                  <tr
+                    key={s.id}
+                    onClick={() => setSelectedId(isSelected ? null : s.id)}
+                    className={cn(
+                      "cursor-pointer transition-colors hover:bg-surface-hover",
+                      isSelected && "bg-surface-hover"
+                    )}
+                  >
+                    <td className="px-4 py-3 text-sm text-foreground font-medium">{fmtPeriod(s.period_start, s.period_end)}</td>
+                    <td className="px-4 py-3">
+                      <span className={cn("inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium", cfg.bg, cfg.text)}>
+                        {cfg.label}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-foreground tabular-nums text-right">{s.total_sessions}</td>
+                    <td className="px-4 py-3 text-sm text-foreground tabular-nums text-right">{fmtEnergy(s.total_energy_kwh)}</td>
+                    <td className="px-4 py-3 text-sm text-foreground tabular-nums text-right">{fmtAmount(s.total_amount_cents)}</td>
+                    <td className="px-4 py-3 text-sm text-foreground tabular-nums text-right">{fmtAmount(s.total_vat_cents)}</td>
+                    <td className="px-4 py-3 text-sm text-foreground tabular-nums text-right">{fmtAmount(s.commission_cents)}</td>
+                    <td className="px-4 py-3 text-sm font-semibold text-foreground tabular-nums text-right">{fmtAmount(s.net_payout_cents)}</td>
+                    <td className="px-4 py-3 text-sm text-foreground-muted">{fmtDate(s.processed_at)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Expandable detail section */}
+      {selectedId && (
+        <div className="bg-surface border border-border rounded-2xl overflow-hidden">
+          <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-foreground">Détail des lignes — Settlement</h3>
+            <button onClick={() => setSelectedId(null)} className="text-foreground-muted hover:text-foreground transition-colors">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {detailLoading ? (
+            <div className="p-6 space-y-2">
+              {[...Array(4)].map((_, i) => (
+                <Skeleton key={i} className="h-10 w-full rounded-lg" />
+              ))}
+            </div>
+          ) : !lineItems || lineItems.length === 0 ? (
+            <div className="p-8 text-center text-sm text-foreground-muted">Aucune ligne pour ce settlement</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="px-4 py-2.5 text-xs font-semibold text-foreground-muted uppercase tracking-wider">Date session</th>
+                    <th className="px-4 py-2.5 text-xs font-semibold text-foreground-muted uppercase tracking-wider">Station</th>
+                    <th className="px-4 py-2.5 text-xs font-semibold text-foreground-muted uppercase tracking-wider text-right">Énergie</th>
+                    <th className="px-4 py-2.5 text-xs font-semibold text-foreground-muted uppercase tracking-wider text-right">Durée (min)</th>
+                    <th className="px-4 py-2.5 text-xs font-semibold text-foreground-muted uppercase tracking-wider text-right">Montant</th>
+                    <th className="px-4 py-2.5 text-xs font-semibold text-foreground-muted uppercase tracking-wider">Tarif</th>
+                    <th className="px-4 py-2.5 text-xs font-semibold text-foreground-muted uppercase tracking-wider">Driver</th>
+                    <th className="px-4 py-2.5 text-xs font-semibold text-foreground-muted uppercase tracking-wider">Token</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {lineItems.map((li) => (
+                    <tr key={li.id} className="hover:bg-surface-hover transition-colors">
+                      <td className="px-4 py-2.5 text-sm text-foreground">{fmtDate(li.session_date)}</td>
+                      <td className="px-4 py-2.5 text-sm text-foreground font-medium">{li.station_name}</td>
+                      <td className="px-4 py-2.5 text-sm text-foreground tabular-nums text-right">{fmtEnergy(li.energy_kwh)}</td>
+                      <td className="px-4 py-2.5 text-sm text-foreground tabular-nums text-right">{li.duration_minutes}</td>
+                      <td className="px-4 py-2.5 text-sm text-foreground tabular-nums text-right">{fmtAmount(li.amount_cents)}</td>
+                      <td className="px-4 py-2.5 text-sm text-foreground-muted">{li.tariff_type}</td>
+                      <td className="px-4 py-2.5 text-sm text-foreground-muted font-mono text-xs">{li.driver_id}</td>
+                      <td className="px-4 py-2.5 text-sm text-foreground-muted font-mono text-xs">{li.token_uid}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </div>

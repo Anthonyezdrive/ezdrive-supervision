@@ -1,6 +1,5 @@
 import { useOutletContext } from "react-router-dom";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
-import { Download } from "lucide-react";
 import { useB2BCdrs } from "@/hooks/useB2BCdrs";
 import { groupByDriver, formatNumber } from "@/lib/b2b-formulas";
 import { downloadCSV, todayISO } from "@/lib/export";
@@ -8,6 +7,7 @@ import { exportPDF } from "@/lib/b2b-export";
 import { ExportButtons } from "./ExportButtons";
 import { PageHelp } from "@/components/ui/PageHelp";
 import type { B2BClient } from "@/types/b2b";
+import { useTranslation } from "react-i18next";
 
 const CHART_COLORS = [
   "#9ACC0E", "#00C3FF", "#F39C12", "#FF6B6B", "#9B59B6",
@@ -29,6 +29,7 @@ const thClass =
 const tdClass = "px-4 py-3.5 text-sm text-foreground whitespace-nowrap";
 
 export function B2BDriversPage() {
+  const { t } = useTranslation();
   const { activeClient, customerExternalIds } =
     useOutletContext<{ activeClient: B2BClient | null; customerExternalIds: string[] }>();
   const { data: cdrs, isLoading } = useB2BCdrs(customerExternalIds);
@@ -106,20 +107,20 @@ export function B2BDriversPage() {
   return (
     <div className="space-y-6">
       <PageHelp
-        summary="Statistiques de charge par conducteur — identifiez les usages de vos collaborateurs"
+        summary={t("b2b.driversHelpSummary", "Statistiques de charge par conducteur — identifiez les usages de vos collaborateurs")}
         items={[
-          { label: "Conducteur", description: "Identifié par son tag RFID ou son identifiant dans le système de charge." },
-          { label: "Sessions", description: "Nombre total de sessions de charge effectuées par ce conducteur." },
-          { label: "Volume (kWh)", description: "Énergie totale consommée par ce conducteur sur la période." },
-          { label: "Coût", description: "Montant total des charges effectuées par ce conducteur." },
+          { label: t("b2b.driverLabel", "Conducteur"), description: t("b2b.driverLabelDesc", "Identifié par son tag RFID ou son identifiant dans le système de charge.") },
+          { label: t("b2b.sessionsCount", "Sessions"), description: t("b2b.driverSessionsDesc", "Nombre total de sessions de charge effectuées par ce conducteur.") },
+          { label: t("b2b.volumeKwh", "Volume (kWh)"), description: t("b2b.driverVolumeDesc", "Énergie totale consommée par ce conducteur sur la période.") },
+          { label: t("b2b.cost", "Coût"), description: t("b2b.driverCostDesc", "Montant total des charges effectuées par ce conducteur.") },
         ]}
-        tips={["Les conducteurs sont identifiés par leur token RFID. Un même collaborateur peut avoir plusieurs badges."]}
+        tips={[t("b2b.driversTip", "Les conducteurs sont identifiés par leur token RFID. Un même collaborateur peut avoir plusieurs badges.")]}
       />
 
       {/* Pie chart */}
       <div className="bg-surface border border-border rounded-2xl p-6">
         <h3 className="text-base font-semibold text-foreground mb-4">
-          Volume (kWh) Mobilité flotte par Nom du conducteur
+          {t("b2b.volumeByDriver", "Volume (kWh) Mobilité flotte par Nom du conducteur")}
         </h3>
         {chartData.length > 0 ? (
           <div className="flex flex-col lg:flex-row items-center gap-6">
@@ -165,7 +166,7 @@ export function B2BDriversPage() {
           </div>
         ) : (
           <div className="flex items-center justify-center h-48 text-foreground-muted text-sm">
-            Aucune donnée
+            {t("common.noData", "Aucune donnée")}
           </div>
         )}
       </div>
@@ -173,7 +174,7 @@ export function B2BDriversPage() {
       {/* Table */}
       <div className="flex items-center justify-between">
         <h3 className="text-base font-semibold text-foreground">
-          Détail par conducteur
+          {t("b2b.driverDetail", "Détail par conducteur")}
         </h3>
         <ExportButtons onCSV={handleExport} onPDF={handleExportPDF} disabled={rows.length === 0} />
       </div>
@@ -183,17 +184,17 @@ export function B2BDriversPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-border">
-                <th className={thClass}>Nom</th>
-                <th className={thClass}>Prénom</th>
-                <th className={thClass}>Token Visual Number</th>
-                <th className={`${thClass} text-right`}>Volume tarif gratuit (kWh)</th>
+                <th className={thClass}>{t("b2b.lastName", "Nom")}</th>
+                <th className={thClass}>{t("b2b.firstName", "Prénom")}</th>
+                <th className={thClass}>{t("b2b.tokenVisualNumber", "Token Visual Number")}</th>
+                <th className={`${thClass} text-right`}>{t("b2b.freeVolume", "Volume tarif gratuit (kWh)")}</th>
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="px-4 py-12 text-center text-foreground-muted text-sm">
-                    Aucune donnée
+                    {t("common.noData", "Aucune donnée")}
                   </td>
                 </tr>
               ) : (
@@ -208,7 +209,7 @@ export function B2BDriversPage() {
                   ))}
                   {/* Total */}
                   <tr className="bg-surface-elevated/30 font-bold border-t-2" style={{ borderTopColor: "#9ACC0E40" }}>
-                    <td colSpan={3} className={tdClass}>Total</td>
+                    <td colSpan={3} className={tdClass}>{t("common.total", "Total")}</td>
                     <td className={`${tdClass} text-right`}>{formatNumber(totalVolume)}</td>
                   </tr>
                 </>

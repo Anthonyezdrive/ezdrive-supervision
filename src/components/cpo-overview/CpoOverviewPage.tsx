@@ -42,6 +42,7 @@ import { KPICard } from "@/components/ui/KPICard";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { PageHelp } from "@/components/ui/PageHelp";
 import { useOcppCommand } from "@/hooks/useOcppCommands";
+import { useTranslation } from "react-i18next";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -96,6 +97,7 @@ const PAGE_SIZE = 15;
 // ── Component ─────────────────────────────────────────────────
 
 export function CpoOverviewPage() {
+  const { t } = useTranslation();
   const { selectedCpoId } = useCpo();
   const navigate = useNavigate();
   const queryClient = useQueryClient();

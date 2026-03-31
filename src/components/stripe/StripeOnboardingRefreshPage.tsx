@@ -5,11 +5,13 @@
 
 import { useEffect } from "react";
 import { RefreshCw } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 export function StripeOnboardingRefreshPage() {
+  const { t } = useTranslation();
   useEffect(() => {
-    document.title = "Onboarding Stripe Connect - Lien expiré | EZDrive";
-  }, []);
+    document.title = t("stripe.refreshPage.title", "Onboarding Stripe Connect - Lien expiré | EZDrive");
+  }, [t]);
 
   return (
     <div className="min-h-screen bg-[#0a0f1c] flex items-center justify-center p-6">
@@ -20,36 +22,35 @@ export function StripeOnboardingRefreshPage() {
         </div>
 
         <h1 className="text-2xl font-bold text-white">
-          Lien d'inscription expiré
+          {t("stripe.refreshPage.heading", "Lien d'inscription expiré")}
         </h1>
 
         <p className="text-slate-400 text-sm leading-relaxed">
-          Le lien d'inscription Stripe Connect a expiré ou n'est plus valide.
-          Cela peut arriver si la session a pris trop de temps.
+          {t("stripe.refreshPage.description", "Le lien d'inscription Stripe Connect a expiré ou n'est plus valide. Cela peut arriver si la session a pris trop de temps.")}
         </p>
 
         <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4 text-left space-y-2">
           <p className="text-xs text-slate-500 uppercase tracking-wider font-semibold">
-            Que faire ?
+            {t("stripe.refreshPage.whatToDo", "Que faire ?")}
           </p>
           <ul className="text-sm text-slate-300 space-y-1.5">
             <li className="flex items-start gap-2">
               <span className="text-amber-400 mt-0.5">1.</span>
-              Contactez l'équipe EZDrive pour obtenir un nouveau lien
+              {t("stripe.refreshPage.step1", "Contactez l'équipe EZDrive pour obtenir un nouveau lien")}
             </li>
             <li className="flex items-start gap-2">
               <span className="text-amber-400 mt-0.5">2.</span>
-              Un nouveau lien d'inscription vous sera envoyé par email
+              {t("stripe.refreshPage.step2", "Un nouveau lien d'inscription vous sera envoyé par email")}
             </li>
             <li className="flex items-start gap-2">
               <span className="text-amber-400 mt-0.5">3.</span>
-              Vos informations précédemment saisies ont été sauvegardées
+              {t("stripe.refreshPage.step3", "Vos informations précédemment saisies ont été sauvegardées")}
             </li>
           </ul>
         </div>
 
         <p className="text-xs text-slate-600">
-          Contact :{" "}
+          {t("stripe.refreshPage.contact", "Contact :")}{" "}
           <a
             href="mailto:support@ezdrive.fr"
             className="text-amber-400 hover:text-amber-300 underline"

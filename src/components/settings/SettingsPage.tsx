@@ -20,16 +20,12 @@ import {
 } from "@/hooks/useAlertConfig";
 import { useCpo } from "@/contexts/CpoContext";
 import { formatRelativeTime } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
 
-const THRESHOLD_OPTIONS = [
-  { value: 2, label: "2 heures" },
-  { value: 4, label: "4 heures" },
-  { value: 8, label: "8 heures" },
-  { value: 24, label: "24 heures" },
-  { value: 48, label: "48 heures" },
-];
+const THRESHOLD_VALUES = [2, 4, 8, 24, 48];
 
 export function SettingsPage() {
+  const { t } = useTranslation();
   const { selectedCpoId: _selectedCpoId } = useCpo();
   const { data: config, isLoading } = useAlertConfig();
   const { data: history = [] } = useAlertHistory();
@@ -73,17 +69,17 @@ export function SettingsPage() {
         setTestResult(`ℹ️ ${result.reason}`);
       } else if (result.dry_run) {
         setTestResult(
-          `🔍 Mode dry-run (RESEND_API_KEY non configuré) — ${result.alerts_sent} bornes détectées`
+          t("settings.dryRunResult", "Mode dry-run (RESEND_API_KEY non configuré) — {{count}} bornes détectées", { count: result.alerts_sent })
         );
       } else if (result.alerts_sent > 0) {
         setTestResult(
-          `✅ ${result.alerts_sent} email(s) envoyé(s) avec succès`
+          t("settings.alertsSent", "{{count}} email(s) envoyé(s) avec succès", { count: result.alerts_sent })
         );
       } else {
-        setTestResult(`ℹ️ ${result.reason ?? "Aucune alerte à envoyer"}`);
+        setTestResult(result.reason ?? t("settings.noAlertToSend", "Aucune alerte à envoyer"));
       }
     } catch (e) {
-      setTestResult(`❌ Erreur : ${(e as Error).message}`);
+      setTestResult(t("settings.alertError", "Erreur : {{message}}", { message: (e as Error).message }));
     }
   }
 
@@ -101,7 +97,7 @@ export function SettingsPage() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-48 text-foreground-muted">
-        Chargement...
+        {t("common.loading", "Chargement...")}
       </div>
     );
   }
@@ -109,19 +105,19 @@ export function SettingsPage() {
   return (
     <div className="max-w-2xl space-y-6">
       <div>
-        <h1 className="font-heading text-xl font-bold">Paramètres</h1>
+        <h1 className="font-heading text-xl font-bold">{t("settings.title", "Paramètres")}</h1>
         <p className="text-sm text-foreground-muted">
-          Configuration des alertes automatiques de maintenance
+          {t("settings.alertConfigDescription", "Configuration des alertes automatiques de maintenance")}
         </p>
       </div>
 
       <PageHelp
-        summary="Paramètres généraux de la plateforme EZDrive Supervision"
+        summary={t("settings.helpSummary", "Paramètres généraux de la plateforme EZDrive Supervision")}
         items={[
-          { label: "Profil", description: "Nom, email et mot de passe de votre compte administrateur." },
-          { label: "Notifications", description: "Configurer les alertes email pour les pannes, sessions anormales, etc." },
-          { label: "API", description: "Clés d'API pour l'intégration avec des systèmes tiers." },
-          { label: "Apparence", description: "Personnalisation de l'interface (thème, langue, fuseau horaire)." },
+          { label: t("settings.helpProfile", "Profil"), description: t("settings.helpProfileDesc", "Nom, email et mot de passe de votre compte administrateur.") },
+          { label: t("settings.notifications", "Notifications"), description: t("settings.helpNotificationsDesc", "Configurer les alertes email pour les pannes, sessions anormales, etc.") },
+          { label: t("settings.helpApi", "API"), description: t("settings.helpApiDesc", "Clés d'API pour l'intégration avec des systèmes tiers.") },
+          { label: t("settings.appearance", "Apparence"), description: t("settings.helpAppearanceDesc", "Personnalisation de l'interface (thème, langue, fuseau horaire).") },
         ]}
       />
 
@@ -133,9 +129,9 @@ export function SettingsPage() {
             <Bell className="w-4.5 h-4.5 text-primary" />
           </div>
           <div className="flex-1">
-            <p className="font-semibold text-sm">Alertes automatiques</p>
+            <p className="font-semibold text-sm">{t("settings.automaticAlerts", "Alertes automatiques")}</p>
             <p className="text-xs text-foreground-muted">
-              Notification email quand une borne est en panne trop longtemps
+              {t("settings.automaticAlertsDesc", "Notification email quand une borne est en panne trop longtemps")}
             </p>
           </div>
           {/* Toggle */}
@@ -157,26 +153,25 @@ export function SettingsPage() {
         <div className="px-5 py-4">
           <label className="flex items-center gap-2 text-sm font-medium mb-3">
             <Clock className="w-4 h-4 text-foreground-muted" />
-            Seuil de déclenchement
+            {t("settings.triggerThreshold", "Seuil de déclenchement")}
           </label>
           <div className="flex flex-wrap gap-2">
-            {THRESHOLD_OPTIONS.map((opt) => (
+            {THRESHOLD_VALUES.map((val) => (
               <button
-                key={opt.value}
-                onClick={() => setThreshold(opt.value)}
+                key={val}
+                onClick={() => setThreshold(val)}
                 className={`px-4 py-2 rounded-xl text-sm font-medium border transition-all ${
-                  threshold === opt.value
+                  threshold === val
                     ? "bg-primary/15 text-primary border-primary/30"
                     : "text-foreground-muted border-border hover:border-foreground-muted"
                 }`}
               >
-                {opt.label}
+                {t("settings.hours", "{{count}} heures", { count: val })}
               </button>
             ))}
           </div>
           <p className="text-xs text-foreground-muted mt-2">
-            Une alerte sera envoyée si une borne reste en panne plus de{" "}
-            <strong>{threshold}h</strong>. Anti-spam : max 1 alerte / borne / 12h.
+            {t("settings.thresholdExplanation", "Une alerte sera envoyée si une borne reste en panne plus de <strong>{{hours}}h</strong>. Anti-spam : max 1 alerte / borne / 12h.", { hours: threshold })}
           </p>
         </div>
 
@@ -184,7 +179,7 @@ export function SettingsPage() {
         <div className="px-5 py-4">
           <label className="flex items-center gap-2 text-sm font-medium mb-3">
             <Mail className="w-4 h-4 text-foreground-muted" />
-            Destinataires ({recipients.length})
+            {t("settings.recipients", "Destinataires")} ({recipients.length})
           </label>
 
           <div className="space-y-2 mb-3">
@@ -218,7 +213,7 @@ export function SettingsPage() {
               className="flex items-center gap-1.5 px-3 py-2 bg-primary/10 text-primary border border-primary/30 rounded-xl text-sm font-medium hover:bg-primary/20 transition-colors"
             >
               <Plus className="w-4 h-4" />
-              Ajouter
+              {t("common.add", "Ajouter")}
             </button>
           </div>
         </div>
@@ -229,15 +224,14 @@ export function SettingsPage() {
             <Key className="w-4 h-4 text-foreground-muted mt-0.5 shrink-0" />
             <div>
               <p className="text-xs font-semibold text-foreground-muted mb-1">
-                Configuration Resend (service d'envoi email)
+                {t("settings.resendConfig", "Configuration Resend (service d'envoi email)")}
               </p>
               <p className="text-xs text-foreground-muted">
-                Ajoutez le secret{" "}
+                {t("settings.resendAddSecret", "Ajoutez le secret")}{" "}
                 <code className="bg-surface-elevated px-1.5 py-0.5 rounded font-mono text-primary">
                   RESEND_API_KEY
                 </code>{" "}
-                dans Supabase Dashboard → Settings → Edge Functions → Secrets.
-                Sans clé, le mode dry-run détecte les alertes sans les envoyer.
+                {t("settings.resendInstructions", "dans Supabase Dashboard → Settings → Edge Functions → Secrets. Sans clé, le mode dry-run détecte les alertes sans les envoyer.")}
               </p>
             </div>
           </div>
@@ -255,7 +249,7 @@ export function SettingsPage() {
             ) : saved ? (
               <CheckCircle className="w-4 h-4" />
             ) : null}
-            {saved ? "Sauvegardé !" : "Sauvegarder"}
+            {saved ? t("settings.saved", "Sauvegardé !") : t("common.save", "Sauvegarder")}
           </button>
 
           <button
@@ -268,7 +262,7 @@ export function SettingsPage() {
             ) : (
               <Send className="w-4 h-4" />
             )}
-            Tester maintenant
+            {t("settings.testNow", "Tester maintenant")}
           </button>
 
           {testResult && (
@@ -283,7 +277,7 @@ export function SettingsPage() {
           <div className="px-5 py-4 border-b border-border">
             <h2 className="text-sm font-semibold flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-status-faulted" />
-              Dernières alertes envoyées
+              {t("settings.lastAlertsSent", "Dernières alertes envoyées")}
             </h2>
           </div>
           <div className="divide-y divide-border">
@@ -294,12 +288,12 @@ export function SettingsPage() {
               >
                 <div>
                   <p className="text-sm font-medium">
-                    {(entry.stations as { name: string } | null)?.name ?? "Borne inconnue"}
+                    {(entry.stations as { name: string } | null)?.name ?? t("settings.unknownStation", "Borne inconnue")}
                   </p>
                   <p className="text-xs text-foreground-muted">
                     {(entry.stations as { city: string | null } | null)?.city ?? "—"} ·{" "}
                     {entry.hours_in_fault != null
-                      ? `${Math.round(entry.hours_in_fault)}h en panne`
+                      ? t("settings.hoursInFault", "{{hours}}h en panne", { hours: Math.round(entry.hours_in_fault) })
                       : ""}
                   </p>
                 </div>

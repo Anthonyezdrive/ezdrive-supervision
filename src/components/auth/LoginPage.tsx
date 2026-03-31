@@ -1,11 +1,13 @@
 import { useState, type FormEvent } from "react";
 import { Navigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "@/contexts/AuthContext";
 import { ArrowLeft, Mail, CheckCircle } from "lucide-react";
 
 type Mode = "login" | "forgot" | "sent";
 
 export function LoginPage() {
+  const { t } = useTranslation();
   const { user, profile, loading, signIn, signInWithGoogle, signInWithApple, resetPassword } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -17,7 +19,7 @@ export function LoginPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="animate-pulse-dot text-primary text-lg">
-          Chargement...
+          {t("common.loading")}
         </div>
       </div>
     );
@@ -80,13 +82,14 @@ export function LoginPage() {
                 <CheckCircle className="w-6 h-6 text-success" />
               </div>
               <h2 className="text-lg font-semibold text-foreground">
-                Email envoyé !
+                {t("auth.emailSent")}
               </h2>
-              <p className="text-foreground-muted text-sm">
-                Si un compte existe avec l'adresse <strong className="text-foreground">{email}</strong>, vous recevrez un lien de réinitialisation dans quelques instants.
-              </p>
+              <p
+                className="text-foreground-muted text-sm"
+                dangerouslySetInnerHTML={{ __html: t("auth.emailSentDescription", { email }) }}
+              />
               <p className="text-foreground-muted text-xs">
-                Pensez à vérifier vos spams.
+                {t("auth.checkSpam")}
               </p>
             </div>
             <button
@@ -94,7 +97,7 @@ export function LoginPage() {
               onClick={() => switchMode("login")}
               className="w-full py-2.5 bg-primary hover:bg-primary-hover text-foreground-inverse font-semibold rounded-xl transition-colors"
             >
-              Retour à la connexion
+              {t("auth.backToLogin")}
             </button>
           </div>
         )}
@@ -110,16 +113,16 @@ export function LoginPage() {
                 <Mail className="w-6 h-6 text-primary" />
               </div>
               <h2 className="text-lg font-semibold text-foreground">
-                Mot de passe oublié
+                {t("auth.forgotPasswordTitle")}
               </h2>
               <p className="text-foreground-muted text-sm">
-                Entrez votre email pour recevoir un lien de réinitialisation.
+                {t("auth.resetPasswordDescription")}
               </p>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-foreground-muted mb-1.5">
-                Email
+                {t("auth.email")}
               </label>
               <input
                 type="email"
@@ -143,7 +146,7 @@ export function LoginPage() {
               disabled={submitting}
               className="w-full py-2.5 bg-primary hover:bg-primary-hover text-foreground-inverse font-semibold rounded-xl transition-colors disabled:opacity-50"
             >
-              {submitting ? "Envoi en cours..." : "Envoyer le lien"}
+              {submitting ? t("auth.sendingResetLink") : t("auth.sendResetLink")}
             </button>
 
             <button
@@ -152,7 +155,7 @@ export function LoginPage() {
               className="w-full flex items-center justify-center gap-1.5 text-sm text-foreground-muted hover:text-foreground transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
-              Retour à la connexion
+              {t("auth.backToLogin")}
             </button>
           </form>
         )}
@@ -165,7 +168,7 @@ export function LoginPage() {
           >
             <div>
               <label className="block text-sm font-medium text-foreground-muted mb-1.5">
-                Email
+                {t("auth.email")}
               </label>
               <input
                 type="email"
@@ -180,14 +183,14 @@ export function LoginPage() {
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-sm font-medium text-foreground-muted">
-                  Mot de passe
+                  {t("auth.password")}
                 </label>
                 <button
                   type="button"
                   onClick={() => switchMode("forgot")}
                   className="text-xs text-primary hover:text-primary-hover transition-colors"
                 >
-                  Mot de passe oublié ?
+                  {t("auth.forgotPassword")}
                 </button>
               </div>
               <input
@@ -211,13 +214,13 @@ export function LoginPage() {
               disabled={submitting}
               className="w-full py-2.5 bg-primary hover:bg-primary-hover text-foreground-inverse font-semibold rounded-xl transition-colors disabled:opacity-50"
             >
-              {submitting ? "Connexion..." : "Se connecter"}
+              {submitting ? t("auth.signingIn") : t("auth.signIn")}
             </button>
 
             {/* Divider */}
             <div className="flex items-center gap-3">
               <div className="flex-1 h-px bg-border" />
-              <span className="text-xs text-foreground-muted">ou</span>
+              <span className="text-xs text-foreground-muted">{t("auth.or")}</span>
               <div className="flex-1 h-px bg-border" />
             </div>
 
@@ -237,7 +240,7 @@ export function LoginPage() {
                 <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18A10.96 10.96 0 0 0 1 12c0 1.77.42 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
                 <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
               </svg>
-              Continuer avec Google
+              {t("auth.continueWithGoogle")}
             </button>
 
             {/* Apple Sign-in */}
@@ -253,7 +256,7 @@ export function LoginPage() {
               <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M17.05 20.28c-.98.95-2.05.88-3.08.4-1.09-.5-2.08-.48-3.24 0-1.44.62-2.2.44-3.06-.4C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
               </svg>
-              Continuer avec Apple
+              {t("auth.continueWithApple")}
             </button>
           </form>
         )}

@@ -222,7 +222,7 @@ export function XDriveBPU() {
     };
   }, [prevMonth]);
 
-  const { data: prevCdrs } = useXDriveCDRs(customerExternalIds, prevCdrFilters);
+  const { data: _prevCdrs } = useXDriveCDRs(customerExternalIds, prevCdrFilters);
 
   // ── Fetch BPU config ────────────────────────────────────
   const { data: bpuConfig, isLoading: configLoading } = useQuery({
@@ -338,28 +338,6 @@ export function XDriveBPU() {
     result.period_month = selectedMonth;
     setCalculation(result);
   }, [bpuConfig, cdrs, pdcAc22Public, pdcAcPrivatif, pdcDc50100, selectedOptionals, selectedMonth]);
-
-  // ── M-1 calculation for comparison ──────────────────────
-  const prevCalculation = useMemo(() => {
-    if (!bpuConfig || !prevCdrs || !prevInvoice) return null;
-
-    const inv = (prevInvoice.pdc_inventory ?? {}) as Record<string, number>;
-    const inventory: PdCInventory = {
-      ac22_public: inv.ac22_public ?? 0,
-      ac_privatif: inv.ac_privatif ?? 0,
-      dc_50_100: inv.dc_50_100 ?? 0,
-      total: (inv.ac22_public ?? 0) + (inv.ac_privatif ?? 0) + (inv.dc_50_100 ?? 0),
-    };
-
-    const cdrInputs: BPUCdrInput[] = prevCdrs.map((c) => ({
-      total_retail_cost: c.total_retail_cost ?? 0,
-      charger_type: c.charger_type ?? "",
-    }));
-
-    const result = calculateBPU(bpuConfig, inventory, cdrInputs);
-    result.period_month = prevMonth;
-    return result;
-  }, [bpuConfig, prevCdrs, prevInvoice, prevMonth]);
 
   // ── Save draft mutation ─────────────────────────────────
   const saveDraftMutation = useMutation({
@@ -542,11 +520,6 @@ export function XDriveBPU() {
     (t) => pdcTotal >= t.min_pdc && (t.max_pdc === null || pdcTotal <= t.max_pdc)
   );
 
-  // Delta helpers for comparison
-  const delta = (current: number, previous: number | undefined) => {
-    if (previous === undefined || previous === 0) return null;
-    return ((current - previous) / previous) * 100;
-  };
 
   // ── Render ──────────────────────────────────────────────
 

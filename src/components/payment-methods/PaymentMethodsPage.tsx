@@ -1,24 +1,39 @@
 import { useState } from "react";
 import { KeyRound, CreditCard, Ticket } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SyncButton } from "@/components/shared/SyncButton";
 import { RfidPage } from "@/components/rfid/RfidPage";
 import { SubscriptionsPage } from "@/components/subscriptions/SubscriptionsPage";
 import { CouponsPage } from "@/components/coupons/CouponsPage";
+import { useTranslation } from "react-i18next";
 
-const TABS = [
-  { key: "rfid", label: "Tokens RFID", icon: KeyRound },
-  { key: "subscriptions", label: "Abonnements", icon: CreditCard },
-  { key: "coupons", label: "Coupons", icon: Ticket },
-] as const;
+const TAB_KEYS = ["rfid", "subscriptions", "coupons"] as const;
+const TAB_ICONS = { rfid: KeyRound, subscriptions: CreditCard, coupons: Ticket };
 
 export function PaymentMethodsPage() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<"rfid" | "subscriptions" | "coupons">("rfid");
+
+  const TABS = [
+    { key: "rfid" as const, label: t("paymentMethods.rfidTokens", "Tokens RFID"), icon: KeyRound },
+    { key: "subscriptions" as const, label: t("paymentMethods.subscriptions", "Abonnements"), icon: CreditCard },
+    { key: "coupons" as const, label: t("paymentMethods.coupons", "Coupons"), icon: Ticket },
+  ];
+
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-heading text-xl font-bold text-foreground">Moyens de paiement</h1>
-        <p className="text-sm text-foreground-muted mt-0.5">Tokens RFID, abonnements et coupons</p>
+        <h1 className="font-heading text-xl font-bold text-foreground">{t("nav.paymentMethods", "Moyens de paiement")}</h1>
+        <p className="text-sm text-foreground-muted mt-0.5">{t("paymentMethods.subtitle", "Tokens RFID, abonnements et coupons")}</p>
       </div>
+
+      {/* Sync & test buttons */}
+      <div className="flex flex-wrap items-center gap-2">
+        <SyncButton functionName="road-token-sync" label={t("paymentMethods.syncTokens", "Sync tokens Road.io")} invalidateKeys={["tokens", "rfid"]} variant="small" formatSuccess={(d) => `${d.total_ingested ?? 0} tokens sync`} />
+        <SyncButton functionName="create-setup-intent" label={t("paymentMethods.testSetupIntent", "Test Setup Intent")} variant="small" confirmMessage={t("paymentMethods.confirmSetupIntent", "Créer un SetupIntent Stripe de test ?")} />
+        <SyncButton functionName="sepa-setup" label={t("paymentMethods.testSepaSetup", "Test SEPA Setup")} variant="small" confirmMessage={t("paymentMethods.confirmSepaSetup", "Tester le setup SEPA ?")} />
+      </div>
+
       <div className="flex gap-1 border-b border-border">
         {TABS.map((t) => (
           <button

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
-import { Zap, MapPin, Plug, CreditCard, Loader2, CheckCircle, AlertCircle, Battery, Clock, Euro, ChevronRight, Shield } from "lucide-react";
+import { Zap, MapPin, CreditCard, Loader2, CheckCircle, AlertCircle, Battery, Clock, Euro, ChevronRight, Shield } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL ?? "";
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY ?? "";
@@ -48,6 +49,7 @@ interface SessionStatus {
 }
 
 export default function DirectPayPage() {
+  const { t } = useTranslation();
   const { identity, evseUid } = useParams<{ identity: string; evseUid?: string }>();
   const [state, setState] = useState<PayState>("loading");
   const [station, setStation] = useState<StationInfo | null>(null);
@@ -66,7 +68,7 @@ export default function DirectPayPage() {
 
   // Resolve station from QR code
   useEffect(() => {
-    if (!identity) { setError("Identifiant de borne manquant"); setState("error"); return; }
+    if (!identity) { setError(t("directPay.missingIdentity", "Identifiant de borne manquant")); setState("error"); return; }
 
     const fetchStation = async () => {
       try {
@@ -128,7 +130,7 @@ export default function DirectPayPage() {
   }, [state, sessionId]);
 
   const handleStartPayment = () => {
-    if (!email || !email.includes("@")) { setError("Email requis pour le reçu"); return; }
+    if (!email || !email.includes("@")) { setError(t("directPay.emailRequired", "Email requis pour le reçu")); return; }
     setError("");
     setState("payment");
   };
@@ -284,7 +286,7 @@ export default function DirectPayPage() {
         {state === "loading" && (
           <div className="bg-white rounded-2xl p-8 shadow-sm text-center">
             <Loader2 className="w-10 h-10 text-emerald-500 animate-spin mx-auto mb-4" />
-            <p className="text-gray-600">Recherche de la borne...</p>
+            <p className="text-gray-600">{t("directPay.searchingStation", "Recherche de la borne...")}</p>
             <p className="text-sm text-gray-400 mt-1">{identity}</p>
           </div>
         )}
@@ -293,10 +295,10 @@ export default function DirectPayPage() {
         {state === "error" && (
           <div className="bg-white rounded-2xl p-8 shadow-sm text-center">
             <AlertCircle className="w-10 h-10 text-red-500 mx-auto mb-4" />
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">Erreur</h2>
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">{t("common.error")}</h2>
             <p className="text-gray-600">{error}</p>
             <button onClick={() => window.location.reload()} className="mt-4 px-4 py-2 bg-gray-100 rounded-lg text-sm text-gray-700 hover:bg-gray-200">
-              Réessayer
+              {t("directPay.retry", "Réessayer")}
             </button>
           </div>
         )}
@@ -321,13 +323,13 @@ export default function DirectPayPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-gray-50 rounded-xl p-3">
-                  <div className="text-xs text-gray-500 mb-1">Puissance max</div>
+                  <div className="text-xs text-gray-500 mb-1">{t("directPay.maxPower", "Puissance max")}</div>
                   <div className="text-lg font-bold text-gray-900">{station.max_power_kw} kW</div>
                 </div>
                 <div className="bg-gray-50 rounded-xl p-3">
-                  <div className="text-xs text-gray-500 mb-1">Statut</div>
+                  <div className="text-xs text-gray-500 mb-1">{t("common.status")}</div>
                   <div className={`text-lg font-bold ${station.status === "Available" ? "text-emerald-600" : "text-amber-600"}`}>
-                    {station.status === "Available" ? "Disponible" : station.status === "Charging" ? "En charge" : station.status}
+                    {station.status === "Available" ? t("status.available") : station.status === "Charging" ? t("status.charging") : station.status}
                   </div>
                 </div>
               </div>
@@ -338,27 +340,27 @@ export default function DirectPayPage() {
               <div className="bg-white rounded-2xl p-5 shadow-sm">
                 <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
                   <Euro className="w-4 h-4 text-emerald-500" />
-                  Tarif applicable
+                  {t("directPay.applicableTariff", "Tarif applicable")}
                 </h3>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Énergie</span>
+                    <span className="text-gray-600">{t("analytics.energy")}</span>
                     <span className="font-medium">{station.tariff.energy_price?.toFixed(2) ?? "0.35"}&euro;/kWh</span>
                   </div>
                   {station.tariff.time_price && (
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Temps</span>
+                      <span className="text-gray-600">{t("directPay.time", "Temps")}</span>
                       <span className="font-medium">{station.tariff.time_price.toFixed(2)}&euro;/h</span>
                     </div>
                   )}
                   {station.tariff.flat_fee && (
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Frais de démarrage</span>
+                      <span className="text-gray-600">{t("directPay.startFee", "Frais de démarrage")}</span>
                       <span className="font-medium">{station.tariff.flat_fee.toFixed(2)}&euro;</span>
                     </div>
                   )}
                   <div className="pt-2 border-t text-xs text-gray-400">
-                    TVA 8,5% incluse (DOM-TOM). Pré-autorisation de 20&euro;.
+                    {t("directPay.vatIncluded", "TVA 8,5% incluse (DOM-TOM). Pré-autorisation de 20€.")}
                   </div>
                 </div>
               </div>
@@ -367,7 +369,7 @@ export default function DirectPayPage() {
             {/* Email + Start */}
             <div className="bg-white rounded-2xl p-5 shadow-sm">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email (pour le reçu)
+                {t("directPay.emailForReceipt", "Email (pour le reçu)")}
               </label>
               <input
                 type="email"
@@ -383,12 +385,12 @@ export default function DirectPayPage() {
                 className="w-full mt-4 py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold rounded-xl flex items-center justify-center gap-2 transition-colors"
               >
                 <CreditCard className="w-5 h-5" />
-                Payer et recharger
+                {t("directPay.payAndCharge", "Payer et recharger")}
                 <ChevronRight className="w-4 h-4" />
               </button>
               {station.status !== "Available" && (
                 <p className="text-center text-xs text-amber-600 mt-2">
-                  Cette borne n'est pas disponible actuellement
+                  {t("directPay.stationUnavailable", "Cette borne n'est pas disponible actuellement")}
                 </p>
               )}
             </div>
@@ -400,21 +402,21 @@ export default function DirectPayPage() {
           <div className="bg-white rounded-2xl p-6 shadow-sm">
             <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
               <CreditCard className="w-5 h-5 text-emerald-500" />
-              Paiement sécurisé
+              {t("directPay.securePayment", "Paiement sécurisé")}
             </h2>
 
             <div className="bg-gray-50 rounded-xl p-4 mb-4">
-              <div className="text-sm text-gray-600 mb-1">Pré-autorisation</div>
+              <div className="text-sm text-gray-600 mb-1">{t("directPay.preAuthorization", "Pré-autorisation")}</div>
               <div className="text-2xl font-bold text-gray-900">20,00 &euro;</div>
               <div className="text-xs text-gray-400 mt-1">
-                Seul le montant réel sera débité en fin de session
+                {t("directPay.onlyRealAmount", "Seul le montant réel sera débité en fin de session")}
               </div>
             </div>
 
             {/* Stripe Card Element */}
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Carte bancaire
+                {t("directPay.bankCard", "Carte bancaire")}
               </label>
               <div
                 ref={cardContainerRef}
@@ -437,19 +439,19 @@ export default function DirectPayPage() {
               {paymentProcessing ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" />
-                  Autorisation en cours...
+                  {t("directPay.authorizingPayment", "Autorisation en cours...")}
                 </>
               ) : (
                 <>
                   <Shield className="w-5 h-5" />
-                  Confirmer et démarrer la charge
+                  {t("directPay.confirmAndStart", "Confirmer et démarrer la charge")}
                 </>
               )}
             </button>
 
             <p className="text-center text-xs text-gray-400 mt-3 flex items-center justify-center gap-1">
               <Shield className="w-3 h-3" />
-              Paiement sécurisé par Stripe. Vos données sont chiffrées.
+              {t("directPay.stripeSecure", "Paiement sécurisé par Stripe. Vos données sont chiffrées.")}
             </p>
           </div>
         )}
@@ -458,8 +460,8 @@ export default function DirectPayPage() {
         {state === "authorizing" && (
           <div className="bg-white rounded-2xl p-8 shadow-sm text-center">
             <Loader2 className="w-10 h-10 text-emerald-500 animate-spin mx-auto mb-4" />
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">Démarrage de la charge...</h2>
-            <p className="text-sm text-gray-500">Paiement accepté. Communication avec la borne en cours.</p>
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">{t("directPay.startingCharge", "Démarrage de la charge...")}</h2>
+            <p className="text-sm text-gray-500">{t("directPay.paymentAccepted", "Paiement accepté. Communication avec la borne en cours.")}</p>
           </div>
         )}
 
@@ -470,7 +472,7 @@ export default function DirectPayPage() {
               <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-3">
                 <Battery className="w-8 h-8 text-emerald-600 animate-pulse" />
               </div>
-              <h2 className="text-xl font-bold text-gray-900">Charge en cours</h2>
+              <h2 className="text-xl font-bold text-gray-900">{t("directPay.chargingInProgress", "Charge en cours")}</h2>
               <p className="text-sm text-gray-500 mt-1">{station?.name}</p>
             </div>
 
@@ -497,7 +499,7 @@ export default function DirectPayPage() {
             </div>
 
             <p className="text-center text-xs text-gray-400">
-              Mise à jour toutes les 5 secondes. Déconnectez le câble pour arrêter la charge.
+              {t("directPay.updateEvery5s", "Mise à jour toutes les 5 secondes. Déconnectez le câble pour arrêter la charge.")}
             </p>
           </div>
         )}
@@ -508,38 +510,38 @@ export default function DirectPayPage() {
             <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle className="w-8 h-8 text-emerald-600" />
             </div>
-            <h2 className="text-xl font-bold text-gray-900 mb-2">Charge terminée !</h2>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">{t("directPay.chargeCompleted", "Charge terminée !")}</h2>
 
             <div className="bg-gray-50 rounded-xl p-4 my-4 text-left">
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Borne</span>
+                  <span className="text-gray-600">{t("directPay.station", "Borne")}</span>
                   <span className="font-medium">{station?.name}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Énergie</span>
+                  <span className="text-gray-600">{t("analytics.energy")}</span>
                   <span className="font-medium">{sessionStatus.energy_kwh.toFixed(2)} kWh</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Durée</span>
+                  <span className="text-gray-600">{t("sessions.duration")}</span>
                   <span className="font-medium">{sessionStatus.duration_min} min</span>
                 </div>
                 <div className="flex justify-between pt-2 border-t">
-                  <span className="font-semibold text-gray-900">Total</span>
+                  <span className="font-semibold text-gray-900">{t("common.total")}</span>
                   <span className="font-bold text-emerald-600">{sessionStatus.estimated_cost.toFixed(2)} &euro;</span>
                 </div>
               </div>
             </div>
 
             <p className="text-sm text-gray-500 mb-4">
-              Un reçu a été envoyé à <strong>{email}</strong>
+              {t("directPay.receiptSentTo", "Un reçu a été envoyé à")} <strong>{email}</strong>
             </p>
 
             <button
               onClick={() => { setState("station_info"); setSessionId(null); }}
               className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 rounded-xl text-sm font-medium text-gray-700 transition-colors"
             >
-              Nouvelle charge
+              {t("directPay.newCharge", "Nouvelle charge")}
             </button>
           </div>
         )}
@@ -547,7 +549,7 @@ export default function DirectPayPage() {
 
       {/* Footer */}
       <footer className="text-center py-4 text-xs text-gray-400">
-        Propulsé par <strong>EZDrive</strong> — Recharge électrique DOM-TOM
+        {t("directPay.poweredBy", "Propulsé par")} <strong>EZDrive</strong> — {t("directPay.domTomCharging", "Recharge électrique DOM-TOM")}
       </footer>
     </div>
   );

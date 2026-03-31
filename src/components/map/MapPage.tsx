@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap, useMapEvents } from "react-leaflet";
 import type { LatLngBoundsExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -115,6 +116,7 @@ type PowerFilter = "all" | "ac" | "dc";
 const STATUS_FILTERS: OCPPStatus[] = ["Available", "Charging", "Faulted", "Unknown"];
 
 export function MapPage() {
+  const { t } = useTranslation();
   const { selectedCpoId } = useCpo();
   const { data: stations = [], isLoading } = useStations(selectedCpoId);
   const { data: cpos = [] } = useCPOs();
@@ -224,12 +226,12 @@ export function MapPage() {
       {/* Header */}
       <div className="px-6 pt-4 shrink-0">
         <PageHelp
-          summary="Carte interactive de votre réseau de bornes avec position et statut en temps réel"
+          summary={t("map.helpSummary", "Carte interactive de votre réseau de bornes avec position et statut en temps réel")}
           items={[
-            { label: "Marqueurs colorés", description: "Vert = disponible, bleu = en charge, rouge = en panne, gris = hors service." },
-            { label: "Clusters", description: "Les bornes proches sont regroupées en clusters. Zoomez pour les détailler." },
-            { label: "Popup détail", description: "Cliquez sur un marqueur pour voir le nom, l'adresse et le statut de la borne." },
-            { label: "Zoom & navigation", description: "Utilisez la molette pour zoomer, ou les boutons +/- en haut à gauche." },
+            { label: t("map.helpMarkers", "Marqueurs colorés"), description: t("map.helpMarkersDesc", "Vert = disponible, bleu = en charge, rouge = en panne, gris = hors service.") },
+            { label: t("map.helpClusters", "Clusters"), description: t("map.helpClustersDesc", "Les bornes proches sont regroupées en clusters. Zoomez pour les détailler.") },
+            { label: t("map.helpPopup", "Popup détail"), description: t("map.helpPopupDesc", "Cliquez sur un marqueur pour voir le nom, l'adresse et le statut de la borne.") },
+            { label: t("map.helpZoom", "Zoom & navigation"), description: t("map.helpZoomDesc", "Utilisez la molette pour zoomer, ou les boutons +/- en haut à gauche.") },
           ]}
         />
       </div>
@@ -237,9 +239,9 @@ export function MapPage() {
         {/* Row 1: title + status pills */}
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
-            <h1 className="font-heading font-bold text-xl">Carte</h1>
+            <h1 className="font-heading font-bold text-xl">{t("nav.map")}</h1>
             <p className="text-sm text-foreground-muted">
-              {filteredStations.length}/{mappableStations.length} bornes affichées · refresh 30s
+              {filteredStations.length}/{mappableStations.length} {t("map.stationsDisplayed", "bornes affichées")} · refresh 30s
             </p>
           </div>
 
@@ -253,7 +255,7 @@ export function MapPage() {
                   : "text-foreground-muted border-border hover:border-foreground-muted"
               }`}
             >
-              Toutes ({mappableStations.length})
+              {t("common.all")} ({mappableStations.length})
             </button>
             {STATUS_FILTERS.map((s) => {
               const cfg = OCPP_STATUS_CONFIG[s];
@@ -288,7 +290,7 @@ export function MapPage() {
               value={searchQuery}
               onChange={(e) => handleSearchChange(e.target.value)}
               onFocus={() => { if (searchResults.length > 0) setShowResults(true); }}
-              placeholder="Rechercher une adresse ou ville..."
+              placeholder={t("map.searchLocation")}
               className="w-full pl-9 pr-8 py-1.5 rounded-lg bg-card border border-border text-sm text-foreground placeholder:text-foreground-muted focus:outline-none focus:ring-1 focus:ring-primary/50"
             />
             {searchQuery && (
@@ -321,7 +323,7 @@ export function MapPage() {
             onChange={(e) => setCpoFilter(e.target.value || null)}
             className="px-3 py-1.5 rounded-lg bg-card border border-border text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 min-w-[140px]"
           >
-            <option value="">Tous les CPO</option>
+            <option value="">{t("dashboard.filterCpo")}</option>
             {cpos.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
@@ -333,7 +335,7 @@ export function MapPage() {
             onChange={(e) => setTerritoryFilter(e.target.value || null)}
             className="px-3 py-1.5 rounded-lg bg-card border border-border text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary/50 min-w-[140px]"
           >
-            <option value="">Tous les territoires</option>
+            <option value="">{t("dashboard.filterTerritory")}</option>
             {territories.map((t) => (
               <option key={t.id} value={t.id}>{t.name}</option>
             ))}
@@ -342,7 +344,7 @@ export function MapPage() {
           {/* Power type toggle */}
           <div className="flex items-center gap-1 bg-card border border-border rounded-lg p-0.5">
             {([
-              { key: "all" as PowerFilter, label: "Tous" },
+              { key: "all" as PowerFilter, label: t("common.all") },
               { key: "ac" as PowerFilter, label: "AC" },
               { key: "dc" as PowerFilter, label: "DC" },
             ]).map(({ key, label }) => (
@@ -369,11 +371,11 @@ export function MapPage() {
       <div className="flex-1 relative">
         {isLoading ? (
           <div className="flex items-center justify-center h-full">
-            <p className="text-foreground-muted text-sm">Chargement de la carte...</p>
+            <p className="text-foreground-muted text-sm">{t("map.loadingMap", "Chargement de la carte...")}</p>
           </div>
         ) : mappableStations.length === 0 ? (
           <div className="flex items-center justify-center h-full">
-            <p className="text-foreground-muted text-sm">Aucune borne géolocalisée disponible.</p>
+            <p className="text-foreground-muted text-sm">{t("map.noGeolocatedStations", "Aucune borne géolocalisée disponible.")}</p>
           </div>
         ) : (
           <MapContainer
@@ -412,7 +414,7 @@ export function MapPage() {
                     {isCluster ? (
                       <div style={{ fontFamily: "system-ui, sans-serif", padding: "2px 0" }}>
                         <p style={{ fontWeight: 700, fontSize: 13, margin: "0 0 6px" }}>
-                          {cluster.stations.length} bornes
+                          {cluster.stations.length} {t("nav.stations", "bornes")}
                         </p>
                         <div style={{ fontSize: 11, color: "#888", maxHeight: 150, overflowY: "auto" }}>
                           {cluster.stations.slice(0, 10).map((s) => (
@@ -424,9 +426,9 @@ export function MapPage() {
                               </span>
                             </div>
                           ))}
-                          {cluster.stations.length > 10 && <p style={{ color: "#666", marginTop: 4 }}>+{cluster.stations.length - 10} autres...</p>}
+                          {cluster.stations.length > 10 && <p style={{ color: "#666", marginTop: 4 }}>+{cluster.stations.length - 10} {t("map.others", "autres...")}</p>}
                         </div>
-                        <p style={{ fontSize: 10, color: "#666", marginTop: 6 }}>Zoomez pour detailler</p>
+                        <p style={{ fontSize: 10, color: "#666", marginTop: 6 }}>{t("map.zoomToDetail", "Zoomez pour détailler")}</p>
                       </div>
                     ) : (
                       <div style={{ fontFamily: "system-ui, sans-serif", padding: "2px 0" }}>
@@ -455,13 +457,13 @@ export function MapPage() {
                           </span>
                         </div>
                         {station.max_power_kw && (
-                          <p style={{ fontSize: 10, color: "#888", margin: "0 0 8px" }}>Puissance max : {station.max_power_kw} kW</p>
+                          <p style={{ fontSize: 10, color: "#888", margin: "0 0 8px" }}>{t("map.maxPower", "Puissance max")} : {station.max_power_kw} kW</p>
                         )}
                         <button
                           onClick={() => setSelectedStation(station)}
                           style={{ width: "100%", padding: "5px 10px", borderRadius: 6, backgroundColor: "#00D4AA", color: "#fff", fontSize: 11, fontWeight: 600, border: "none", cursor: "pointer" }}
                         >
-                          Voir le detail →
+                          {t("map.viewDetail", "Voir le détail")} →
                         </button>
                       </div>
                     )}
@@ -483,7 +485,7 @@ export function MapPage() {
             }}
           >
             <p className="text-[10px] font-semibold text-foreground-muted uppercase tracking-wider mb-2">
-              Légende
+              {t("map.legend", "Légende")}
             </p>
             {STATUS_FILTERS.map((s) => {
               const cfg = OCPP_STATUS_CONFIG[s];
@@ -503,7 +505,7 @@ export function MapPage() {
             })}
             <div className="border-t border-white/10 mt-2 pt-2">
               <p className="text-[10px] font-semibold text-foreground-muted uppercase tracking-wider mb-2">
-                Source (contour)
+                {t("map.sourceOutline", "Source (contour)")}
               </p>
               {(["road", "gfx"] as const).map((src) => {
                 const srcCfg = getSourceConfig(src);

@@ -4,12 +4,13 @@
 // ============================================================
 
 import { useState, useMemo, useCallback } from "react";
-import { Download, Plus, Upload } from "lucide-react";
+import { Download, Plus, Upload, RotateCcw, X, Zap } from "lucide-react";
 import { useStations } from "@/hooks/useStations";
 import { useCPOs } from "@/hooks/useCPOs";
 import { useTerritories } from "@/hooks/useTerritories";
 import { useCpo } from "@/contexts/CpoContext";
 import { useQueryClient } from "@tanstack/react-query";
+import { useOcppCommand } from "@/hooks/useOcppCommands";
 import { FilterBar } from "@/components/ui/FilterBar";
 import { StationTable } from "./StationTable";
 import { StationDetailView } from "./StationDetailView";
@@ -22,16 +23,19 @@ import { downloadCSV, todayISO } from "@/lib/export";
 import { PageHelp } from "@/components/ui/PageHelp";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
 
 type PowerFilter = "all" | "ac_22" | "dc_60" | "dc_fast";
-const POWER_FILTERS: { key: PowerFilter; label: string }[] = [
-  { key: "all", label: "Tous" },
-  { key: "ac_22", label: "AC ≤22kW" },
-  { key: "dc_60", label: "DC 25-60kW" },
-  { key: "dc_fast", label: "DC >60kW" },
-];
 
 export function StationsPage() {
+  const { t } = useTranslation();
+
+  const POWER_FILTERS: { key: PowerFilter; label: string }[] = [
+    { key: "all", label: t("common.all") },
+    { key: "ac_22", label: "AC ≤22kW" },
+    { key: "dc_60", label: "DC 25-60kW" },
+    { key: "dc_fast", label: "DC >60kW" },
+  ];
   const { selectedCpoId } = useCpo();
   const { data: stations, isLoading, isError, refetch } = useStations(selectedCpoId);
   const { data: cpos } = useCPOs();
@@ -42,8 +46,22 @@ export function StationsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editStation, setEditStation] = useState<Station | null>(null);
   const [powerFilter, setPowerFilter] = useState<PowerFilter>("all");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showImportModal, setShowImportModal] = useState(false);
   const [importStatus, setImportStatus] = useState<{ loading: boolean; message: string | null }>({ loading: false, message: null });
+  const [batchResetLoading, setBatchResetLoading] = useState(false);
+  const [batchResetConfirm, setBatchResetConfirm] = useState(false);
+  const ocppCommand = useOcppCommand();
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
   const handleStationUpdated = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["stations"] });
     setSelectedStation(null);
@@ -78,6 +96,37 @@ export function StationsPage() {
       return true;
     });
   }, [stations, filters, powerFilter]);
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === filtered.length) return new Set();
+      return new Set(filtered.map((s) => s.id));
+    });
+  }, [filtered]);
+
+  const selectedStations = useMemo(
+    () => filtered.filter((s) => selectedIds.has(s.id)),
+    [filtered, selectedIds]
+  );
+
+  async function handleBatchReset() {
+    setBatchResetLoading(true);
+    try {
+      for (const station of selectedStations) {
+        await ocppCommand.mutateAsync({
+          stationId: station.id,
+          command: "Reset",
+          params: { type: "Soft" },
+        });
+      }
+      setSelectedIds(new Set());
+      setBatchResetConfirm(false);
+    } catch {
+      // individual errors are handled by the mutation
+    } finally {
+      setBatchResetLoading(false);
+    }
+  }
 
   function handleExport() {
     const rows = (filtered ?? []).map((s) => ({
@@ -196,7 +245,7 @@ export function StationsPage() {
         <TableSkeleton rows={10} />
       ) : isError ? (
         <ErrorState
-          message="Impossible de charger les bornes"
+          message={t("common.error")}
           onRetry={() => refetch()}
         />
       ) : filtered.length === 0 ? (
@@ -205,7 +254,98 @@ export function StationsPage() {
           <p className="text-sm">Ajustez vos filtres ou lancez une synchronisation.</p>
         </div>
       ) : (
-        <StationTable stations={filtered} onSelect={(s) => setSelectedStation(s)} />
+        <StationTable
+          stations={filtered}
+          onSelect={(s) => setSelectedStation(s)}
+          selectedIds={selectedIds}
+          onToggleSelect={toggleSelect}
+          onToggleSelectAll={toggleSelectAll}
+        />
+      )}
+
+      {/* Batch action bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 bg-surface border border-border rounded-2xl px-5 py-3 shadow-2xl">
+          <span className="text-sm font-semibold text-foreground">
+            {selectedIds.size} borne{selectedIds.size > 1 ? "s" : ""} selectionnee{selectedIds.size > 1 ? "s" : ""}
+          </span>
+          <div className="w-px h-6 bg-border" />
+          <button
+            type="button"
+            onClick={() => setBatchResetConfirm(true)}
+            disabled={batchResetLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 text-amber-400 border border-amber-500/25 rounded-xl text-xs font-semibold hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Reset groupe
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectedIds(new Set())}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-foreground-muted border border-border rounded-xl text-xs hover:text-foreground hover:border-foreground-muted transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+            Deselectionner
+          </button>
+        </div>
+      )}
+
+      {/* Batch reset confirmation dialog */}
+      {batchResetConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-surface border border-border rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-amber-500/15 flex items-center justify-center">
+                <Zap className="w-5 h-5 text-amber-400" />
+              </div>
+              <div>
+                <h3 className="font-heading font-bold text-foreground">Reset groupe</h3>
+                <p className="text-sm text-foreground-muted">
+                  Envoyer un reset OCPP a {selectedIds.size} borne{selectedIds.size > 1 ? "s" : ""} ?
+                </p>
+              </div>
+            </div>
+            <div className="max-h-40 overflow-y-auto mb-4 space-y-1">
+              {selectedStations.map((s) => (
+                <div key={s.id} className="flex items-center gap-2 text-xs text-foreground-muted px-2 py-1 bg-surface-elevated rounded-lg">
+                  <span className={cn(
+                    "w-2 h-2 rounded-full",
+                    s.connectivity_status === "Online" ? "bg-emerald-400" : "bg-red-400"
+                  )} />
+                  <span className="truncate">{s.name}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setBatchResetConfirm(false)}
+                disabled={batchResetLoading}
+                className="px-4 py-2 text-sm text-foreground-muted hover:text-foreground transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={handleBatchReset}
+                disabled={batchResetLoading}
+                className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 text-black rounded-xl text-sm font-semibold hover:bg-amber-400 transition-colors disabled:opacity-50"
+              >
+                {batchResetLoading ? (
+                  <>
+                    <RotateCcw className="w-4 h-4 animate-spin" />
+                    Reset en cours...
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="w-4 h-4" />
+                    Confirmer le reset
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Create / Edit Modal */}

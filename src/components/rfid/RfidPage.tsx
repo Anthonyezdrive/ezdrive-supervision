@@ -10,7 +10,6 @@ import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { PageHelp } from "@/components/ui/PageHelp";
 import { KPICard } from "@/components/ui/KPICard";
-import { Skeleton } from "@/components/ui/Skeleton";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useCpo } from "@/contexts/CpoContext";
 import {
@@ -29,7 +28,6 @@ import {
   Plus,
   Globe,
   Calendar,
-  FileText,
   Loader2,
   Wallet,
   RefreshCw,
@@ -44,6 +42,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { downloadCSV, todayISO } from "@/lib/export";
 import { useToast } from "@/contexts/ToastContext";
+import { useTranslation } from "react-i18next";
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -135,6 +134,7 @@ function formatTokenId(uid: string): string {
 // ── Component ─────────────────────────────────────────────────
 
 export function RfidPage() {
+  const { t } = useTranslation();
   const { selectedCpoId } = useCpo();
   const queryClient = useQueryClient();
   const [sourceFilter, setSourceFilter] = useState("");

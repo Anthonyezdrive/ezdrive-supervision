@@ -59,7 +59,7 @@ export function OcpiCredentialWizard({ cpoId, onClose, onSuccess }: Props) {
   // Step 4 state
   const [handshakeLogs, setHandshakeLogs] = useState<HandshakeLog[]>([]);
   const [handshakeDone, setHandshakeDone] = useState(false);
-  const [createdId, setCreatedId] = useState<string | null>(null);
+  const [_createdId, setCreatedId] = useState<string | null>(null);
 
   const registerMutation = useRegisterPartner();
   const handshakeMutation = useTriggerHandshake();
